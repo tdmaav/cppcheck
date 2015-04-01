@@ -137,6 +137,7 @@ private:
         TEST_CASE(simplifyAtol)
 
         TEST_CASE(simplifyOperator1);
+        TEST_CASE(simplifyOperator2);
 
         TEST_CASE(reverseArraySyntax)
         TEST_CASE(simplify_numeric_condition)
@@ -1796,7 +1797,38 @@ private:
                                 "    char *a, *b;\n"
                                 "    delete a, b;\n"
                                 "}\n";
-            ASSERT_EQUALS("void foo ( ) { char * a ; char * b ; delete a ; delete b ; }", tok(code));
+            ASSERT_EQUALS("void foo ( ) { char * a ; char * b ; delete a ; b ; }", tok(code));
+        }
+
+        {
+            const char code[] = "void foo()\n"
+                                "{\n"
+                                "    char *a, *b, *c;\n"
+                                "    delete a, b, c;\n"
+                                "}\n";
+            // delete a; b; c; would be better but this will do too
+            ASSERT_EQUALS("void foo ( ) { char * a ; char * b ; char * c ; delete a ; b , c ; }", tok(code));
+        }
+
+        {
+            const char code[] = "void foo()\n"
+                                "{\n"
+                                "    char *a, *b;\n"
+                                "    if (x) \n"
+                                "        delete a, b;\n"
+                                "}\n";
+            ASSERT_EQUALS("void foo ( ) { char * a ; char * b ; if ( x ) { delete a ; b ; } }", tok(code));
+        }
+
+        {
+            const char code[] = "void foo()\n"
+                                "{\n"
+                                "    char *a, *b, *c;\n"
+                                "    if (x) \n"
+                                "        delete a, b, c;\n"
+                                "}\n";
+            // delete a; b; c; would be better but this will do too
+            ASSERT_EQUALS("void foo ( ) { char * a ; char * b ; char * c ; if ( x ) { delete a ; b , c ; } }", tok(code));
         }
 
         {
@@ -1842,6 +1874,14 @@ private:
                                 "    delete a, a = 0;\n"
                                 "}\n";
             ASSERT_EQUALS("void foo ( ) { delete a ; a = 0 ; }", tok(code));
+        }
+
+        {
+            const char code[] = "void foo()\n"
+                                "{\n"
+                                "    if( x ) delete a, a = 0;\n"
+                                "}\n";
+            ASSERT_EQUALS("void foo ( ) { if ( x ) { delete a ; a = 0 ; } }", tok(code));
         }
 
         {
@@ -2473,6 +2513,31 @@ private:
                                 "operatorstring ( ) const ; "
                                 "} ;";
         ASSERT_EQUALS(expected, tok(code));
+    }
+
+    void simplifyOperator2() {
+        // #6576
+        ASSERT_EQUALS("class TClass { "
+                      "public: "
+                      "TClass & operator= ( const TClass & rhs ) ; "
+                      "} ; "
+                      "TClass :: TClass ( const TClass & other ) "
+                      "{ "
+                      "operator= ( other ) ; "
+                      "} class SharedPtr<Y> { "
+                      "SharedPtr<Y> & operator= ( SharedPtr<Y> const & r ) ; "
+                      "} ;",
+                      tok("template<class T>\n"
+                          "    class SharedPtr {\n"
+                          "    SharedPtr& operator=(SharedPtr<Y> const & r);\n"
+                          "};\n"
+                          "class TClass {\n"
+                          "public:\n"
+                          "    TClass& operator=(const TClass& rhs);\n"
+                          "};\n"
+                          "TClass::TClass(const TClass &other) {\n"
+                          "    operator=(other);\n"
+                          "}"));
     }
 
     void reverseArraySyntax() {

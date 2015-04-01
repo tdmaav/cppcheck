@@ -950,7 +950,7 @@ void CheckBufferOverrun::checkScope(const Token *tok, const ArrayInfo &arrayInfo
             }
 
             // Detect few strcat() calls
-            if (total_size > 0 && Token::Match(tok, "strcat ( %varid% , %str% ) ;", declarationId)) {
+            if (total_size > 0) {
                 std::size_t charactersAppend = 0;
                 const Token *tok2 = tok;
 
@@ -1064,7 +1064,7 @@ void CheckBufferOverrun::checkGlobalAndLocalVariable()
                 if (size < 0) {
                     negativeMemoryAllocationSizeError(tok->next()->next());
                 }
-            } else if (Token::Match(tok, "[*;{}] %var% = new %type% ( %num% )")) {
+            } else if (Token::Match(tok, "[*;{}] %var% = new %type% ( %num%|%name% )")) {
                 size = 1;
                 type = tok->strAt(4);
                 var = tok->next()->variable();
@@ -1736,7 +1736,7 @@ Check::FileInfo* CheckBufferOverrun::getFileInfo(const Tokenizer *tokenizer, con
                 tok->next()->astOperand2()) {
                 const ValueFlow::Value *value = tok->next()->astOperand2()->getMaxValue(false);
                 if (value && value->intvalue > 0) {
-                    const int arrayIndex = value->intvalue;
+                    const MathLib::bigint arrayIndex = value->intvalue;
                     std::map<std::string, struct MyFileInfo::ArrayUsage>::iterator it = fileInfo->arrayUsage.find(tok->str());
                     if (it != fileInfo->arrayUsage.end() && it->second.index >= arrayIndex)
                         continue;
