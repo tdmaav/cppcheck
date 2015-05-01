@@ -2313,3 +2313,108 @@ void CheckClass::copyCtorAndEqOperatorError(const Token *tok, const std::string 
 
     reportError(tok, Severity::warning, "copyCtorAndEqOperator", message);
 }
+
+
+
+void CheckClass::checkDublicates() {
+    const bool printStyle = _settings->isEnabled("style");
+    const bool printWarnings = _settings->isEnabled("warning");
+    if (!printStyle && !printWarnings)
+        return;
+
+    const std::size_t classes = symbolDatabase->classAndStructScopes.size();
+    for (std::size_t i = 0; i < classes; ++i) {
+        const Scope * scope = symbolDatabase->classAndStructScopes[i];
+
+        std::list<Function>::const_iterator func0;
+        for (func0 = scope->functionList.begin(); func0 != scope->functionList.end(); ++func0) {
+        	if (!func0->functionScope ||
+        		func0->isConstructor() ||
+        		func0->isOperator()) continue;
+
+        	// should we check this
+        	bool needCheck = false;
+        	if(func0->functionScope->classStart->next() == func0->functionScope->classEnd)
+        		continue;
+
+			for (const Token *tok = func0->functionScope->classStart;
+				tok && tok != func0->functionScope->classEnd;
+				tok = tok->next()) {
+
+				const Variable* var = tok->variable();
+				if (var) {
+					if (var->isStatic()) {
+						break;
+					}
+					if (!var->isArgument()) {
+						needCheck = true;
+						break;
+					}
+				}
+			}
+			if (!needCheck) continue;
+
+        	// compare with other functions
+            std::list<Function>::const_iterator func1 = func0;
+        	for (++func1; func1 != scope->functionList.end(); ++func1) {
+        		if (!func1->functionScope) continue;
+            	if (func1->functionScope->classStart->next() == func1->functionScope->classEnd)
+            		continue;
+
+            	// compare types
+            	//if (func0->isConst() != func1->isConst()) continue;
+
+        		const Token *ret0 = func0->retDef;
+        		const Token *ret1 = func1->retDef;
+            	while (ret0 && ret1 && ret0->str() != func0->name()) {
+            		if (ret0->str() != ret1->str()) {
+            			ret0 = 0;
+            			break;
+            		}
+            		ret0 = ret0->next();
+            		ret1 = ret1->next();
+            	}
+            	if (!ret0)
+            		continue;
+
+            	// compare tokens
+        		bool eq = true;
+        		const Token *tok0 = func0->functionScope->classStart;
+        		const Token *tok1 = func1->functionScope->classStart;
+        		for (;
+        			tok0 && tok0 != func0->functionScope->classEnd &&
+        			tok1 && tok1 != func1->functionScope->classEnd;
+					tok0 = tok0->next(), tok1 = tok1->next()) {
+
+        			if ((tok0->str() != tok1->str()) ||
+        				(tok0->isUnsigned() != tok1->isUnsigned()) ) {
+        				eq = false;
+        				break;
+        			}
+
+        			const Variable *var0 = tok0->variable();
+        			const Variable *var1 = tok1->variable();
+        			if (var0 && var1 && var0->isArgument() != var1->isArgument()) {
+            			eq = false;
+            			break;
+        			}
+				}
+
+        		if (tok0 == func0->functionScope->classEnd &&
+            		tok1 == func1->functionScope->classEnd &&
+            		eq) {
+        			dublicatesError(func0->functionScope->classStart,
+        					func0->name(),
+        					func1->name());
+        		}
+        	}
+
+        }
+    }
+
+}
+
+void CheckClass::dublicatesError(const Token *tok, const std::string &func0, const std::string &func1) {
+	const std::string message = "Method '" + func0 + "' is fully equivalent of '" + func1 + "'.";
+	reportError(tok, Severity::warning, "methodDublicates", message);
+}

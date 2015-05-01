@@ -78,6 +78,7 @@ public:
         checkClass.checkDuplInheritedMembers();
         checkClass.checkExplicitConstructors();
         checkClass.checkCopyCtorAndEqOperator();
+        checkClass.checkDublicates();
     }
 
 
@@ -140,6 +141,8 @@ public:
     /** @brief Check that copy constructor and operator defined together */
     void checkCopyCtorAndEqOperator();
 
+    void checkDublicates();
+
 private:
     const SymbolDatabase *symbolDatabase;
 
@@ -173,6 +176,7 @@ private:
     void callsPureVirtualFunctionError(const Function & scopeFunction, const std::list<const Token *> & tokStack, const std::string &purefuncname);
     void duplInheritedMembersError(const Token* tok1, const Token* tok2, const std::string &derivedname, const std::string &basename, const std::string &variablename, bool derivedIsStruct, bool baseIsStruct);
     void copyCtorAndEqOperatorError(const Token *tok, const std::string &classname, bool isStruct, bool hasCopyCtor);
+    void dublicatesError(const Token *tok, const std::string &func0, const std::string &func1);
 
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const {
         CheckClass c(0, settings, errorLogger);
