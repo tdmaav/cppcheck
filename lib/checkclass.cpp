@@ -2317,9 +2317,7 @@ void CheckClass::copyCtorAndEqOperatorError(const Token *tok, const std::string 
 
 
 void CheckClass::checkDublicates() {
-    const bool printStyle = _settings->isEnabled("style");
-    const bool printWarnings = _settings->isEnabled("warning");
-    if (!printStyle && !printWarnings)
+    if (!_settings->isEnabled("style"))
         return;
 
     const std::size_t classes = symbolDatabase->classAndStructScopes.size();
