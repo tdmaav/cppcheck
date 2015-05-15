@@ -683,14 +683,14 @@ void CheckBufferOverrun::checkScope(const Token *tok, const std::vector<std::str
                 std::size_t charactersAppend = 0;
                 const Token *tok2 = tok;
 
-                while (Token::Match(tok2, strcatPattern.c_str(), declarationId)) {
+                do {
                     charactersAppend += Token::getStrLength(tok2->tokAt(4 + varcount));
                     if (charactersAppend >= static_cast<std::size_t>(total_size)) {
                         bufferOverrunError(tok2);
                         break;
                     }
                     tok2 = tok2->tokAt(7 + varcount);
-                }
+                } while (Token::Match(tok2, strcatPattern.c_str(), declarationId));
             }
 
             // Check function call..
@@ -968,6 +968,33 @@ void CheckBufferOverrun::checkScope(const Token *tok, const ArrayInfo &arrayInfo
             }
         }
     }
+}
+
+//---------------------------------------------------------------------------
+// Negative size in array declarations
+//---------------------------------------------------------------------------
+
+void CheckBufferOverrun::negativeArraySize()
+{
+    const SymbolDatabase* symbolDatabase = _tokenizer->getSymbolDatabase();
+    for (unsigned int i = 1; i <= _tokenizer->varIdCount(); i++) {
+        const Variable * const var = symbolDatabase->getVariableFromVarId(i);
+        if (!var || !var->isArray())
+            continue;
+        const Token * const nameToken = var->nameToken();
+        if (!Token::Match(nameToken, "%var% [") || !nameToken->next()->astOperand2())
+            continue;
+        const ValueFlow::Value *sz = nameToken->next()->astOperand2()->getValueLE(-1,_settings);
+        if (!sz)
+            continue;
+        negativeArraySizeError(nameToken);
+    }
+}
+
+void CheckBufferOverrun::negativeArraySizeError(const Token *tok)
+{
+    reportError(tok, Severity::error, "negativeArraySize",
+                "Declaration of array '" + (tok ? tok->str() : std::string()) + "' with negative size is undefined behaviour");
 }
 
 //---------------------------------------------------------------------------

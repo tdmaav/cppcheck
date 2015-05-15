@@ -455,6 +455,8 @@ private:
         TEST_CASE(simplifyMathExpressions); //ticket #1620
         TEST_CASE(simplifyStaticConst);
 
+        TEST_CASE(simplifyDeprecated);
+
         TEST_CASE(compileLimits); // #5592 crash: gcc: testsuit: gcc.c-torture/compile/limits-declparen.c
 
         // AST data
@@ -473,6 +475,7 @@ private:
         TEST_CASE(removeMacroInClassDef); // #6058
 
         TEST_CASE(sizeofAddParentheses);
+        TEST_CASE(incompleteTernary); // #6659
     }
 
     std::string tokenizeAndStringify(const char code[], bool simplify = false, bool expand = true, Settings::PlatformType platform = Settings::Unspecified, const char* filename = "test.cpp", bool cpp11 = true) {
@@ -8357,6 +8360,17 @@ private:
         ASSERT_EQUALS(expected2, tokenizeAndStringify(code2, true));
     }
 
+    void simplifyDeprecated() {
+        ASSERT_EQUALS("int f ( ) ;",
+                      tokenizeAndStringify("[[deprecated]] int f();", false, true, Settings::Unspecified, "test.cpp", true));
+
+        ASSERT_EQUALS("[ [ deprecated ] ] int f ( ) ;",
+                      tokenizeAndStringify("[[deprecated]] int f();", false, true, Settings::Unspecified, "test.cpp", false));
+
+        ASSERT_EQUALS("[ [ deprecated ] ] int f ( ) ;",
+                      tokenizeAndStringify("[[deprecated]] int f();", false, true, Settings::Unspecified, "test.c", true));
+    }
+
     static std::string testAst(const char code[],bool verbose=false) {
         // tokenize given code..
         const Settings settings;
@@ -8724,6 +8738,17 @@ private:
                             "    } halo;\n"
                             "}\n"
                             "CS_PLUGIN_NAMESPACE_END(csparser)\n";
+        tokenizeAndStringify(code, true);
+    }
+
+    // #6659 heap user after free: kernel: sm750_accel.c
+    void incompleteTernary() {
+        const char * code = "void hw_copyarea() {\n"
+                            "   de_ctrl = (nDirection == RIGHT_TO_LEFT) ?\n"
+                            "    ( (0 & ~(((1 << (1 - (0 ? DE_CONTROL_DIRECTION))) - 1) << (0 ? DE_CONTROL_DIRECTION))) )\n"
+                            "    : 42;\n"
+                            "}";
+
         tokenizeAndStringify(code, true);
     }
 };

@@ -75,6 +75,9 @@ private:
         TEST_CASE(garbageCode34); // #6626
         TEST_CASE(garbageCode35); // #2599, #2604
         TEST_CASE(garbageCode36); // #6334
+        TEST_CASE(garbageCode37); // #5166
+        TEST_CASE(garbageCode38); // #6666
+        TEST_CASE(garbageCode39); // #6686
 
         TEST_CASE(garbageValueFlow);
         TEST_CASE(garbageSymbolDatabase);
@@ -209,7 +212,7 @@ private:
 
         ASSERT_THROW(checkCode("void f() {switch (n) { case 0?1;:{2} : z(); break;}}"), InternalError);
 
-        ASSERT_THROW(checkCode("void f() {switch (n) { case 0?(1?{3:4}):2 : z(); break;}}"), InternalError);
+        checkCode("void f() {switch (n) { case 0?(1?{3:4}):2 : z(); break;}}");
 
         //ticket #4234
         ASSERT_THROW(checkCode("( ) { switch break ; { switch ( x ) { case } y break ; : } }"), InternalError);
@@ -430,6 +433,28 @@ private:
         checkCode("sizeof <= A");
     }
 
+    void garbageCode36() { // #6334
+        checkCode("{ } < class template < > , { = } ; class... >\n"
+                  "struct Y { }\n"
+                  "class Types { }\n"
+                  "( X < int > \"uses template\" ) ( < ( ) \"uses ; \n"
+                  "( int int ::primary \"uses template\" ) int double \"uses )\n"
+                  "::primary , \"uses template\" ;\n");
+    }
+
+    void garbageCode37() {
+        // #5166 segmentation fault (invalid code) in lib/checkother.cpp:329 ( void * f { } void b ( ) { * f } )
+        checkCode("void * f { } void b ( ) { * f }");
+    }
+
+    void garbageCode38() { // Ticket #6666
+        checkCode("{ f2 { } } void f3 () { delete[] } { }");
+    }
+
+    void garbageCode39() { // #6686
+        checkCode("({ (); strcat(strcat(() ()) ()) })");
+    }
+
     void garbageValueFlow() {
         // #6089
         const char* code = "{} int foo(struct, x1, struct x2, x3, int, x5, x6, x7)\n"
@@ -543,15 +568,6 @@ private:
             "        using AliasA = A<T>;\n"
             "}\n"
         );
-    }
-
-    void garbageCode36() { // #6334
-        checkCode("{ } < class template < > , { = } ; class... >\n"
-                  "struct Y { }\n"
-                  "class Types { }\n"
-                  "( X < int > \"uses template\" ) ( < ( ) \"uses ; \n"
-                  "( int int ::primary \"uses template\" ) int double \"uses )\n"
-                  "::primary , \"uses template\" ;\n");
     }
 };
 
