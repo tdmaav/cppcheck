@@ -240,6 +240,7 @@ private:
         TEST_CASE(findFunction4);
         TEST_CASE(findFunction5); // #6230
         TEST_CASE(findFunction6);
+        TEST_CASE(findFunction7); // #6700
 
         TEST_CASE(noexceptFunction1);
         TEST_CASE(noexceptFunction2);
@@ -659,8 +660,10 @@ private:
             bool result = si.isVariableDeclaration(list.front(), vartok, typetok);
             ASSERT_EQUALS(true, result);
             Variable v(vartok, list.front(), list.back(), 0, Public, 0, 0, &settings.library);
-            const char* types[] = { "string", "wstring" };
-            const char* no_types[] = { "set" };
+            static const std::set<std::string> types = make_container< std::set<std::string> >() <<
+                    "string" << "wstring" ;
+            static const std::set<std::string> no_types = make_container< std::set<std::string> >() <<
+                    "set" ;
             ASSERT_EQUALS(true, v.isStlType());
             ASSERT_EQUALS(true, v.isStlType(types));
             ASSERT_EQUALS(false, v.isStlType(no_types));
@@ -675,8 +678,10 @@ private:
             bool result = si.isVariableDeclaration(list.front(), vartok, typetok);
             ASSERT_EQUALS(true, result);
             Variable v(vartok, list.front(), list.back(), 0, Public, 0, 0, &settings.library);
-            const char* types[] = { "bitset", "set", "vector", "wstring" };
-            const char* no_types[] = { "bitset", "map", "set" };
+            static const std::set<std::string> types = make_container< std::set<std::string> >() <<
+                    "bitset" << "set" << "vector" << "wstring" ;
+            static const std::set<std::string> no_types = make_container< std::set<std::string> >() <<
+                    "bitset" << "map" << "set" ;
             ASSERT_EQUALS(true, v.isStlType());
             ASSERT_EQUALS(true, v.isStlType(types));
             ASSERT_EQUALS(false, v.isStlType(no_types));
@@ -690,7 +695,8 @@ private:
             bool result = si.isVariableDeclaration(list.front(), vartok, typetok);
             ASSERT_EQUALS(true, result);
             Variable v(vartok, list.front(), list.back(), 0, Public, 0, 0, &settings.library);
-            const char* types[] = { "bitset", "set", "vector" };
+            static const std::set<std::string> types = make_container< std::set<std::string> >() <<
+                    "bitset" << "set" << "vector" ;
             ASSERT_EQUALS(false, v.isStlType());
             ASSERT_EQUALS(false, v.isStlType(types));
             ASSERT_EQUALS(false, v.isStlStringType());
@@ -2511,6 +2517,26 @@ private:
         const Token *f = Token::findsimplematch(tokenizer.tokens(), "void addtoken ( Token * *");
         ASSERT_EQUALS(true, db && f && !f->function()); // regression value only
     }
+
+    void findFunction7() {
+        GET_SYMBOL_DB("class ResultEnsemble {\n"
+                      "public:\n"
+                      "    std::vector<int> &nodeResults() const;\n"
+                      "    std::vector<int> &nodeResults();\n"
+                      "};\n"
+                      "class Simulator {\n"
+                      "    int generatePinchResultEnsemble(const ResultEnsemble &power, const ResultEnsemble &ground) {\n"
+                      "        power.nodeResults().size();\n"
+                      "        assert(power.nodeResults().size()==ground.nodeResults().size());\n"
+                      "    }\n"
+                      "};")
+        const Token *callfunc = Token::findsimplematch(tokenizer.tokens(), "power . nodeResults ( ) . size ( ) ;");
+        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS(true, db != nullptr); // not null
+        ASSERT_EQUALS(true, callfunc != nullptr); // not null
+        ASSERT_EQUALS(true, callfunc && callfunc->tokAt(2)->function() && callfunc->tokAt(2)->function()->tokenDef->linenr() == 3);
+    }
+
 
 
 #define FUNC(x) const Function *x = findFunctionByName(#x, &db->scopeList.front()); \

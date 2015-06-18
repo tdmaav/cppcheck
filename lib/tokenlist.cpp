@@ -132,7 +132,7 @@ void TokenList::addtoken(const std::string & str, const unsigned int lineno, con
     std::string str2;
     if (MathLib::isHex(str) || MathLib::isOct(str) || MathLib::isBin(str)) {
         std::ostringstream str2stream;
-        str2stream << MathLib::toLongNumber(str);
+        str2stream << MathLib::toULongNumber(str);
         str2 = str2stream.str();
     } else if (str.compare(0, 5, "_Bool") == 0) {
         str2 = "bool";
@@ -156,7 +156,7 @@ void TokenList::addtoken(const std::string & str, const unsigned int lineno, con
 
 void TokenList::addtoken(const Token * tok, const unsigned int lineno, const unsigned int fileno)
 {
-    if (tok == 0)
+    if (tok == nullptr)
         return;
 
     if (_back) {
@@ -400,7 +400,7 @@ unsigned long long TokenList::calculateChecksum() const
 {
     unsigned long long checksum = 0;
     for (const Token* tok = front(); tok; tok = tok->next()) {
-        unsigned int subchecksum1 = tok->flags() + tok->varId() + static_cast<unsigned int>(tok->type());
+        const unsigned int subchecksum1 = tok->flags() + tok->varId() + static_cast<unsigned int>(tok->type());
         unsigned int subchecksum2 = 0;
         for (std::size_t i = 0; i < tok->str().size(); i++)
             subchecksum2 += (unsigned int)tok->str()[i];
@@ -411,7 +411,7 @@ unsigned long long TokenList::calculateChecksum() const
 
         checksum ^= ((static_cast<unsigned long long>(subchecksum1) << 32) | subchecksum2);
 
-        bool bit1 = (checksum & 1) != 0;
+        const bool bit1 = (checksum & 1) != 0;
         checksum >>= 1;
         if (bit1)
             checksum |= (1ULL << 63);
@@ -596,16 +596,15 @@ static void compilePrecedence2(Token *&tok, AST_state& state)
                 // What we do here:
                 // - Nest the round bracket under the square bracket.
                 // - Nest what follows the lambda (if anything) with the lambda opening [
-                // - Compile the content of the lambda function as separate tree
+                // - Compile the content of the lambda function as separate tree (this is done later)
                 Token* squareBracket = tok;
                 Token* roundBracket = squareBracket->link()->next();
                 Token* curlyBracket = Token::findsimplematch(roundBracket->link()->next(), "{");
                 if (!curlyBracket)
                     break;
-                tok = curlyBracket->next();
-                compileExpression(tok, state);
-                state.op.push(roundBracket);
-                compileUnaryOp(squareBracket, state, nullptr);
+                squareBracket->astOperand1(roundBracket);
+                roundBracket->astOperand1(curlyBracket);
+                state.op.push(squareBracket);
                 tok = curlyBracket->link()->next();
             } else {
                 Token* tok2 = tok;
@@ -618,8 +617,8 @@ static void compilePrecedence2(Token *&tok, AST_state& state)
         } else if (tok->str() == "(" && (!iscast(tok) || Token::Match(tok->previous(), "if|while|for|switch|catch"))) {
             Token* tok2 = tok;
             tok = tok->next();
-            bool opPrevTopSquare = !state.op.empty() && state.op.top() && state.op.top()->str() == "[";
-            std::size_t oldOpSize = state.op.size();
+            const bool opPrevTopSquare = !state.op.empty() && state.op.top() && state.op.top()->str() == "[";
+            const std::size_t oldOpSize = state.op.size();
             compileExpression(tok, state);
             tok = tok2;
             if ((tok->previous() && tok->previous()->isName() && (tok->strAt(-1) != "return" && (!state.cpp || !Token::Match(tok->previous(), "throw|delete"))))
@@ -689,7 +688,7 @@ static void compilePrecedence3(Token *&tok, AST_state& state)
                 state.op.push(tok->next());
                 tok = tok->link()->next();
                 compileBinOp(tok, state, compilePrecedence2);
-            } else if (tok->str() == "[" || tok->str() == "(")
+            } else if (tok && (tok->str() == "[" || tok->str() == "("))
                 compilePrecedence2(tok, state);
             else if (innertype && Token::simpleMatch(tok, ") [")) {
                 tok = tok->next();
@@ -701,7 +700,7 @@ static void compilePrecedence3(Token *&tok, AST_state& state)
         } else if (state.cpp && Token::Match(tok, "delete %name%|*|&|::|(|[")) {
             Token* tok2 = tok;
             tok = tok->next();
-            if (tok->str() == "[")
+            if (tok && tok->str() == "[")
                 tok = tok->link()->next();
             compilePrecedence3(tok, state);
             compileUnaryOp(tok2, state, nullptr);
@@ -947,15 +946,24 @@ static Token * createAstAtToken(Token *tok, bool cpp)
         if (endToken == tok1)
             return tok1;
 
-        // Compile inner expressions inside inner ({..})
+        // Compile inner expressions inside inner ({..}) and lambda bodies
         for (tok = tok1->next(); tok && tok != endToken; tok = tok ? tok->next() : NULL) {
-            if (!Token::simpleMatch(tok, "( {"))
+            if (tok->str() != "{")
                 continue;
-            if (tok->next() == endToken)
+
+            if (Token::simpleMatch(tok->previous(), "( {"))
+                ;
+            else if (Token::simpleMatch(tok->astParent(), "(") &&
+                     Token::simpleMatch(tok->astParent()->astParent(), "[") &&
+                     tok == tok->astParent()->astParent()->astOperand1()->astOperand1())
+                ;
+            else
+                continue;
+
+            if (Token::simpleMatch(tok->previous(), "( { ."))
                 break;
-            if (Token::simpleMatch(tok, "( { ."))
-                break;
-            const Token * const endToken2 = tok->linkAt(1);
+
+            const Token * const endToken2 = tok->link();
             for (; tok && tok != endToken && tok != endToken2; tok = tok ? tok->next() : NULL)
                 tok = createAstAtToken(tok, cpp);
         }

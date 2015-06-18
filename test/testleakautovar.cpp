@@ -109,6 +109,7 @@ private:
         TEST_CASE(ptrptr);
 
         TEST_CASE(nestedAllocation);
+        TEST_CASE(testKeywords); // #6767
     }
 
     void check(const char code[], bool cpp = false) {
@@ -1139,15 +1140,108 @@ private:
         check("void QueueDSMCCPacket(unsigned char *data, int length) {\n"
               "    unsigned char *dataCopy = malloc(length * sizeof(unsigned char));\n"
               "    m_dsmccQueue.enqueue(new DSMCCPacket(dataCopy));\n"
-              "}");
-        ASSERT_EQUALS("[test.c:4]: (information) --check-library: Function DSMCCPacket() should have <use>/<leak-ignore> configuration\n", errout.str());
+              "}", true);
+        ASSERT_EQUALS("[test.cpp:4]: (information) --check-library: Function DSMCCPacket() should have <use>/<leak-ignore> configuration\n", errout.str());
 
         check("void QueueDSMCCPacket(unsigned char *data, int length) {\n"
               "    unsigned char *dataCopy = malloc(length * sizeof(unsigned char));\n"
               "    m_dsmccQueue.enqueue(new DSMCCPacket(somethingunrelated));\n"
+              "}", true);
+        ASSERT_EQUALS("[test.cpp:4]: (error) Memory leak: dataCopy\n", errout.str());
+    }
+
+    void testKeywords() {
+        check("int main(int argc, char **argv) {\n"
+              "  double *new = malloc(1*sizeof(double));\n"
+              "  free(new);\n"
+              "  return 0;\n"
               "}");
-        ASSERT_EQUALS("[test.c:4]: (error) Memory leak: dataCopy\n", errout.str());
+        ASSERT_EQUALS("", errout.str());
     }
 };
 
 REGISTER_TEST(TestLeakAutoVar)
+
+
+
+
+
+class TestLeakAutoVarWindows : public TestFixture {
+public:
+    TestLeakAutoVarWindows() : TestFixture("TestLeakAutoVarWindows") {
+    }
+
+private:
+    Settings settings;
+
+    void check(const char code[]) {
+        // Clear the error buffer..
+        errout.str("");
+
+        // Tokenize..
+        Tokenizer tokenizer(&settings, this);
+        std::istringstream istr(code);
+        tokenizer.tokenize(istr, "test.c");
+        tokenizer.simplifyTokenList2();
+
+        // Check for leaks..
+        CheckLeakAutoVar checkLeak;
+        checkLeak.runSimplifiedChecks(&tokenizer, &settings, this);
+    }
+
+    void run() {
+        LOAD_LIB_2(settings.library, "windows.cfg");
+
+        TEST_CASE(heapDoubleFree);
+    }
+
+    void heapDoubleFree() {
+        check("void f() {"
+              "  HANDLE MyHeap = HeapCreate(0, 0, 0);"
+              "  int *a = HeapAlloc(MyHeap, 0, sizeof(int));"
+              "  int *b = HeapAlloc(MyHeap, 0, sizeof(int));"
+              "  HeapFree(MyHeap, 0, a);"
+              "  HeapFree(MyHeap, 0, b);"
+              "  HeapDestroy(MyHeap);"
+              "}");
+        TODO_ASSERT_EQUALS("", "[test.c:1]: (error) Mismatching allocation and deallocation: MyHeap\n"
+                           "[test.c:1]: (error) Resource handle 'MyHeap' freed twice.\n", errout.str());
+
+        check("void f() {"
+              "  int *a = HeapAlloc(GetProcessHeap(), 0, sizeof(int));"
+              "  int *b = HeapAlloc(GetProcessHeap(), 0, sizeof(int));"
+              "  HeapFree(GetProcessHeap(), 0, a);"
+              "  HeapFree(GetProcessHeap(), 0, b);"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {"
+              "  HANDLE MyHeap = HeapCreate(0, 0, 0);"
+              "  int *a = HeapAlloc(MyHeap, 0, sizeof(int));"
+              "  int *b = HeapAlloc(MyHeap, 0, sizeof(int));"
+              "  HeapFree(MyHeap, 0, a);"
+              "  HeapDestroy(MyHeap);"
+              "}");
+        TODO_ASSERT_EQUALS("[test.c:1] (error) Memory leak: b", "[test.c:1]: (error) Mismatching allocation and deallocation: MyHeap\n"
+                           "[test.c:1]: (error) Memory leak: b\n", errout.str());
+
+        check("void f() {"
+              "  HANDLE MyHeap = HeapCreate(0, 0, 0);"
+              "  int *a = HeapAlloc(MyHeap, 0, sizeof(int));"
+              "  int *b = HeapAlloc(MyHeap, 0, sizeof(int));"
+              "  HeapFree(MyHeap, 0, a);"
+              "  HeapFree(MyHeap, 0, b);"
+              "}");
+        TODO_ASSERT_EQUALS("[test.c:1] (error) Resource leak: MyHeap", "[test.c:1]: (error) Mismatching allocation and deallocation: MyHeap\n", errout.str());
+
+        check("void f() {"
+              "  HANDLE MyHeap = HeapCreate(0, 0, 0);"
+              "  int *a = HeapAlloc(MyHeap, 0, sizeof(int));"
+              "  int *b = HeapAlloc(MyHeap, 0, sizeof(int));"
+              "  HeapFree(MyHeap, 0, a);"
+              "}");
+        TODO_ASSERT_EQUALS("[test.c:1] (error) Resource leak: MyHeap\n[test.c:1] (error) Memory leak: b",
+                           "[test.c:1]: (error) Mismatching allocation and deallocation: MyHeap\n[test.c:1]: (error) Memory leak: b\n", errout.str());
+    }
+};
+static TestLeakAutoVarWindows testLeakAutoVarWindows;

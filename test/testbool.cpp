@@ -135,6 +135,35 @@ private:
               "    X *p = new ::std::pair<int,int>[rSize];\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        // ticket #6588 (c mode)
+        check("struct MpegEncContext { int *q_intra_matrix, *q_chroma_intra_matrix; };\n"
+              "void dnxhd_10bit_dct_quantize(MpegEncContext *ctx, int n, int qscale) {\n"
+              "  const int *qmat = n < 4;\n" /* KO */
+              "  const int *rmat = n < 4 ? " /* OK */
+              "                       ctx->q_intra_matrix :"
+              "                       ctx->q_chroma_intra_matrix;\n"
+              "}", /*experimental=*/false, "test.c");
+        ASSERT_EQUALS("[test.c:3]: (error) Boolean value assigned to pointer.\n", errout.str());
+
+        // ticket #6588 (c++ mode)
+        check("struct MpegEncContext { int *q_intra_matrix, *q_chroma_intra_matrix; };\n"
+              "void dnxhd_10bit_dct_quantize(MpegEncContext *ctx, int n, int qscale) {\n"
+              "  const int *qmat = n < 4;\n" /* KO */
+              "  const int *rmat = n < 4 ? " /* OK */
+              "                       ctx->q_intra_matrix :"
+              "                       ctx->q_chroma_intra_matrix;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:3]: (error) Boolean value assigned to pointer.\n", errout.str());
+
+        // ticket #6665
+        check("void pivot_big(char *first, int compare(const void *, const void *)) {\n"
+              "  char *a = first, *b = first + 1, *c = first + 2;\n"
+              "  char* m1 = compare(a, b) < 0\n"
+              "      ? (compare(b, c) < 0 ? b : (compare(a, c) < 0 ? c : a))\n"
+              "      : (compare(a, c) < 0 ? a : (compare(b, c) < 0 ? c : b));\n"
+              "}", /*experimental=*/false, "test.c");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void assignBoolToFloat() {

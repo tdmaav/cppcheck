@@ -75,7 +75,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                     if (tok2->next()->str() == ";")
                         tok = tok2->next();
                     else if (Token::simpleMatch(tok2->next(), "= {") &&
-                             tok2->linkAt(2)->next()->str() == ";")
+                             Token::simpleMatch(tok2->linkAt(2), "} ;"))
                         tok = tok2->linkAt(2)->next();
                     else if (Token::Match(tok2->next(), "(|{") &&
                              tok2->next()->link()->strAt(1) == ";")
@@ -206,7 +206,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
         }
 
         // using namespace
-        else if (Token::Match(tok, "using namespace ::| %type% ;|::")) {
+        else if (_tokenizer->isCPP() && Token::Match(tok, "using namespace ::| %type% ;|::")) {
             Scope::UsingInfo using_info;
 
             using_info.start = tok; // save location
@@ -622,7 +622,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                 }
 
                 // friend class declaration?
-                else if (Token::Match(tok, "friend class| ::| %any% ;|::")) {
+                else if (_tokenizer->isCPP() && Token::Match(tok, "friend class| ::| %any% ;|::")) {
                     Type::FriendInfo friendInfo;
 
                     // save the name start
@@ -644,6 +644,10 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                     // fill this in after parsing is complete
                     friendInfo.type = 0;
 
+                    if (!scope->definedType) {
+                        _tokenizer->syntaxError(tok);
+                        return;
+                    }
                     scope->definedType->friendList.push_back(friendInfo);
                 }
             } else if (scope->type == Scope::eNamespace || scope->type == Scope::eGlobal) {
@@ -1299,7 +1303,7 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
     }
 
     // regular function?
-    else if (Token::Match(tok, "%name% (") && tok->previous() &&
+    else if (Token::Match(tok, "%name% (") && !isReservedName(tok->str()) && tok->previous() &&
              (tok->previous()->isName() || tok->strAt(-1) == ">" || tok->strAt(-1) == "&" || tok->strAt(-1) == "*" || // Either a return type in front of tok
               tok->strAt(-1) == "::" || tok->strAt(-1) == "~" || // or a scope qualifier in front of tok
               outerScope->isClassOrStruct())) { // or a ctor/dtor
@@ -1954,14 +1958,16 @@ const Token *Type::initBaseInfo(const Token *tok, const Token *tok1)
                 else if (tok->str() == "struct")
                     base.access = Public;
             }
-
+            if (!tok2)
+                return nullptr;
             if (tok2->str() == "virtual") {
                 base.isVirtual = true;
                 tok2 = tok2->next();
             }
 
             base.nameTok = tok2;
-
+            if (!tok2)
+                return nullptr;
             // handle global namespace
             if (tok2->str() == "::") {
                 tok2 = tok2->next();
@@ -1971,6 +1977,8 @@ const Token *Type::initBaseInfo(const Token *tok, const Token *tok1)
             while (Token::Match(tok2, "%name% ::")) {
                 tok2 = tok2->tokAt(2);
             }
+            if (!tok2)
+                return nullptr;
 
             base.name = tok2->str();
 
@@ -3101,7 +3109,7 @@ void Scope::findFunctionInBase(const std::string & name, size_t args, std::vecto
   This can be difficult because of promotion and conversion operators and casts
   and because the argument can also be a function call.
  */
-const Function* Scope::findFunction(const Token *tok) const
+const Function* Scope::findFunction(const Token *tok, bool requireConst) const
 {
     // make sure this is a function call
     const Token *end = tok->linkAt(1);
@@ -3232,6 +3240,9 @@ const Function* Scope::findFunction(const Token *tok) const
 
         // check if all arguments matched
         if (same == args) {
+            if (requireConst && func->isConst())
+                return func;
+
             // get the function this call is in
             const Scope * scope = tok->scope();
 
@@ -3320,7 +3331,7 @@ const Function* SymbolDatabase::findFunction(const Token *tok) const
         if (Token::Match(tok1, "%var% .")) {
             const Variable *var = getVariableFromVarId(tok1->varId());
             if (var && var->typeScope())
-                return var->typeScope()->findFunction(tok);
+                return var->typeScope()->findFunction(tok, var->isConst());
         }
     }
 
@@ -3587,4 +3598,29 @@ Function * SymbolDatabase::findFunctionInScope(const Token *func, const Scope *n
     }
 
     return const_cast<Function *>(function);
+}
+
+//---------------------------------------------------------------------------
+
+bool SymbolDatabase::isReservedName(const std::string& iName) const
+{
+    static const std::set<std::string> c_keywords = make_container<std::set<std::string>>() <<
+            "auto" << "break" << "case" << "char" << "const" << "continue" << "default" << "do" <<
+            "double" << "else" << "enum" << "extern" << "float" << "for" << "goto" << "if" << "inline" <<
+            "int" << "long" << "register" << "restrict" << "return" << "short" << "signed" << "sizeof" <<
+            "static" << "struct" << "switch" << "typedef" << "union" << "unsigned" << "void" << "volatile" <<
+            "while";
+    static const std::set<std::string> cpp_keywords = make_container<std::set<std::string>>() <<
+            "alignas" << "alignof" << "and" << "and_eq" << "asm" << "auto" << "bitand" << "bitor" << "bool" <<
+            "break" << "case" << "catch" << "char" << "char16_t" << "char32_t" << "class" << "compl" <<
+            "concept" << "const" << "constexpr" << "const_cast" << "continue" << "decltype" << "default" <<
+            "delete" << "do" << "double" << "dynamic_cast" << "else" << "enum" << "explicit" << "export" <<
+            "extern" << "false" << "float" << "for" << "friend" << "goto" << "if" << "inline" << "int" << "long" <<
+            "mutable" << "namespace" << "new" << "noexcept" << "not" << "not_eq" << "nullptr" << "operator" <<
+            "or" << "or_eq" << "private" << "protected" << "public" << "register" << "reinterpret_cast" <<
+            "requires" << "return" << "short" << "signed" << "sizeof" << "static" << "static_assert" <<
+            "static_cast" << "struct" << "switch" << "template" << "this" << "thread_local" << "throw" <<
+            "true" << "try" << "typedef" << "typeid" << "typename" << "union" << "unsigned" << "using" <<
+            "virtual" << "void" << "volatile" << "wchar_t" << "while" << "xor" << "xor_eq";
+    return (c_keywords.find(iName) != c_keywords.cend()) || (isCPP() && (cpp_keywords.find(iName) != cpp_keywords.cend()));
 }

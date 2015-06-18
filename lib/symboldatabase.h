@@ -488,12 +488,25 @@ public:
      *   ...
      *   const char *str[] = {"string", "wstring"};
      *   sVar->isStlType(str) == true
-     * @param stlTypes array of stl types in alphabetical order
+     * @param stlTypes set of stl types
      * @return true if it is an stl type and its type matches any of the types in 'stlTypes'
      */
-    template <std::size_t array_length>
-    bool isStlType(const char* const(&stlTypes)[array_length]) const {
-        return isStlType() && std::binary_search(stlTypes, stlTypes + array_length, _start->strAt(2));
+    bool isStlType(const std::string& stlType) const {
+        return isStlType() && stlType==_start->strAt(2);
+    }
+
+    /**
+     * Checks if the variable is of any of the STL types passed as arguments ('std::')
+     * E.g.:
+     *   std::string s;
+     *   ...
+     *   const std::set<std::string> str = make_container< std::set<std::string> >() << "string" << "wstring";
+     *   sVar->isStlType(str) == true
+     * @param stlTypes set of stl types
+     * @return true if it is an stl type and its type matches any of the types in 'stlTypes'
+     */
+    bool isStlType(const std::set<std::string>& stlTypes) const {
+        return isStlType() && stlTypes.find(_start->strAt(2))!=stlTypes.end();
     }
 
     /**
@@ -829,9 +842,10 @@ public:
     /**
      * @brief find a function
      * @param tok token of function call
+     * @param requireConst if const refers to a const variable only const methods should be matched
      * @return pointer to function if found or NULL if not found
      */
-    const Function *findFunction(const Token *tok) const;
+    const Function *findFunction(const Token *tok, bool requireConst=false) const;
 
     /**
      * @brief find if name is in nested list
@@ -987,10 +1001,13 @@ private:
     Function *addGlobalFunctionDecl(Scope*& scope, const Token* tok, const Token *argStart, const Token* funcStart);
     Function *addGlobalFunction(Scope*& scope, const Token*& tok, const Token *argStart, const Token* funcStart);
     void addNewFunction(Scope **info, const Token **tok);
-    static bool isFunction(const Token *tok, const Scope* outerScope, const Token **funcStart, const Token **argStart);
+    bool isFunction(const Token *tok, const Scope* outerScope, const Token **funcStart, const Token **argStart);
     const Type *findTypeInNested(const Token *tok, const Scope *startScope) const;
     const Scope *findNamespace(const Token * tok, const Scope * scope) const;
     Function *findFunctionInScope(const Token *func, const Scope *ns);
+
+    /** Whether iName is a keyword as defined in http://en.cppreference.com/w/c/keyword and http://en.cppreference.com/w/cpp/keyword*/
+    bool isReservedName(const std::string& iName) const;
 
 
     const Tokenizer *_tokenizer;
@@ -1003,5 +1020,23 @@ private:
     /** list for missing types */
     std::list<Type> _blankTypes;
 };
+
+template < typename Cont >
+class make_container {
+public:
+    typedef make_container< Cont > my_type;
+    typedef typename Cont::value_type T;
+    my_type& operator<< (const T& val) {
+        data_.insert(data_.end(), val);
+        return *this;
+    }
+    operator Cont() const {
+        return data_;
+    }
+private:
+    Cont data_;
+};
+
+
 //---------------------------------------------------------------------------
 #endif // symboldatabaseH

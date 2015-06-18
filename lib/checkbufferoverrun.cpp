@@ -361,6 +361,10 @@ void CheckBufferOverrun::checkFunctionParameter(const Token &ftok, unsigned int 
         for (std::size_t i = 0; i < arrayInfo.num().size(); ++i)
             arraySize *= arrayInfo.num(i);
 
+        // dimension is 0 or unknown => bailout
+        if (arraySize == 0)
+            return;
+
         const Token *charSizeToken = nullptr;
         if (checkMinSizes(*minsizes, &ftok, (std::size_t)arraySize, &charSizeToken, _settings))
             bufferOverrunError(callstack, arrayInfo.varname());
@@ -1721,6 +1725,8 @@ void CheckBufferOverrun::arrayIndexThenCheck()
                 if (tok->type() == Token::eComparisonOp)
                     tok = tok->tokAt(2);
 
+                if (!tok)
+                    break;
                 // skip close parentheses
                 if (tok->str() == ")")
                     tok = tok->next();

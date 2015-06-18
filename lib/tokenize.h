@@ -621,6 +621,11 @@ public:
     void simplifyAsm();
 
     /**
+     * asm heuristics, Put ^{} statements in asm()
+     */
+    void simplifyAsm2();
+
+    /**
      * Simplify bitfields - the field width is removed as we don't use it.
      */
     void simplifyBitfields();
@@ -813,6 +818,8 @@ private:
     static Token * startOfExecutableScope(Token * tok) {
         return const_cast<Token*>(startOfExecutableScope(const_cast<const Token *>(tok)));
     }
+
+    Token *processFunc(Token *tok2, bool inOperator) const;
 
     /** Set pod types */
     void setPodTypes();

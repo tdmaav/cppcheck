@@ -206,9 +206,6 @@ private:
         TEST_CASE(file2);
         TEST_CASE(file3);
 
-        TEST_CASE(line1); // Ticket #4408
-        TEST_CASE(line2); // Ticket #5423
-
         TEST_CASE(doublesharp);
 
         TEST_CASE(isZeroNumber);
@@ -336,6 +333,7 @@ private:
         TEST_CASE(cpp0xtemplate2);
         TEST_CASE(cpp0xtemplate3);
         TEST_CASE(cpp0xtemplate4); // Ticket #6181: Mishandled C++11 syntax
+        TEST_CASE(cpp14template); // Ticket #6708
 
         TEST_CASE(arraySize);
 
@@ -2230,8 +2228,7 @@ private:
                                   "4:\n"
                                   "5: return u@1 && v@2 ;\n"
                                   "6: }\n";
-            const char current[] =  "\n\n##file 0\n1: bool foo ( int u@1 , int v@2 )\n2: {\n3:\n4: int i@4 ; i@4 = v@2 ;\n5: return u@1 && i@4 ;\n6: }\n";
-            TODO_ASSERT_EQUALS(wanted, current, tokenizeDebugListing(code, true));
+            ASSERT_EQUALS(wanted, tokenizeDebugListing(code, true));
         }
 
         {
@@ -2244,12 +2241,11 @@ private:
             const char wanted[] = "\n\n##file 0\n"
                                   "1: bool foo ( int u@1 , int v@2 )\n"
                                   "2: {\n"
-                                  "3: ;\n"
-                                  "4: ;\n"
+                                  "3:\n"
+                                  "4:\n"
                                   "5: return u@1 || v@2 ;\n"
                                   "6: }\n";
-            const char current[] =  "\n\n##file 0\n1: bool foo ( int u@1 , int v@2 )\n2: {\n3:\n4: int i@4 ; i@4 = v@2 ;\n5: return u@1 || i@4 ;\n6: }\n";
-            TODO_ASSERT_EQUALS(wanted, current, tokenizeDebugListing(code, true));
+            ASSERT_EQUALS(wanted, tokenizeDebugListing(code, true));
         }
     }
 
@@ -2661,6 +2657,26 @@ private:
                                 "const char x6 = 'b' ;\n"
                                 "v = { & x6 } ;\n"
                                 "const char x7 = 'b' ;\n"
+                                "return & x7 ;\n"
+                                "}";
+            ASSERT_EQUALS(code, tokenizeAndStringify(code, true));
+        }
+        {
+            //don't simplify '&x'!
+            const char code[] = "const int * foo ( ) {\n"
+                                "const int x1 = 1 ;\n"
+                                "f ( & x1 ) ;\n"
+                                "const int x2 = 1 ;\n"
+                                "f ( y , & x2 ) ;\n"
+                                "const int x3 = 1 ;\n"
+                                "t = & x3 ;\n"
+                                "const int x4 = 1 ;\n"
+                                "t = y + & x4 ;\n"
+                                "const int x5 = 1 ;\n"
+                                "z [ & x5 ] = y ;\n"
+                                "const int x6 = 1 ;\n"
+                                "v = { & x6 } ;\n"
+                                "const int x7 = 1 ;\n"
                                 "return & x7 ;\n"
                                 "}";
             ASSERT_EQUALS(code, tokenizeAndStringify(code, true));
@@ -3086,61 +3102,6 @@ private:
 
         ASSERT_EQUALS(Path::toNativeSeparators("[c:\\a.h:1]"), tokenizer.list.fileLine(tokenizer.tokens()));
     }
-
-
-    void line1() const {
-        // Test for Ticket #4408
-        const char code[] = "#file \"c:\\a.h\"\n"
-                            "first\n"
-                            "#line 5\n"
-                            "second\n"
-                            "#line not-a-number\n"
-                            "third\n"
-                            "#line 100 \"i.h\"\n"
-                            "fourth\n"
-                            "fifth\n"
-                            "#endfile\n";
-
-        errout.str("");
-
-        Settings settings;
-
-        TokenList tokenList(&settings);
-        std::istringstream istr(code);
-        bool res = tokenList.createTokens(istr, "a.cpp");
-        ASSERT_EQUALS(res, true);
-
-        for (const Token *tok = tokenList.front(); tok; tok = tok->next()) {
-            if (tok->str() == "first")
-                ASSERT_EQUALS(1, tok->linenr());
-            if (tok->str() == "second")
-                ASSERT_EQUALS(5, tok->linenr());
-            if (tok->str() == "third")
-                ASSERT_EQUALS(7, tok->linenr());
-            if (tok->str() == "fourth")
-                ASSERT_EQUALS(100, tok->linenr());
-            if (tok->str() == "fifth")
-                ASSERT_EQUALS(101, tok->linenr());
-        }
-    }
-
-    void line2() const {
-        const char code[] = "#line 8 \"c:\\a.h\"\n"
-                            "123\n";
-
-        errout.str("");
-
-        const Settings settings;
-
-        // tokenize..
-        TokenList tokenlist(&settings);
-        std::istringstream istr(code);
-        tokenlist.createTokens(istr, "a.cpp");
-
-        ASSERT_EQUALS(Path::toNativeSeparators("[c:\\a.h:8]"), tokenlist.fileLine(tokenlist.front()));
-    }
-
-
 
     void doublesharp() {
         const char code[] = "a##_##b TEST(var,val) var##_##val = val\n";
@@ -4443,18 +4404,67 @@ private:
 
     void removeKeywords() {
         const char code[] = "if (__builtin_expect(!!(x), 1));";
-
-        const std::string actual(tokenizeAndStringify(code, true));
-
-        ASSERT_EQUALS("if ( ! ! x ) { ; }", actual);
+        ASSERT_EQUALS("if ( ! ! x ) { ; }", tokenizeAndStringify(code, true));
     }
 
     void simplifyKeyword() {
-        const char code[] = "void f (int a [ static 5] );";
+        {
+            const char code[] = "void f (int a [ static 5] );";
+            ASSERT_EQUALS("void f ( int a [ 5 ] ) ;", tokenizeAndStringify(code));
+        }
+        {
+            const char in1[] = "class Base {\n"
+                               "  virtual int test() = 0;\n"
+                               "};\n"
+                               "class Derived : public Base {\n"
+                               "  virtual int test() override final {\n"
+                               "    for( int Index ( 0 ); Index < 16; ++ Index) { int stub = 0; }\n"
+                               "  }\n"
+                               "};";
+            const char out1[] = "class Base {\n"
+                                "virtual int test ( ) = 0 ;\n"
+                                "} ;\n"
+                                "class Derived : public Base {\n"
+                                "virtual int test ( ) {\n"
+                                "for ( int Index ( 0 ) ; Index < 16 ; ++ Index ) { int stub ; stub = 0 ; }\n"
+                                "}\n"
+                                "} ;";
+            ASSERT_EQUALS(out1, tokenizeAndStringify(in1));
+            const char in2[] =  "class Derived{\n"
+                                "  virtual int test() final override;"
+                                "};";
+            const char out2[] = "class Derived {\n"
+                                "virtual int test ( ) ; } ;";
+            ASSERT_EQUALS(out2, tokenizeAndStringify(in2));
+            const char in3[] =  "class Derived{\n"
+                                "  virtual int test() final override const;"
+                                "};";
+            const char out3[] = "class Derived {\n"
+                                "virtual int test ( ) const ; } ;";
+            ASSERT_EQUALS(out3, tokenizeAndStringify(in3));
 
-        const std::string actual(tokenizeAndStringify(code, true));
+            const char in4 [] = "struct B final : A { void foo(); };";
+            const char out4 [] = "struct B : A { void foo ( ) ; } ;";
+            ASSERT_EQUALS(out4, tokenizeAndStringify(in4));
 
-        ASSERT_EQUALS("void f ( int a [ 5 ] ) ;", actual);
+            const char in5 [] = "struct ArrayItemsValidator final {\n"
+                                "    SchemaError validate() const override {\n"
+                                "        for (; pos < value.size(); ++pos) {\n"
+                                "        }\n"
+                                "        return none;\n"
+                                "    }\n"
+                                "};\n";
+            const char out5 [] =
+                "struct ArrayItemsValidator {\n"
+                "SchemaError validate ( ) const {\n"
+                "for ( ; pos < value . size ( ) ; ++ pos ) {\n"
+                "}\n"
+                "return none ;\n"
+                "}\n"
+                "} ;";
+
+            ASSERT_EQUALS(out5, tokenizeAndStringify(in5));
+        }
     }
 
     /**
@@ -5215,6 +5225,11 @@ private:
                              "}");
     }
 
+    void cpp14template() { // Ticket #6708
+        tokenizeAndStringify("template <typename T> "
+                             "decltype(auto) forward(T& t) { return 0; }");
+    }
+
     std::string arraySize_(const std::string &code) {
         errout.str("");
         Settings settings;
@@ -5853,11 +5868,11 @@ private:
     void borland() {
         // __closure
         ASSERT_EQUALS("int * a ;",
-                      tokenizeAndStringify("int (__closure *a)();", false));
+                      tokenizeAndStringify("int (__closure *a)();", false, true, Settings::Win32A));
 
         // __property
         ASSERT_EQUALS("class Fred { ; __property ; } ;",
-                      tokenizeAndStringify("class Fred { __property int x = { } };", false));
+                      tokenizeAndStringify("class Fred { __property int x = { } };", false, true, Settings::Win32A));
     }
 
     void Qt() {
@@ -6114,7 +6129,7 @@ private:
                                "operator ( ) ; "
                                "}";
 
-        ASSERT_EQUALS(result, tokenizeAndStringify(code,false));
+        ASSERT_EQUALS(result, tokenizeAndStringify(code, /*simplify=*/false, /*expand=*/true, /*platform=*/Settings::Unspecified, "test.c"));
     }
 
     void simplifyOperatorName2() {
@@ -8648,12 +8663,18 @@ private:
     }
 
     void astlambda() const {
-        ASSERT_EQUALS("([(return 0return", testAst("return [](){ return 0; }();"));
-        ASSERT_EQUALS("([(return 0return", testAst("return []() -> int { return 0; }();"));
-        ASSERT_EQUALS("([(return 0return", testAst("return [something]() -> int { return 0; }();"));
-        ASSERT_EQUALS("([cd,(return 0return", testAst("return [](int a, int b) -> int { return 0; }(c, d);"));
+        // a lambda expression '[x](y){}' is compiled as:
+        // [
+        // `-(
+        //   `-{
+        ASSERT_EQUALS("x{([( ai=", testAst("x([&a](int i){a=i;});"));
 
-        ASSERT_EQUALS("x([= 0return", testAst("x = [](){return 0; };"));
+        ASSERT_EQUALS("{([(return 0return", testAst("return [](){ return 0; }();"));
+        ASSERT_EQUALS("{([(return 0return", testAst("return []() -> int { return 0; }();"));
+        ASSERT_EQUALS("{([(return 0return", testAst("return [something]() -> int { return 0; }();"));
+        ASSERT_EQUALS("{([cd,(return 0return", testAst("return [](int a, int b) -> int { return 0; }(c, d);"));
+
+        ASSERT_EQUALS("x{([= 0return", testAst("x = [](){return 0; };"));
     }
 
     void compileLimits() {
