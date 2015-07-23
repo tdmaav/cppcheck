@@ -1206,7 +1206,7 @@ Token *CheckMemoryLeakInFunction::getcode(const Token *tok, std::list<const Toke
         }
 
         // throw..
-        else if (Token::Match(tok, "try|throw|catch")) {
+        else if (tokenizer->isCPP() && Token::Match(tok, "try|throw|catch")) {
             addtoken(&rettail, tok, tok->str());
             if (tok->strAt(1) == "(")
                 tok = tok->next()->link();
@@ -1379,7 +1379,7 @@ Token *CheckMemoryLeakInFunction::getcode(const Token *tok, std::list<const Toke
 
 void CheckMemoryLeakInFunction::simplifycode(Token *tok) const
 {
-    {
+    if (_tokenizer->isCPP()) {
         // Replace "throw" that is not in a try block with "return"
         int indentlevel = 0;
         int trylevel = -1;
@@ -2493,18 +2493,17 @@ bool CheckMemoryLeakStructMember::isMalloc(const Variable *variable)
     return alloc;
 }
 
+namespace {
+    static const std::set<std::string> ignoredFunctions = make_container< std::set<std::string> > ()
+            << "if"
+            << "for"
+            << "while"
+            << "malloc"
+            ;
+}
 
 void CheckMemoryLeakStructMember::checkStructVariable(const Variable * const variable)
 {
-    // This should be in the CheckMemoryLeak base class
-    static std::set<std::string> ignoredFunctions;
-    if (ignoredFunctions.empty()) {
-        ignoredFunctions.insert("if");
-        ignoredFunctions.insert("for");
-        ignoredFunctions.insert("while");
-        ignoredFunctions.insert("malloc");
-    }
-
     // Is struct variable a pointer?
     if (variable->isPointer()) {
         // Check that variable is allocated with malloc
@@ -2745,7 +2744,7 @@ void CheckMemoryLeakNoVar::check()
 void CheckMemoryLeakNoVar::checkForUnusedReturnValue(const Scope *scope)
 {
     for (const Token *tok = scope->classStart; tok != scope->classEnd; tok = tok->next()) {
-        if (Token::Match(tok, "%name% (") && (!tok->next()->astParent() || tok->next()->astParent()->str() == "!" || tok->next()->astParent()->isComparisonOp()) && tok->next()->astOperand1() == tok) {
+        if (!tok->varId() && Token::Match(tok, "%name% (") && (!tok->next()->astParent() || tok->next()->astParent()->str() == "!" || tok->next()->astParent()->isComparisonOp()) && tok->next()->astOperand1() == tok) {
             const AllocType allocType = getAllocationType(tok, 0);
             if (allocType != No)
                 returnValueNotUsedError(tok, tok->str());

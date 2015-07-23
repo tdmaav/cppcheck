@@ -253,6 +253,19 @@ private:
         ASSERT_EQUALS(4, values.front().intvalue);
         ASSERT_EQUALS(16, values.back().intvalue);
 
+        // ? :
+        code = "x = y ? 2 : 3;\n";
+        values = tokenValues(code,"?");
+        ASSERT_EQUALS(2U, values.size());
+        ASSERT_EQUALS(2, values.front().intvalue);
+        ASSERT_EQUALS(3, values.back().intvalue);
+
+        code = "void f(int a) { x = a ? 2 : 3; }\n";
+        values = tokenValues(code,"?");
+        ASSERT_EQUALS(2U, values.size());
+        ASSERT_EQUALS(2, values.front().intvalue);
+        ASSERT_EQUALS(3, values.back().intvalue);
+
         // function call => calculation
         code  = "void f(int x) {\n"
                 "    a = x + 8;\n"
@@ -1189,6 +1202,13 @@ private:
                "}";
         ASSERT_EQUALS(true, testValueOfX(code,3U,0));
         ASSERT_EQUALS(true, testValueOfX(code,3U,0x80));
+
+        code = "int f(int a) {\n"
+               "  int x = a & 0x80 ? 1 : 2;\n"
+               "  return x;\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code,3U,0));
+        ASSERT_EQUALS(false, testValueOfX(code,3U,0x80));
     }
 
     void valueFlowForLoop() {

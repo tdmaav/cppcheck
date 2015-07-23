@@ -31,6 +31,7 @@
 #include <list>
 #include <cassert>     // <- assert
 #include <cstdlib>
+#include <stack>
 
 //---------------------------------------------------------------------------
 
@@ -978,6 +979,32 @@ void CheckBufferOverrun::checkScope(const Token *tok, const ArrayInfo &arrayInfo
 // Negative size in array declarations
 //---------------------------------------------------------------------------
 
+static bool isVLAIndex(const Token *index)
+{
+    std::stack<const Token *> tokens;
+    tokens.push(index);
+    while (!tokens.empty()) {
+        const Token *tok = tokens.top();
+        tokens.pop();
+        if (!tok)
+            continue;
+        if (tok->varId() != 0U)
+            return true;
+        if (tok->str() == "?") {
+            // this is a VLA index if both expressions around the ":" is VLA index
+            if (tok->astOperand2() &&
+                tok->astOperand2()->str() == ":" &&
+                isVLAIndex(tok->astOperand2()->astOperand1()) &&
+                isVLAIndex(tok->astOperand2()->astOperand2()))
+                return true;
+            continue;
+        }
+        tokens.push(tok->astOperand1());
+        tokens.push(tok->astOperand2());
+    }
+    return false;
+}
+
 void CheckBufferOverrun::negativeArraySize()
 {
     const SymbolDatabase* symbolDatabase = _tokenizer->getSymbolDatabase();
@@ -989,9 +1016,9 @@ void CheckBufferOverrun::negativeArraySize()
         if (!Token::Match(nameToken, "%var% [") || !nameToken->next()->astOperand2())
             continue;
         const ValueFlow::Value *sz = nameToken->next()->astOperand2()->getValueLE(-1,_settings);
-        if (!sz)
-            continue;
-        negativeArraySizeError(nameToken);
+        // don't warn about constant negative index because that is a compiler error
+        if (sz && isVLAIndex(nameToken->next()->astOperand2()))
+            negativeArraySizeError(nameToken);
     }
 }
 
@@ -1090,7 +1117,7 @@ void CheckBufferOverrun::checkGlobalAndLocalVariable()
                                          "Check (BufferOverrun::checkGlobalAndLocalVariable)",
                                          tok->progressValue());
 
-            if (Token::Match(tok, "[*;{}] %var% = new %type% [ %num% ]")) {
+            if (_tokenizer->isCPP() && Token::Match(tok, "[*;{}] %var% = new %type% [ %num% ]")) {
                 size = MathLib::toLongNumber(tok->strAt(6));
                 type = tok->strAt(4);
                 var = tok->next()->variable();
@@ -1098,7 +1125,7 @@ void CheckBufferOverrun::checkGlobalAndLocalVariable()
                 if (size < 0) {
                     negativeMemoryAllocationSizeError(tok->next()->next());
                 }
-            } else if (Token::Match(tok, "[*;{}] %var% = new %type% ( %num%|%name% )")) {
+            } else if (_tokenizer->isCPP() && Token::Match(tok, "[*;{}] %var% = new %type% ( %num%|%name% )")) {
                 size = 1;
                 type = tok->strAt(4);
                 var = tok->next()->variable();
@@ -1417,6 +1444,8 @@ MathLib::biguint CheckBufferOverrun::countSprintfLength(const std::string &input
             case 'X':
             case 'i':
                 i_d_x_f_found = true;
+                handleNextParameter = true;
+                break;
             case 'c':
             case 'e':
             case 'E':
@@ -1518,7 +1547,7 @@ void CheckBufferOverrun::checkBufferAllocatedWithStrlen()
                 dstVarId = tok->varId();
                 srcVarId = tok->tokAt(6)->varId();
                 tok      = tok->tokAt(8);
-            } else if (Token::Match(tok, "%var% = new char [ strlen ( %name% ) ]")) {
+            } else if (_tokenizer->isCPP() && Token::Match(tok, "%var% = new char [ strlen ( %name% ) ]")) {
                 dstVarId = tok->varId();
                 srcVarId = tok->tokAt(7)->varId();
                 tok      = tok->tokAt(9);
@@ -1797,7 +1826,7 @@ Check::FileInfo* CheckBufferOverrun::getFileInfo(const Tokenizer *tokenizer, con
     return fileInfo;
 }
 
-void CheckBufferOverrun::analyseWholeProgram(const std::list<Check::FileInfo*> &fileInfo, ErrorLogger &errorLogger)
+void CheckBufferOverrun::analyseWholeProgram(const std::list<Check::FileInfo*> &fileInfo, const Settings&, ErrorLogger &errorLogger)
 {
     // Merge all fileInfo
     MyFileInfo all;
