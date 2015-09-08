@@ -242,54 +242,61 @@ private:
     }
 
     void explicitConstructors() {
-        checkExplicitConstructors("class Class \n"
-                                  "{ \n"
-                                  "    Class() = delete; \n"
-                                  "    Class(const Class& other) { } \n"
-                                  "    Class(Class&& other) { } \n"
-                                  "    explicit Class(int i) { } \n"
-                                  "    explicit Class(const std::string&) { } \n"
-                                  "    Class(int a, int b) { } \n"
+        checkExplicitConstructors("class Class {\n"
+                                  "    Class() = delete;\n"
+                                  "    Class(const Class& other) { }\n"
+                                  "    Class(Class&& other) { }\n"
+                                  "    explicit Class(int i) { }\n"
+                                  "    explicit Class(const std::string&) { }\n"
+                                  "    Class(int a, int b) { }\n"
                                   "};");
         ASSERT_EQUALS("", errout.str());
 
-        checkExplicitConstructors("class Class \n"
-                                  "{ \n"
-                                  "    Class() = delete; \n"
-                                  "    explicit Class(const Class& other) { } \n"
-                                  "    explicit Class(Class&& other) { } \n"
-                                  "    virtual int i() = 0; \n"
+        checkExplicitConstructors("class Class {\n"
+                                  "    Class() = delete;\n"
+                                  "    explicit Class(const Class& other) { }\n"
+                                  "    explicit Class(Class&& other) { }\n"
+                                  "    virtual int i() = 0;\n"
                                   "};");
         ASSERT_EQUALS("", errout.str());
 
-        checkExplicitConstructors("class Class \n"
-                                  "{ \n"
-                                  "    Class() = delete; \n"
-                                  "    Class(const Class& other) = delete; \n"
-                                  "    Class(Class&& other) = delete; \n"
-                                  "    virtual int i() = 0; \n"
+        checkExplicitConstructors("class Class {\n"
+                                  "    Class() = delete;\n"
+                                  "    Class(const Class& other) = delete;\n"
+                                  "    Class(Class&& other) = delete;\n"
+                                  "    virtual int i() = 0;\n"
                                   "};");
         ASSERT_EQUALS("", errout.str());
 
-        checkExplicitConstructors("class Class \n"
-                                  "{ \n"
-                                  "    Class(int i) { } \n"
+        checkExplicitConstructors("class Class {\n"
+                                  "    Class(int i) { }\n"
                                   "};");
-        ASSERT_EQUALS("[test.cpp:3]: (style) Class 'Class' has a constructor with 1 argument that is not explicit.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Class 'Class' has a constructor with 1 argument that is not explicit.\n", errout.str());
 
-        checkExplicitConstructors("class Class \n"
-                                  "{ \n"
-                                  "    Class(const Class& other) { } \n"
-                                  "    virtual int i() = 0; \n"
+        checkExplicitConstructors("class Class {\n"
+                                  "    Class(const Class& other) { }\n"
+                                  "    virtual int i() = 0;\n"
                                   "};");
-        ASSERT_EQUALS("[test.cpp:3]: (style) Abstract class 'Class' has a copy/move constructor that is not explicit.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Abstract class 'Class' has a copy/move constructor that is not explicit.\n", errout.str());
 
-        checkExplicitConstructors("class Class \n"
-                                  "{ \n"
-                                  "    Class(Class&& other) { } \n"
-                                  "    virtual int i() = 0; \n"
+        checkExplicitConstructors("class Class {\n"
+                                  "    Class(Class&& other) { }\n"
+                                  "    virtual int i() = 0;\n"
                                   "};");
-        ASSERT_EQUALS("[test.cpp:3]: (style) Abstract class 'Class' has a copy/move constructor that is not explicit.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Abstract class 'Class' has a copy/move constructor that is not explicit.\n", errout.str());
+
+        // #6585
+        checkExplicitConstructors("class Class {\n"
+                                  "    private: Class(const Class&);\n"
+                                  "    virtual int i() = 0;\n"
+                                  "};");
+        ASSERT_EQUALS("", errout.str());
+
+        checkExplicitConstructors("class Class {\n"
+                                  "    public: Class(const Class&);\n"
+                                  "    virtual int i() = 0;\n"
+                                  "};");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Abstract class 'Class' has a copy/move constructor that is not explicit.\n", errout.str());
     }
 
     void checkDuplInheritedMembers(const char code[]) {
@@ -2622,6 +2629,19 @@ private:
                       "[test.cpp:11]: (error) Using 'memset' on struct that contains a 'std::string'.\n"
                       "[test.cpp:12]: (error) Using 'memset' on struct that contains a 'std::string'.\n"
                       "[test.cpp:13]: (error) Using 'memset' on struct that contains a 'std::string'.\n", errout.str());
+
+        // Ticket #6953
+        checkNoMemset("typedef float realnum;\n"
+                      "struct multilevel_data {\n"
+                      "  realnum *GammaInv;\n"
+                      "  realnum data[1];\n"
+                      "};\n"
+                      "void *new_internal_data() const {\n"
+                      "  multilevel_data *d = (multilevel_data *) malloc(sizeof(multilevel_data));\n"
+                      "  memset(d, 0, sizeof(multilevel_data));\n"
+                      "  return (void*) d;\n"
+                      "}");
+        ASSERT_EQUALS("[test.cpp:8]: (portability) Using memset() on struct which contains a floating point number.\n", errout.str());
     }
 
     void memsetOnStdPodType() { // Ticket #5901
@@ -2781,7 +2801,7 @@ private:
                       "[test.cpp:3]: (warning) Suspicious pointer subtraction. Did you intend to write '->'?\n", errout.str());
     }
 
-    void checkConst(const char code[], const Settings *s = 0, bool inconclusive = true, bool verify = true) {
+    void checkConst(const char code[], const Settings *s = 0, bool inconclusive = true) {
         // Clear the error log
         errout.str("");
 
@@ -2797,12 +2817,7 @@ private:
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, "test.cpp");
-
-        const std::string str1(tokenizer.tokens()->stringifyList(0,true));
         tokenizer.simplifyTokenList2();
-        const std::string str2(tokenizer.tokens()->stringifyList(0,true));
-        if (verify && str1 != str2)
-            warnUnsimplified(str1, str2);
 
         CheckClass checkClass(&tokenizer, &settings, this);
         checkClass.checkConst();
@@ -3999,8 +4014,7 @@ private:
                    "    if( m_d != 0 )\n"
                    "        return m_iRealVal / m_d;\n"
                    "    return dRet;\n"
-                   "};", nullptr, true, false
-                  );
+                   "};", nullptr, true);
         ASSERT_EQUALS("[test.cpp:9] -> [test.cpp:4]: (style, inconclusive) Technically the member function 'A::dGetValue' can be const.\n", errout.str());
     }
 
@@ -6001,6 +6015,14 @@ private:
                                      "    }\n"
                                      "};");
         ASSERT_EQUALS("", errout.str());
+
+        checkInitializationListUsage("class B {\n" // #5640
+                                     "    std::shared_ptr<A> _d;\n"
+                                     "    B(const B& other) : _d(std::make_shared<A>()) {\n"
+                                     "        *_d = *other._d;\n"
+                                     "    }\n"
+                                     "};");
+        ASSERT_EQUALS("", errout.str());
     }
 
 
@@ -6052,8 +6074,31 @@ private:
         ASSERT_EQUALS("[test.cpp:3]: (error) Member variable 's' is initialized by itself.\n", errout.str());
 
         checkSelfInitialization("class Fred {\n"
+                                "    int x;\n"
+                                "    Fred(int x);\n"
+                                "};\n"
+                                "Fred::Fred(int x) : x(x) { }\n"
+                               );
+        ASSERT_EQUALS("", errout.str());
+
+        checkSelfInitialization("class Fred {\n"
+                                "    int x;\n"
+                                "    Fred(int x);\n"
+                                "};\n"
+                                "Fred::Fred(int x) : x{x} { }\n"
+                               );
+        ASSERT_EQUALS("", errout.str());
+
+        checkSelfInitialization("class Fred {\n"
                                 "    std::string s;\n"
                                 "    Fred(const std::string& s) : s(s) {\n"
+                                "    }\n"
+                                "};");
+        ASSERT_EQUALS("", errout.str());
+
+        checkSelfInitialization("class Fred {\n"
+                                "    std::string s;\n"
+                                "    Fred(const std::string& s) : s{s} {\n"
                                 "    }\n"
                                 "};");
         ASSERT_EQUALS("", errout.str());

@@ -28,17 +28,6 @@
 class Function;
 class Variable;
 
-bool isConstExpression(const Token *tok, const std::set<std::string> &constFunctions);
-
-/** Is expressions same? */
-bool isSameExpression(const Tokenizer *tokenizer, const Token *tok1, const Token *tok2, const std::set<std::string> &constFunctions);
-
-bool isWithoutSideEffects(const Tokenizer *tokenizer, const Token* tok);
-
-/** Is expression of floating point type? */
-bool astIsFloat(const Token *tok, bool unknown);
-
-
 /// @addtogroup Checks
 /// @{
 
@@ -79,6 +68,9 @@ public:
         checkOther.checkCommaSeparatedReturn();
         checkOther.checkIgnoredReturnValue();
         checkOther.checkRedundantPointerOp();
+        checkOther.checkZeroDivision();
+        checkOther.checkInterlockedDecrement();
+        checkOther.checkUnusedLabel();
 
         // --check-library : functions with nonmatching configuration
         checkOther.checkLibraryMatchFunctions();
@@ -96,7 +88,6 @@ public:
         checkOther.checkCastIntToCharAndBack();
 
         checkOther.invalidFunctionUsage();
-        checkOther.checkZeroDivision();
         checkOther.checkMathFunctions();
 
         checkOther.checkMisusedScopedObject();
@@ -153,9 +144,6 @@ public:
     /** @brief %Check zero division*/
     void checkZeroDivision();
 
-    /** @brief %Check zero division / useless condition */
-    void checkZeroDivisionOrUselessCondition();
-
     /** @brief Check for NaN (not-a-number) in an arithmetic expression */
     void checkNanInArithmeticExpression();
 
@@ -185,9 +173,6 @@ public:
 
     /** @brief %Check for invalid 2nd parameter of memset() */
     void checkMemsetInvalid2ndParam();
-
-    /** @brief %Check for suspicious code where multiple if have the same expression (e.g "if (a) { } else if (a) { }") */
-    void checkDuplicateIf();
 
     /** @brief %Check for suspicious code where if and else branch are the same (e.g "if (a) b = true; else b = true;") */
     void checkDuplicateBranch();
@@ -238,6 +223,12 @@ public:
     /** @brief --check-library: warn for unconfigured function calls */
     void checkLibraryMatchFunctions();
 
+    /** @brief %Check for race condition with non-interlocked access after InterlockedDecrement() */
+    void checkInterlockedDecrement();
+
+    /** @brief %Check for unused labels */
+    void checkUnusedLabel();
+
 private:
     // Error messages..
     void checkComparisonFunctionIsAlwaysTrueOrFalseError(const Token* tok, const std::string &strFunctionName, const std::string &varName, const bool result);
@@ -245,7 +236,6 @@ private:
     void checkPipeParameterSizeError(const Token *tok, const std::string &strVarName, const std::string &strDim);
     void clarifyCalculationError(const Token *tok, const std::string &op);
     void clarifyStatementError(const Token* tok);
-    void redundantGetAndSetUserIdError(const Token *tok);
     void cstyleCastError(const Token *tok);
     void invalidPointerCastError(const Token* tok, const std::string& from, const std::string& to, bool inconclusive);
     void invalidFunctionArgError(const Token *tok, const std::string &functionName, int argnr, const std::string &validstr);
@@ -273,12 +263,9 @@ private:
     void memsetZeroBytesError(const Token *tok, const std::string &varname);
     void memsetFloatError(const Token *tok, const std::string &var_value);
     void memsetValueOutOfRangeError(const Token *tok, const std::string &value);
-    void duplicateIfError(const Token *tok1, const Token *tok2);
     void duplicateBranchError(const Token *tok1, const Token *tok2);
     void duplicateExpressionError(const Token *tok1, const Token *tok2, const std::string &op);
     void duplicateExpressionTernaryError(const Token *tok);
-    void alwaysTrueFalseStringCompareError(const Token *tok, const std::string& str1, const std::string& str2);
-    void alwaysTrueStringVariableCompareError(const Token *tok, const std::string& str1, const std::string& str2);
     void duplicateBreakError(const Token *tok, bool inconclusive);
     void unreachableCodeError(const Token* tok, bool inconclusive);
     void unsignedLessThanZeroError(const Token *tok, const std::string &varname, bool inconclusive);
@@ -293,6 +280,8 @@ private:
     void commaSeparatedReturnError(const Token *tok);
     void ignoredReturnValueError(const Token* tok, const std::string& function);
     void redundantPointerOpError(const Token* tok, const std::string& varname, bool inconclusive);
+    void raceAfterInterlockedDecrementError(const Token* tok);
+    void unusedLabelError(const Token* tok);
 
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const {
         CheckOther c(0, settings, errorLogger);
@@ -306,6 +295,7 @@ private:
         c.invalidPointerCastError(0, "float", "double", false);
         c.negativeBitwiseShiftError(0);
         c.checkPipeParameterSizeError(0, "varname", "dimension");
+        c.raceAfterInterlockedDecrementError(0);
 
         //performance
         c.redundantCopyError(0, "varname");
@@ -350,6 +340,7 @@ private:
         c.commaSeparatedReturnError(0);
         c.ignoredReturnValueError(0, "malloc");
         c.redundantPointerOpError(0, "varname", false);
+        c.unusedLabelError(0);
     }
 
     static std::string myName() {
@@ -368,6 +359,7 @@ private:
                "- provide wrong dimensioned array to pipe() system command (--std=posix)\n"
                "- cast the return values of getc(),fgetc() and getchar() to character and compare it to EOF\n"
                "- invalid input values for functions\n"
+               "- race condition with non-interlocked access after InterlockedDecrement() call\n"
 
                // warning
                "- either division by zero or useless condition\n"
@@ -402,12 +394,12 @@ private:
                "- testing if unsigned variable is negative/positive\n"
                "- Suspicious use of ; at the end of 'if/for/while' statement.\n"
                "- Array filled incompletely using memset/memcpy/memmove.\n"
-               "- redundant get and set function of user id (--std=posix).\n"
                "- NaN (not a number) value used in arithmetic expression.\n"
                "- comma in return statement (the comma can easily be misread as a semicolon).\n"
                "- prefer erfc, expm1 or log1p to avoid loss of precision.\n"
                "- identical code in both branches of if/else or ternary operator.\n"
-               "- redundant pointer operation on pointer like &*some_ptr.\n";
+               "- redundant pointer operation on pointer like &*some_ptr.\n"
+               "- find unused 'goto' labels.\n";
     }
 };
 /// @}

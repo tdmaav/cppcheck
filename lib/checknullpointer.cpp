@@ -61,7 +61,7 @@ void CheckNullPointer::parseFunctionCall(const Token &tok, std::list<const Token
 
     // Library
     if (library) {
-        const Token *param = tok.tokAt(2);
+        const Token *param = firstParam;
         int argnr = 1;
         while (param) {
             if (Token::Match(param, "%var% ,|)") || (value==0 && Token::Match(param, "0|NULL ,|)"))) {
@@ -85,13 +85,13 @@ void CheckNullPointer::parseFunctionCall(const Token &tok, std::list<const Token
             argListTok = secondParam;
         } else if (Token::Match(&tok, "sprintf|fprintf|sscanf|fscanf|fwprintf|fwscanf|swscanf")) {
             const Token* formatStringTok = secondParam; // Find second parameter (format string)
-            if (formatStringTok && formatStringTok->type() == Token::eString) {
+            if (formatStringTok && formatStringTok->tokType() == Token::eString) {
                 argListTok = formatStringTok->nextArgument(); // Find third parameter (first argument of va_args)
                 formatString = formatStringTok->strValue();
             }
         } else if (Token::Match(&tok, "snprintf|fnprintf|swprintf") && secondParam) {
             const Token* formatStringTok = secondParam->nextArgument(); // Find third parameter (format string)
-            if (formatStringTok && formatStringTok->type() == Token::eString) {
+            if (formatStringTok && formatStringTok->tokType() == Token::eString) {
                 argListTok = formatStringTok->nextArgument(); // Find fourth parameter (first argument of va_args)
                 formatString = formatStringTok->strValue();
             }
@@ -467,7 +467,7 @@ void CheckNullPointer::nullPointerError(const Token *tok, const std::string &var
 {
     if (defaultArg) {
         if (_settings->isEnabled("warning"))
-            reportError(tok, Severity::warning, "nullPointer", "Possible null pointer dereference if the default parameter value is used: " + varname, 0U, inconclusive);
+            reportError(tok, Severity::warning, "nullPointerDefaultArg", "Possible null pointer dereference if the default parameter value is used: " + varname, 0U, inconclusive);
     } else
         reportError(tok, Severity::error, "nullPointer", "Possible null pointer dereference: " + varname, 0U, inconclusive);
 }
@@ -477,6 +477,6 @@ void CheckNullPointer::nullPointerError(const Token *tok, const std::string &var
     std::list<const Token*> callstack;
     callstack.push_back(tok);
     callstack.push_back(nullCheck);
-    const std::string errmsg("Possible null pointer dereference: " + varname + " - otherwise it is redundant to check it against null.");
-    reportError(callstack, Severity::warning, "nullPointer", errmsg, 0U, inconclusive);
+    const std::string errmsg(ValueFlow::eitherTheConditionIsRedundant(nullCheck) + " or there is possible null pointer dereference: " + varname + ".");
+    reportError(callstack, Severity::warning, "nullPointerRedundantCheck", errmsg, 0U, inconclusive);
 }

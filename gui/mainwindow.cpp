@@ -44,6 +44,7 @@
 #include "logview.h"
 #include "filelist.h"
 #include "showtypes.h"
+#include "librarydialog.h"
 
 static const QString OnlineHelpURL("http://cppcheck.sourceforge.net/manual.html");
 
@@ -99,6 +100,7 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     connect(mUI.mActionShowHidden, SIGNAL(triggered()), mUI.mResults, SLOT(ShowHiddenResults()));
     connect(mUI.mActionViewLog, SIGNAL(triggered()), this, SLOT(ShowLogView()));
     connect(mUI.mActionViewStats, SIGNAL(triggered()), this, SLOT(ShowStatistics()));
+    connect(mUI.mActionLibraryEditor, SIGNAL(triggered()), this, SLOT(ShowLibraryEditor()));
 
     connect(mUI.mActionRecheck, SIGNAL(triggered()), this, SLOT(ReCheck()));
 
@@ -647,7 +649,7 @@ Settings MainWindow::GetCppcheckSettings()
     result.addEnabled("missingInclude");
     result.debug = false;
     result.debugwarnings = mSettings->value(SETTINGS_SHOW_DEBUG_WARNINGS, false).toBool();
-    result._errorsOnly = false;
+    result.quiet = false;
     result._verbose = true;
     result._force = mSettings->value(SETTINGS_CHECK_FORCE, 1).toBool();
     result._xml = false;
@@ -711,6 +713,7 @@ void MainWindow::CheckDone()
 
     // Notify user - if the window is not active - that check is ready
     QApplication::alert(this, 3000);
+    ShowStatistics();
 }
 
 void MainWindow::CheckLockDownUI()
@@ -1112,6 +1115,8 @@ void MainWindow::CheckProject(Project *project)
     // file's location directory as root path
     if (rootpath.isEmpty() || rootpath == ".")
         mCurrentDirectory = inf.canonicalPath();
+    else if (rootpath.startsWith("."))
+        mCurrentDirectory = inf.canonicalPath() + rootpath.mid(1);
     else
         mCurrentDirectory = rootpath;
 
@@ -1210,6 +1215,12 @@ void MainWindow::ShowStatistics()
     statsDialog.setStatistics(mUI.mResults->GetStatistics());
 
     statsDialog.exec();
+}
+
+void MainWindow::ShowLibraryEditor()
+{
+    LibraryDialog libraryDialog(this);
+    libraryDialog.exec();
 }
 
 void MainWindow::Log(const QString &logline)

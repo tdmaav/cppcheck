@@ -57,6 +57,9 @@ public:
     /** @brief Is --debug given? */
     bool debug;
 
+    /** @brief Is --debug-normal given? */
+    bool debugnormal;
+
     /** @brief Is --debug-warnings given? */
     bool debugwarnings;
 
@@ -86,7 +89,7 @@ public:
     bool experimental;
 
     /** @brief Is --quiet given? */
-    bool _errorsOnly;
+    bool quiet;
 
     /** @brief Is --inline-suppr given? */
     bool _inlineSuppressions;

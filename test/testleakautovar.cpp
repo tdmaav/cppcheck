@@ -314,7 +314,7 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
-    void deallocuse7() {  // #6467, #6469, #6473
+    void deallocuse7() {  // #6467, #6469, #6473, #6648
         check("struct Foo { int* ptr; };\n"
               "void f(Foo* foo) {\n"
               "    delete foo->ptr;\n"
@@ -348,6 +348,13 @@ private:
               "    foo->ptr = new Foo;\n"
               "    foo->ptr->func();\n"
               "}", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check("void foo(void (*conv)(char**)) {\n"
+              "  char * ptr=(char*)malloc(42);\n"
+              "  free(ptr);\n"
+              "  (*conv)(&ptr);\n"
+              "}");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -862,6 +869,14 @@ private:
               "}");
         ASSERT_EQUALS("", errout.str());
 
+        check("char * f(size_t size) {"
+              "    void *p = malloc(1);"
+              "    if (!p && size != 0)"
+              "        return NULL;"
+              "    return p;"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
         check("void f() {\n"
               "    char *p = malloc(10);\n"
               "    if (p) { } else { return; }\n"
@@ -1053,10 +1068,13 @@ private:
 
     void test5() { // unknown type
         check("void f() { Fred *p = malloc(10); }", true);
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS("[test.cpp:1]: (error) Memory leak: p\n", errout.str());
 
         check("void f() { Fred *p = malloc(10); }", false);
         ASSERT_EQUALS("[test.c:1]: (error) Memory leak: p\n", errout.str());
+
+        check("void f() { Fred *p = new Fred; }", true);
+        ASSERT_EQUALS("", errout.str());
     }
 
     void throw1() { // 3987 - Execution reach a 'throw'

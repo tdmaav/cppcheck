@@ -17,7 +17,6 @@
  */
 
 #include "checkstl.h"
-#include "executionpath.h"
 #include "symboldatabase.h"
 #include "checknullpointer.h"
 #include <sstream>
@@ -235,7 +234,7 @@ namespace {
             << "partition_point" << "pop_heap" << "prev_permutation" << "push_heap" << "random_shuffle" << "remove" << "remove_copy"
             << "remove_copy_if" << "remove_if" << "replace" << "replace_copy" << "replace_copy_if" << "replace_if" << "reverse" << "reverse_copy"
             << "search_n" << "shuffle" << "sort" << "sort_heap" << "stable_partition" << "stable_sort" << "swap_ranges" << "transform" << "unique"
-            << "unique_copy" << "upper_bound";
+            << "unique_copy" << "upper_bound" << "string" << "wstring" << "u16string" << "u32string";
     const std::set<std::string> algorithm22 = make_container< std::set<std::string> >() // func(begin1 << end1 << begin2 << end2
             << "find_end" << "find_first_of" << "includes" << "lexicographical_compare" << "merge" << "partial_sort_copy"
             << "search" << "set_difference" << "set_intersection" << "set_symmetric_difference" << "set_union";
@@ -287,6 +286,14 @@ void CheckStl::mismatchingContainers()
                 }
             }
             tok = arg1->linkAt(-1);
+        }
+    }
+    for (unsigned int varid = 0; varid < symbolDatabase->getVariableListSize(); varid++) {
+        const Variable* var = symbolDatabase->getVariableFromVarId(varid);
+        if (var && var->isStlStringType() && Token::Match(var->nameToken(), "%var% (") && Token::Match(var->nameToken()->tokAt(2), pattern2.c_str())) {
+            if (var->nameToken()->strAt(2) != var->nameToken()->strAt(8)) {
+                mismatchingContainersError(var->nameToken());
+            }
         }
     }
 }
@@ -362,185 +369,64 @@ void CheckStl::stlOutOfBoundsError(const Token *tok, const std::string &num, con
         reportError(tok, Severity::error, "stlOutOfBounds", "When " + num + "==" + var + ".size(), " + var + "[" + num + "] is out of bounds.");
 }
 
-
-/**
- * @brief %Check for invalid iterator usage after erase/insert/etc
- */
-class EraseCheckLoop : public ExecutionPath {
-public:
-    static void checkScope(CheckStl *checkStl, const Token *it) {
-        const Token *tok = it;
-
-        // Search for the start of the loop body..
-        while (0 != (tok = tok->next())) {
-            if (tok->str() == "(")
-                tok = tok->link();
-            else if (tok->str() == ")")
-                break;
-
-            // reassigning iterator in loop head
-            else if (Token::Match(tok, "%name% =") && tok->str() == it->str())
-                break;
-        }
-
-        if (! Token::simpleMatch(tok, ") {"))
-            return;
-
-        EraseCheckLoop c(checkStl, it->varId(), it);
-        std::list<ExecutionPath *> checks;
-        checks.push_back(c.copy());
-        ExecutionPath::checkScope(tok->tokAt(2), checks);
-
-        c.end(checks, tok->link());
-
-        while (!checks.empty()) {
-            delete checks.back();
-            checks.pop_back();
-        }
-    }
-
-private:
-    /** Startup constructor */
-    EraseCheckLoop(Check *o, unsigned int varid, const Token* usetoken)
-        : ExecutionPath(o, varid), eraseToken(0), useToken(usetoken) {
-    }
-
-    /** @brief token where iterator is erased (non-zero => the iterator is invalid) */
-    const Token *eraseToken;
-
-    /** @brief name of the iterator */
-    const Token* useToken;
-
-    /** @brief Copy this check. Called from the ExecutionPath baseclass. */
-    ExecutionPath *copy() {
-        return new EraseCheckLoop(*this);
-    }
-
-    /** @brief is another execution path equal? */
-    bool is_equal(const ExecutionPath *e) const {
-        const EraseCheckLoop *c = static_cast<const EraseCheckLoop *>(e);
-        return (eraseToken == c->eraseToken);
-    }
-
-    /** @brief parse tokens */
-    const Token *parse(const Token &tok, std::list<ExecutionPath *> &checks) const {
-        // bail out if there are assignments. We don't check the assignments properly.
-        if (Token::Match(&tok, "[;{}] %var% =") || Token::Match(&tok, "= %var% ;")) {
-            ExecutionPath::bailOutVar(checks, tok.next()->varId());
-        }
-
-        // the loop stops here. Bail out all execution checks that reach
-        // this statement
-        if (Token::Match(&tok, "[;{}] break ;")) {
-            ExecutionPath::bailOut(checks);
-        }
-
-        // erasing iterator => it is invalidated
-        if (Token::Match(&tok, "erase ( ++|--| %name% )")) {
-            // check if there is a "it = ints.erase(it);" pattern. if so
-            // the it is not invalidated.
-            const Token *token = &tok;
-            while (nullptr != (token = token ? token->previous() : 0)) {
-                if (Token::Match(token, "[;{}]"))
-                    break;
-                else if (token->str() == "=")
-                    token = 0;
-            }
-
-            // the it is invalidated by the erase..
-            if (token) {
-                // get variable id for the iterator
-                unsigned int iteratorId = 0;
-                if (tok.tokAt(2)->isName())
-                    iteratorId = tok.tokAt(2)->varId();
-                else
-                    iteratorId = tok.tokAt(3)->varId();
-
-                // invalidate this iterator in the corresponding checks
-                for (std::list<ExecutionPath *>::const_iterator it = checks.begin(); it != checks.end(); ++it) {
-                    EraseCheckLoop *c = dynamic_cast<EraseCheckLoop *>(*it);
-                    if (c && c->varId == iteratorId) {
-                        c->eraseToken = &tok;
-                    }
-                }
-            }
-        }
-
-        // don't skip any tokens. return the token that we received.
-        return &tok;
-    }
-
-    /**
-     * Parse condition. @sa ExecutionPath::parseCondition
-     * @param tok first token in condition.
-     * @param checks The execution paths. All execution paths in the list are executed in the current scope
-     * @return true => bail out all checking
-     **/
-    bool parseCondition(const Token &tok, std::list<ExecutionPath *> &checks) {
-        // no checking of conditions.
-        (void)tok;
-        (void)checks;
-        return false;
-    }
-
-    /** @brief going out of scope - all execution paths end */
-    void end(const std::list<ExecutionPath *> &checks, const Token * /*tok*/) const {
-        // check if there are any invalid iterators. If so there is an error.
-        for (std::list<ExecutionPath *>::const_iterator it = checks.begin(); it != checks.end(); ++it) {
-            EraseCheckLoop *c = dynamic_cast<EraseCheckLoop *>(*it);
-            if (c && c->eraseToken) {
-                CheckStl *checkStl = dynamic_cast<CheckStl *>(c->owner);
-                if (checkStl) {
-                    checkStl->dereferenceErasedError(c->eraseToken, c->useToken, c->useToken->str());
-                }
-            }
-        }
-    }
-};
-
-
 void CheckStl::erase()
 {
     const SymbolDatabase* const symbolDatabase = _tokenizer->getSymbolDatabase();
 
     for (std::list<Scope>::const_iterator i = symbolDatabase->scopeList.begin(); i != symbolDatabase->scopeList.end(); ++i) {
-        const Token* const tok = i->classDef;
-        if (!tok)
-            continue;
-
-        if (i->type == Scope::eFor) {
-            for (const Token *tok2 = tok->tokAt(2); tok2; tok2 = tok2->next()) {
-                if (tok2->str() == ";") {
-                    if (Token::Match(tok2, "; %var% !=")) {
-                        // Get declaration token for var..
-                        const Variable *variableInfo = tok2->next()->variable();
-                        const Token *decltok = variableInfo ? variableInfo->typeEndToken() : nullptr;
-
-                        // Is variable an iterator?
-                        // If tok2->next() is an iterator, check scope
-                        if (decltok && Token::Match(decltok->tokAt(-2), "> :: iterator %varid%", tok2->next()->varId()))
-                            EraseCheckLoop::checkScope(this, tok2->next());
-                    }
-                    break;
-                }
-
-                if (Token::Match(tok2, "%name% = %name% . begin|rbegin|cbegin|crbegin ( ) ; %name% != %name% . end|rend|cend|crend ( )") &&
-                    tok2->str() == tok2->strAt(8) &&
-                    tok2->strAt(2) == tok2->strAt(10)) {
-                    EraseCheckLoop::checkScope(this, tok2);
-                    break;
-                }
-            }
-        }
-
-        else if (i->type == Scope::eWhile && Token::Match(tok, "while ( %var% !=")) {
-            const Variable* var = tok->tokAt(2)->variable();
-            if (var && Token::simpleMatch(var->typeEndToken()->tokAt(-2), "> :: iterator"))
-                EraseCheckLoop::checkScope(this, tok->tokAt(2));
+        if (i->type == Scope::eFor && Token::simpleMatch(i->classDef, "for (")) {
+            const Token *tok = i->classDef->linkAt(1);
+            if (!Token::Match(tok->tokAt(-3), "; ++| %var% ++| ) {"))
+                continue;
+            tok = tok->previous();
+            if (!tok->isName())
+                tok = tok->previous();
+            eraseCheckLoopVar(*i, tok->variable());
+        } else if (i->type == Scope::eWhile && Token::Match(i->classDef, "while ( %var% !=")) {
+            eraseCheckLoopVar(*i, i->classDef->tokAt(2)->variable());
         }
     }
 }
 
+void CheckStl::eraseCheckLoopVar(const Scope &scope, const Variable *var)
+{
+    if (!var || !Token::simpleMatch(var->typeEndToken(), "iterator"))
+        return;
+    for (const Token *tok = scope.classStart; tok != scope.classEnd; tok = tok->next()) {
+        if (tok->str() != "(")
+            continue;
+        if (!Token::Match(tok->tokAt(-2), ". erase ( ++| %varid% )", var->declarationId()))
+            continue;
+        if (Token::simpleMatch(tok->astParent(), "="))
+            continue;
+        // Iterator is invalid..
+        unsigned int indentlevel = 0U;
+        const Token *tok2 = tok->link();
+        for (; tok2 != scope.classEnd; tok2 = tok2->next()) {
+            if (tok2->str() == "{") {
+                ++indentlevel;
+                continue;
+            }
+            if (tok2->str() == "}") {
+                if (indentlevel > 0U)
+                    --indentlevel;
+                else if (Token::simpleMatch(tok2, "} else {"))
+                    tok2 = tok2->linkAt(2);
+                continue;
+            }
+            if (tok2->varId() == var->declarationId()) {
+                if (Token::simpleMatch(tok2->next(), "="))
+                    break;
+                dereferenceErasedError(tok, tok2, tok2->str());
+                break;
+            }
+            if (indentlevel == 0U && Token::Match(tok2, "break|return|goto"))
+                break;
+        }
+        if (tok2 == scope.classEnd)
+            dereferenceErasedError(tok, scope.classDef, var->nameToken()->str());
+    }
+}
 
 void CheckStl::pushback()
 {
@@ -742,7 +628,7 @@ static bool if_findCompare(const Token * const tokBack)
     if (!tok)
         return true;
     if (tok->isComparisonOp())
-        return true;
+        return (!tok->astOperand1()->isNumber() && !tok->astOperand2()->isNumber());
     if (tok->isArithmeticalOp()) // result is used in some calculation
         return true;  // TODO: check if there is a comparison of the result somewhere
     if (tok->str() == ".")
@@ -765,11 +651,7 @@ void CheckStl::if_find()
         if ((i->type != Scope::eIf && i->type != Scope::eWhile) || !i->classDef)
             continue;
 
-        const Token* tok = i->classDef->next();
-        if (tok->str() == "if")
-            tok = tok->next();
-
-        for (const Token* const end = tok->link(); tok != end; tok = (tok == end) ? end : tok->next()) {
+        for (const Token *tok = i->classDef; tok->str() != "{"; tok = tok->next()) {
             const Token* funcTok = nullptr;
             const Library::Container* container = nullptr;
 
@@ -886,7 +768,7 @@ void CheckStl::size()
 
                 // check for using as boolean expression
                 else if ((Token::Match(tok->tokAt(-2), "if|while (") && end->str() == ")") ||
-                         (tok->previous()->type() == Token::eLogicalOp && Token::Match(end, "&&|)|,|;|%oror%"))) {
+                         (tok->previous()->tokType() == Token::eLogicalOp && Token::Match(end, "&&|)|,|;|%oror%"))) {
                     if (isCpp03ContainerSizeSlow(tok1))
                         sizeError(tok1);
                 }

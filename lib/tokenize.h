@@ -118,6 +118,8 @@ public:
     */
     bool simplifyTokenList1(const char FileName[]);
 
+    void SimplifyNamelessRValueReferences();
+
     /**
     * Most aggressive simplification of tokenlist
     *
@@ -275,6 +277,12 @@ public:
      */
     void simplifyCompoundAssignment();
 
+
+    /**
+     * Simplify "* const" to "*"
+     */
+    void simplifyPointerConst();
+
     /**
      * Simplify the location of "static" and "const" qualifiers in
      * a variable declaration or definition.
@@ -296,22 +304,6 @@ public:
      * Example: "a = b = c = 0;" => "a = 0; b = 0; c = 0;"
      */
     void simplifyVariableMultipleAssign();
-
-    /**
-     * simplify if-not
-     * Example: "if(0==x);" => "if(!x);"
-     */
-    void simplifyIfNot();
-
-    /**
-     * simplify if-not NULL
-     * Example: "if(0!=x);" => "if(x);"
-     * Special case: 'x = (0 != x);' is removed.
-     */
-    void simplifyIfNotNull();
-
-    /** @brief simplify if (a) { if (a) */
-    void simplifyIfSameInnerCondition();
 
     /**
      * Simplify the 'C Alternative Tokens'
@@ -442,9 +434,6 @@ public:
      */
     bool simplifyFunctionReturn();
 
-    /** Struct initialization */
-    void simplifyStructInit();
-
     /** Struct simplification
      * "struct S { } s;" => "struct S { }; S s;"
      */
@@ -504,13 +493,9 @@ public:
 
     void simplifyRoundCurlyParentheses();
 
-    void simplifyDebugNew();
-
     void simplifySQL();
 
-    bool hasEnumsWithTypedef();
-
-    void simplifyDefaultAndDeleteInsideClass();
+    void checkForEnumsWithTypedef();
 
     void findComplicatedSyntaxErrorsInTemplates();
 
@@ -535,9 +520,12 @@ public:
 private:
 
     /**
-     * Change "int const x;" into "const int x;"
+     * is token pointing at function head?
+     * @param tok         A '(' or ')' token in a possible function head
+     * @param endsWith    string after function head
+     * @return token matching with endsWith if syntax seems to be a function head else nullptr
      */
-    void simplifyConst();
+    const Token * isFunctionHead(const Token *tok, const std::string &endsWith) const;
 
     /**
      * simplify "while (0)"
@@ -647,11 +635,6 @@ private:
     void simplifyBitfields();
 
     /**
-     * Remove __builtin_expect(...), likely(...), and unlikely(...)
-     */
-    void simplifyBuiltinExpect();
-
-    /**
      * Remove unnecessary member qualification
      */
     void removeUnnecessaryQualification();
@@ -665,11 +648,6 @@ private:
      * Add std:: in front of std classes, when using namespace std; was given
      */
     void simplifyNamespaceStd();
-
-    /**
-     * Remove Microsoft MFC 'DECLARE_MESSAGE_MAP()'
-     */
-    void simplifyMicrosoftMFC();
 
     /**
     * Convert Microsoft memory functions
@@ -758,7 +736,12 @@ public:
     void createSymbolDatabase();
     void deleteSymbolDatabase();
 
-    void printDebugOutput() const;
+    /** print --debug output if debug flags match the simplification:
+     * 0=unknown/both simplifications
+     * 1=1st simplifications
+     * 2=2nd simplifications
+     */
+    void printDebugOutput(unsigned int simplification) const;
 
     void dump(std::ostream &out) const;
 

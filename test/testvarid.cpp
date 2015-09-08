@@ -156,6 +156,7 @@ private:
         TEST_CASE(varidclass15);  // initializer list
         TEST_CASE(varidclass16);  // #4577
         TEST_CASE(varidclass17);  // #6073
+        TEST_CASE(varidclass18);
         TEST_CASE(varid_classnameshaddowsvariablename); // #3990
 
         TEST_CASE(varidnamespace1);
@@ -1544,6 +1545,29 @@ private:
                       "3: union { float a@1 ; int b@2 ; } ;\n"
                       "4: } ;\n",
                       tokenize(code2));
+
+        const char code3[] = "void f() {\n"
+                             "    union {\n"
+                             "        struct {\n"
+                             "            char a, b, c, d;\n"
+                             "        };\n"
+                             "        int abcd;\n"
+                             "    };\n"
+                             "    g(abcd);\n"
+                             "    h(a, b, c, d);\n"
+                             "}";
+        ASSERT_EQUALS("\n\n##file 0\n"
+                      "1: void f ( ) {\n"
+                      "2: union {\n"
+                      "3: struct {\n"
+                      "4: char a@1 ; char b@2 ; char c@3 ; char d@4 ;\n"
+                      "5: } ;\n"
+                      "6: int abcd@5 ;\n"
+                      "7: } ;\n"
+                      "8: g ( abcd@5 ) ;\n"
+                      "9: h ( a@1 , b@2 , c@3 , d@4 ) ;\n"
+                      "10: }\n",
+                      tokenize(code3));
     }
 
     void varid_in_class12() { // #4637 - method
@@ -1976,9 +2000,9 @@ private:
 
     void varid_pointerToArray() {
         ASSERT_EQUALS("\n\n##file 0\n"
-                      "1: int * a1@1 [ 10 ] ;\n"
+                      "1: int ( * a1@1 ) [ 10 ] ;\n"
                       "2: void f1 ( ) {\n"
-                      "3: int * a2@2 [ 10 ] ;\n"
+                      "3: int ( * a2@2 ) [ 10 ] ;\n"
                       "4: int ( & a3@3 ) [ 10 ] ;\n"
                       "5: }\n"
                       "6: struct A {\n"
@@ -2538,6 +2562,23 @@ private:
                                 "4: int j@3 ; j@3 = i@2 ;\n"
                                 "5: }\n"
                                 "6: } ;\n";
+        ASSERT_EQUALS(expected, tokenize(code));
+    }
+
+    void varidclass18() {
+        const char code[] = "class A {\n"
+                            "    int a;\n"
+                            "    int b;\n"
+                            "    A();\n"
+                            "};\n"
+                            "A::A() : a{0} { b = 1; }";
+        const char expected[] = "\n\n##file 0\n"
+                                "1: class A {\n"
+                                "2: int a@1 ;\n"
+                                "3: int b@2 ;\n"
+                                "4: A ( ) ;\n"
+                                "5: } ;\n"
+                                "6: A :: A ( ) : a@1 { 0 } { b@2 = 1 ; }\n";
         ASSERT_EQUALS(expected, tokenize(code));
     }
 

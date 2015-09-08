@@ -119,17 +119,17 @@ public:
 
     /**
     * Check for circulare dependencies, i.e. loops within the class hierarchie
-    * @param anchestors list of anchestors. For internal usage only, clients should not supply this argument.
+    * @param ancestors list of ancestors. For internal usage only, clients should not supply this argument.
     * @return true if there is a circular dependency
     */
-    bool hasCircularDependencies(std::set<BaseInfo>* anchestors = nullptr) const;
+    bool hasCircularDependencies(std::set<BaseInfo>* ancestors = nullptr) const;
 
     /**
     * Check for dependency
-    * @param anchestor potential anchestor
+    * @param ancestor potential ancestor
     * @return true if there is a dependency
     */
-    bool findDependency(const Type* anchestor) const;
+    bool findDependency(const Type* ancestor) const;
 };
 
 /** @brief Information about a member variable. */
@@ -374,7 +374,7 @@ public:
      * @return true if array, false if not
      */
     bool isArray() const {
-        return getFlag(fIsArray);
+        return getFlag(fIsArray) && !getFlag(fIsPointer);
     }
 
     /**
@@ -384,6 +384,20 @@ public:
     bool isPointer() const {
         return getFlag(fIsPointer);
     }
+
+    /**
+     * Is variable a pointer to an array
+     * @return true if pointer to array, false otherwise
+     */
+    bool isPointerToArray() const {
+        return isPointer() && getFlag(fIsArray);
+    }
+
+    /**
+     * Is variable an array of pointers
+     * @return true if array or pointers, false otherwise
+     */
+    bool isPointerArray() const;
 
     /**
      * Is array or pointer variable.
@@ -496,7 +510,7 @@ public:
      *   ...
      *   const char *str[] = {"string", "wstring"};
      *   sVar->isStlType(str) == true
-     * @param stlTypes set of stl types
+     * @param stlType stl type
      * @return true if it is an stl type and its type matches any of the types in 'stlTypes'
      */
     bool isStlType(const std::string& stlType) const {
@@ -863,12 +877,12 @@ public:
 
     const Scope *findRecordInNestedList(const std::string & name) const;
     Scope *findRecordInNestedList(const std::string & name) {
-        return const_cast<Scope *>(static_cast<const Scope *>(this)->findRecordInNestedList(name));
+        return const_cast<Scope *>(const_cast<const Scope *>(this)->findRecordInNestedList(name));
     }
 
     const Type* findType(const std::string& name) const;
     Type* findType(const std::string& name) {
-        return const_cast<Type*>(static_cast<const Scope *>(this)->findType(name));
+        return const_cast<Type*>(const_cast<const Scope *>(this)->findType(name));
     }
 
     /**
@@ -967,19 +981,12 @@ public:
 
     const Type* findType(const Token *tok, const Scope *startScope) const;
     Type* findType(const Token *tok, Scope *startScope) const {
-        return const_cast<Type*>(this->findType(tok, static_cast<const Scope *>(startScope)));
+        return const_cast<Type*>(this->findType(tok, const_cast<const Scope *>(startScope)));
     }
 
     const Scope *findScope(const Token *tok, const Scope *startScope) const;
     Scope *findScope(const Token *tok, Scope *startScope) const {
-        return const_cast<Scope *>(this->findScope(tok, static_cast<const Scope *>(startScope)));
-    }
-
-    bool isClassOrStruct(const std::string &type) const {
-        for (std::list<Type>::const_iterator i = typeList.begin(); i != typeList.end(); ++i)
-            if (i->name() == type)
-                return true;
-        return false;
+        return const_cast<Scope *>(this->findScope(tok, const_cast<const Scope *>(startScope)));
     }
 
     const Variable *getVariableFromVarId(std::size_t varId) const {

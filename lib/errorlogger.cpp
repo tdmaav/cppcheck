@@ -83,12 +83,12 @@ void ErrorLogger::ErrorMessage::setmsg(const std::string &msg)
     // as an empty message to the user if --verbose is used.
     // Even this doesn't cause problems with messages that have multiple
     // lines, none of the the error messages should end into it.
-    assert(!(msg[msg.size()-1]=='\n'));
+    assert(!(msg.back() =='\n'));
 
     // The summary and verbose message are separated by a newline
     // If there is no newline then both the summary and verbose messages
     // are the given message
-    const std::string::size_type pos = msg.find("\n");
+    const std::string::size_type pos = msg.find('\n');
     if (pos == std::string::npos) {
         _shortMessage = msg;
         _verboseMessage = msg;
@@ -159,7 +159,8 @@ bool ErrorLogger::ErrorMessage::deserialize(const std::string &data)
 
     _id = results[0];
     _severity = Severity::fromString(results[1]);
-    _cwe = MathLib::toULongNumber(results[2]);
+    std::istringstream scwe(results[2]);
+    scwe >> _cwe;
     _shortMessage = results[3];
     _verboseMessage = results[4];
 
@@ -301,7 +302,7 @@ void ErrorLogger::ErrorMessage::findAndReplace(std::string &source, const std::s
     std::string::size_type index = 0;
     while ((index = source.find(searchFor, index)) != std::string::npos) {
         source.replace(index, searchFor.length(), replaceWith);
-        index = (std::string::difference_type)index + (std::string::difference_type)replaceWith.length() - (std::string::difference_type)searchFor.length() + 1;
+        index += replaceWith.length();
     }
 }
 
@@ -365,8 +366,10 @@ void ErrorLogger::reportUnmatchedSuppressions(const std::list<Suppressions::Supp
         for (std::list<Suppressions::SuppressionEntry>::const_iterator i2 = unmatched.begin(); i2 != unmatched.end(); ++i2) {
             if (i2->id == "unmatchedSuppression") {
                 if ((i2->file == "*" || i2->file == i->file) &&
-                    (i2->line == 0 || i2->line == i->line))
+                    (i2->line == 0 || i2->line == i->line)) {
                     suppressed = true;
+                    break;
+                }
             }
         }
 

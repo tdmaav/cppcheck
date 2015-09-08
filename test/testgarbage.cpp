@@ -49,12 +49,12 @@ private:
         TEST_CASE(garbageCode7);
         TEST_CASE(garbageCode8); // #5511
         TEST_CASE(garbageCode9); // #5604
-        TEST_CASE(garbageCode10);  // #6127
+        TEST_CASE(garbageCode10); // #6127
         TEST_CASE(garbageCode11);
         TEST_CASE(garbageCode12);
-        TEST_CASE(garbageCode13);  // Ticket #2607 - crash
-        TEST_CASE(garbageCode14);  // Ticket #5595 - crash
-        TEST_CASE(garbageCode15);  // Ticket #5203
+        TEST_CASE(garbageCode13); // #2607
+        TEST_CASE(garbageCode14); // #5595
+        TEST_CASE(garbageCode15); // #5203
         TEST_CASE(garbageCode16);
         TEST_CASE(garbageCode17);
         TEST_CASE(garbageCode18);
@@ -63,7 +63,7 @@ private:
         TEST_CASE(garbageCode21);
         TEST_CASE(garbageCode22);
         TEST_CASE(garbageCode23);
-        TEST_CASE(garbageCode24);  // Ticket #6361 - crash
+        TEST_CASE(garbageCode24); // #6361
         TEST_CASE(garbageCode25);
         TEST_CASE(garbageCode26);
         TEST_CASE(garbageCode27);
@@ -137,6 +137,34 @@ private:
         TEST_CASE(garbageCode95);
         TEST_CASE(garbageCode96);
         TEST_CASE(garbageCode97);
+        TEST_CASE(garbageCode98);
+        TEST_CASE(garbageCode99);
+        TEST_CASE(garbageCode100);
+        TEST_CASE(garbageCode101); // #6835
+        TEST_CASE(garbageCode102); // #6846
+        TEST_CASE(garbageCode103); // #6824
+        TEST_CASE(garbageCode104); // #6847
+        TEST_CASE(garbageCode105); // #6859
+        TEST_CASE(garbageCode106);
+        TEST_CASE(garbageCode107);
+        TEST_CASE(garbageCode108);
+        TEST_CASE(garbageCode109);
+        TEST_CASE(garbageCode110);
+        TEST_CASE(garbageCode111);
+        TEST_CASE(garbageCode112);
+        TEST_CASE(garbageCode113);
+        TEST_CASE(garbageCode114);
+        TEST_CASE(garbageCode115); // #5506
+        TEST_CASE(garbageCode116); // #5356
+        TEST_CASE(garbageCode117); // #6121
+        TEST_CASE(garbageCode118); // #5600
+        TEST_CASE(garbageCode119); // #5598
+        TEST_CASE(garbageCode120); // #4927
+        TEST_CASE(garbageCode121); // #2585
+        TEST_CASE(garbageCode122); // #6303
+        TEST_CASE(garbageCode123);
+        TEST_CASE(garbageCode124); // 6948
+        TEST_CASE(garbageCode125); // 6782, 6834
 
         TEST_CASE(garbageValueFlow);
         TEST_CASE(garbageSymbolDatabase);
@@ -144,9 +172,11 @@ private:
         TEST_CASE(templateSimplifierCrashes);
     }
 
-    std::string checkCode(const char code[], const std::string& filename = "test.cpp") {
+    std::string checkCode(const char code[], bool cpp = true) {
         // double the tests - run each example as C as well as C++
-        const std::string alternatefilename = (filename=="test.c") ? "test.cpp" : "test.c";
+        const char* filename = cpp ? "test.cpp" : "test.c";
+        const char* alternatefilename = cpp ? "test.c" : "test.cpp";
+
         // run alternate check first. It should only ensure stability
         try {
             checkCodeInternal(code, alternatefilename);
@@ -156,7 +186,7 @@ private:
         return checkCodeInternal(code, filename);
     }
 
-    std::string checkCodeInternal(const char code[], const std::string& filename) {
+    std::string checkCodeInternal(const char code[], const char* filename) {
         errout.str("");
 
         Settings settings;
@@ -171,7 +201,7 @@ private:
         // tokenize..
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
-        tokenizer.tokenize(istr, filename.c_str());
+        tokenizer.tokenize(istr, filename);
 
         // call all "runChecks" in all registered Check classes
         for (std::list<Check *>::const_iterator it = Check::instances().begin(); it != Check::instances().end(); ++it) {
@@ -260,16 +290,25 @@ private:
         // #3585
         const char code[] = "class x y { };";
 
-        errout.str("");
-
         Settings settings;
         settings.addEnabled("information");
-        Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.c");
-        tokenizer.simplifyTokenList2();
 
-        ASSERT_EQUALS("[test.c:1]: (information) The code 'class x y {' is not handled. You can use -I or --include to add handling of this code.\n", errout.str());
+        {
+            errout.str("");
+            Tokenizer tokenizer(&settings, this);
+            std::istringstream istr(code);
+            tokenizer.tokenize(istr, "test.c");
+            tokenizer.simplifyTokenList2();
+            ASSERT_EQUALS("", errout.str());
+        }
+        {
+            errout.str("");
+            Tokenizer tokenizer(&settings, this);
+            std::istringstream istr(code);
+            tokenizer.tokenize(istr, "test.cpp");
+            tokenizer.simplifyTokenList2();
+            ASSERT_EQUALS("[test.cpp:1]: (information) The code 'class x y {' is not handled. You can use -I or --include to add handling of this code.\n", errout.str());
+        }
     }
 
     void syntax_case_default() {
@@ -564,7 +603,7 @@ private:
     }
 
     void garbageCode49() { // #6715
-        ASSERT_THROW(checkCode(" ( ( ) ) { } ( { ( __builtin_va_arg_pack ( ) ) ; } ) { ( int { ( ) ( ( ) ) } ( ) { } ( ) ) += ( ) }"), InternalError);
+        checkCode(" ( ( ) ) { } ( { ( __builtin_va_arg_pack ( ) ) ; } ) { ( int { ( ) ( ( ) ) } ( ) { } ( ) ) += ( ) }");
     }
 
     void garbageCode50() { // #6718
@@ -637,7 +676,7 @@ private:
     }
 
     void garbageCode67() { // #6744
-        checkCode("&g[0]; { (g[0] 0) } =", "test.c");
+        checkCode("&g[0]; { (g[0] 0) } =", false);
     }
 
     void garbageCode68() { // #6745
@@ -669,7 +708,7 @@ private:
     }
 
     void garbageCode75() { // #6753
-        checkCode("{ { void foo() { struct }; { }; } }; struct S { } f =", "test.c");
+        checkCode("{ { void foo() { struct }; { }; } }; struct S { } f =", false);
     }
 
     void garbageCode76() { // #6754
@@ -717,7 +756,7 @@ private:
     }
 
     void garbageCode87() { // #6788
-        ASSERT_THROW(checkCode("((X (128))) (int a) { v[ = {} (x 42) a] += }"), InternalError); // do not crash
+        checkCode("((X (128))) (int a) { v[ = {} (x 42) a] += }"); // do not crash
     }
 
     void garbageCode88() { // #6786
@@ -741,7 +780,7 @@ private:
     }
 
     void garbageCode93() { // #6800
-        checkCode(" namespace A { } class A{ { }} class A : T ;", "test.c"); // do not crash
+        checkCode(" namespace A { } class A{ { }} class A : T ;", false); // do not crash
     }
 
     void garbageCode94() { // #6803
@@ -759,6 +798,152 @@ private:
 
     void garbageCode97() { // #6808
         ASSERT_THROW(checkCode("namespace A {> } class A{ { }} class A : T< ;"), InternalError);
+    }
+
+    void garbageCode98() { // #6838
+        ASSERT_THROW(checkCode("for (cocon To::ta@Taaaaaforconst oken aaaaaaaaaaaa5Dl()\n"
+                               "const unsiged in;\n"
+                               "fon *tok = f);.s(Token i = d-)L;"), InternalError);
+    }
+
+    void garbageCode99() { // #6726
+        ASSERT_THROW(checkCode("{ xs :: i(:) ! ! x/5 ! !\n"
+                               "i, :: a :: b integer, } foo2(x) :: j(:) \n"
+                               "b type(*), d(:), a x :: end d(..), foo end\n"
+                               "foo4 b d(..), a a x type(*), b foo2 b"), InternalError);
+    }
+
+    void garbageCode100() { // #6840
+        checkCode("( ) { ( i< ) } int foo ( ) { int i ; ( for ( i => 1 ) ; ) }");
+    }
+
+    void garbageCode101() { // #6835
+        // Reported case
+        checkCode("template < class , =( , int) X = 1 > struct A { } ( ) { = } [ { } ] ( ) { A < void > 0 }");
+        // Reduced case
+        checkCode("template < class =( , ) X = 1> struct A {}; A<void> a;");
+    }
+
+    void garbageCode102() { // #6846
+        checkCode("struct Object { ( ) ; Object & operator= ( Object ) { ( ) { } if ( this != & b ) } }");
+    }
+
+    void garbageCode103() { // #6824
+        ASSERT_THROW(checkCode("a f(r) int * r; { { int s[2]; [f(s); if () ]  } }"), InternalError);
+    }
+
+    void garbageCode104() { // #6847
+        ASSERT_THROW(checkCode("template < Types > struct S {> ( S < ) S >} { ( ) { } } ( ) { return S < void > ( ) } { ( )> >} { ( ) { } } ( ) { ( ) }"), InternalError);
+    }
+
+    void garbageCode105() { // #6859
+        checkCode("void foo (int i) { int a , for (a 1; a( < 4; a++) if (a) (b b++) (b);) n++; }");
+    }
+
+    void garbageCode106() { // #6880
+        ASSERT_THROW(checkCode("[ ] typedef typedef b_array b_array_ref [ ; ] ( ) b_array_ref b_array_ref_gbl_obj0 { ; { b_array_ref b_array_ref_gbl_obj0 } }"), InternalError);
+    }
+
+    void garbageCode107() { // #6881
+        ASSERT_THROW(checkCode("enum { val = 1{ }; { const} }; { } Bar { const int A = val const } ;"), InternalError);
+    }
+
+    void garbageCode108() { //  #6895 "segmentation fault (invalid code) in CheckCondition::isOppositeCond"
+        checkCode("A( ) { } bool f( ) { ( ) F; ( ) { ( == ) if ( !=< || ( !A( ) && r[2] ) ) ( !A( ) ) ( ) } }");
+    }
+
+    void garbageCode109() { //  #6900 "segmentation fault (invalid code) in CheckStl::runSimplifiedChecks"
+        checkCode("( *const<> (( ) ) { } ( *const ( ) ( ) ) { } ( * const<> ( size_t )) ) { } ( * const ( ) ( ) ) { }");
+    }
+
+    void garbageCode110() { //  #6902 "segmentation fault (invalid code) in CheckStl::string_c_str"
+        checkCode("( *const<> ( size_t ) ; foo ) { } * ( *const ( size_t ) ( ) ;> foo )< { }");
+    }
+
+    void garbageCode111() { //  #6907
+        ASSERT_THROW(checkCode("enum { FOO = 1( ,) } {{ FOO }} ;"), InternalError);
+    }
+
+    void garbageCode112() { //  #6909
+        ASSERT_THROW(checkCode("enum { FOO = ( , ) } {{ }}>> enum { FOO< = ( ) } { { } } ;"), InternalError);
+    }
+
+    void garbageCode113() { //  #6858
+        checkCode("*(*const<> (size_t); foo) { } *(*const (size_t)() ; foo) { }");
+    }
+
+    void garbageCode114() { // #2118
+        ASSERT_THROW(checkCode("Q_GLOBAL_STATIC_WITH_INITIALIZER(Qt4NodeStaticData, qt4NodeStaticData, {\n"
+                               "    for (unsigned i = 0 ; i < count; i++) {\n"
+                               "    }\n"
+                               "});"), InternalError);
+    }
+
+    void garbageCode115() { // #5506
+        checkCode("A template < int { int = -1 ; } template < int N > struct B { int [ A < N > :: zero ] ;  } ; B < 0 > b ;");
+    }
+
+    void garbageCode116() { // #5356
+        checkCode("struct template<int { = }; > struct B { }; B < 0 > b;");
+    }
+
+    void garbageCode117() { // #6121
+        ASSERT_THROW(checkCode("enum E { f = {} };\n"
+                               "int a = f;"), InternalError);
+    }
+
+    void garbageCode118() { // #5600 - missing include causes invalid enum
+        ASSERT_THROW(checkCode("enum {\n"
+                               "    NUM_OPCODES = \n"
+                               // #include "definition"
+                               "};\n"
+                               "struct bytecode {};\n"
+                               "jv jq_next() { opcode = ((opcode) +NUM_OPCODES);\n"
+                               "}"), InternalError);
+    }
+
+    void garbageCode119() { // #5598
+        checkCode("{ { void foo() { struct }; template <typename> struct S { Used x; void bar() } auto f = [this] { }; } };");
+    }
+
+    void garbageCode120() { // #4927
+        checkCode("int main() {\n"
+                  "   return 0\n"
+                  "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void garbageCode121() { // #2585
+        checkCode("abcdef?""?<"
+                  "123456?""?>"
+                  "+?""?=");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void garbageCode122() { // #6303
+        checkCode("void foo() {\n"
+                  "char *a = malloc(10);\n"
+                  "a[0]\n"
+                  "}");
+    }
+
+    void garbageCode123() {
+        checkCode("namespace pr16989 {\n"
+                  "    class C {\n"
+                  "        C tpl_mem(T *) { return }\n"
+                  "    };\n"
+                  "}");
+    }
+
+    void garbageCode124() {
+        checkCode("+---+");
+    }
+
+    void garbageCode125() {
+        ASSERT_THROW(checkCode("{ T struct B : T valueA_AA ; } T : [ T > ( ) { B } template < T > struct A < > : ] { ( ) { return valueA_AC struct { : } } b A < int > AC ( ) a_aa.M ; ( ) ( ) }"),
+                     InternalError);
+        ASSERT_THROW(checkCode("template < Types > struct S :{ ( S < ) S >} { ( ) { } } ( ) { return S < void > ( ) }"),
+                     InternalError);
     }
 
     void garbageValueFlow() {
@@ -806,7 +991,7 @@ private:
     }
 
     void templateSimplifierCrashes() {
-        checkCode( //5950
+        checkCode( // #5950
             "struct A { \n"
             "  template <class T> operator T*();\n"
             "}; \n"
@@ -828,7 +1013,7 @@ private:
             "  }\n"
             "}\n");
 
-        checkCode( // 6034
+        checkCode( // #6034
             "template<template<typename...> class T, typename... Args>\n"
             "struct foo<T<Args...> > {\n"
             "    const bool value = true;\n"
@@ -843,9 +1028,9 @@ private:
             "}\n"
         );
 
-        checkCode(" > template < . > struct Y < T > { = } ;\n"); //6108
+        checkCode(" > template < . > struct Y < T > { = } ;\n"); // #6108
 
-        checkCode( // 6117
+        checkCode( // #6117
             "template <typename ...> struct something_like_tuple\n"
             "{};\n"
             "template <typename, typename> struct is_last {\n"
@@ -864,7 +1049,7 @@ private:
             "SA ((is_last<int, something_like_tuple_t>::value == false));\n"
         );
 
-        checkCode( //6225
+        checkCode( // #6225
             "template <typename...>\n"
             "void templ_fun_with_ty_pack() {}\n"
             " \n"
@@ -874,6 +1059,17 @@ private:
             "        using AliasA = A<T>;\n"
             "}\n"
         );
+
+        // #3449
+        ASSERT_EQUALS("template < typename T > struct A ;\n"
+                      "struct B { template < typename T > struct C } ;\n"
+                      "{ } ;",
+                      checkCode("template<typename T> struct A;\n"
+                                "struct B { template<typename T> struct C };\n"
+                                "{};"));
+
+        // #4169
+        checkCode("volatile true , test < test < #ifdef __ppc__ true ,");
     }
 };
 

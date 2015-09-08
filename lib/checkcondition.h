@@ -48,6 +48,8 @@ public:
         CheckCondition checkCondition(tokenizer, settings, errorLogger);
         checkCondition.multiCondition();
         checkCondition.clarifyCondition();   // not simplified because ifAssign
+        checkCondition.oppositeInnerCondition();
+        checkCondition.checkIncorrectLogicOperator();
     }
 
     /** @brief Run checks against the simplified token list */
@@ -56,9 +58,8 @@ public:
         checkCondition.assignIf();
         checkCondition.checkBadBitmaskCheck();
         checkCondition.comparison();
-        checkCondition.oppositeInnerCondition();
-        checkCondition.checkIncorrectLogicOperator();
         checkCondition.checkModuloAlwaysTrueFalse();
+        checkCondition.alwaysTrueFalse();
     }
 
     /** mismatching assignment / comparison */
@@ -93,16 +94,12 @@ public:
     /** @brief Suspicious condition (assignment+comparison) */
     void clarifyCondition();
 
+    /** @brief Condition is always true/false */
+    void alwaysTrueFalse();
+
 private:
 
     bool isOverlappingCond(const Token * const cond1, const Token * const cond2, const std::set<std::string> &constFunctions) const;
-    /**
-     * Are two conditions opposite
-     * @param isNot  do you want to know if cond1 is !cond2 or if cond1 and cond2 are non-overlapping. true: cond1==!cond2  false: cond1==true => cond2==false
-     * @param cond1  condition1
-     * @param cond2  condition2
-     */
-    bool isOppositeCond(bool isNot, const Token * const cond1, const Token * const cond2, const std::set<std::string> &constFunctions) const;
     void assignIfError(const Token *tok1, const Token *tok2, const std::string &condition, bool result);
     void mismatchingBitAndError(const Token *tok1, const MathLib::bigint num1, const Token *tok2, const MathLib::bigint num2);
     void badBitmaskCheckError(const Token *tok);
@@ -123,6 +120,8 @@ private:
 
     void clarifyConditionError(const Token *tok, bool assign, bool boolop);
 
+    void alwaysTrueFalseError(const Token *tok, bool knownResult);
+
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const {
         CheckCondition c(0, settings, errorLogger);
 
@@ -136,6 +135,7 @@ private:
         c.redundantConditionError(0, "If x > 11 the condition x > 10 is always true.");
         c.moduloAlwaysTrueFalseError(0, "1");
         c.clarifyConditionError(0, true, false);
+        c.alwaysTrueFalseError(0, true);
     }
 
     static std::string myName() {
@@ -152,7 +152,8 @@ private:
                "- Find dead code which is inaccessible due to the counter-conditions check in nested if statements\n"
                "- condition that is always true/false\n"
                "- mutual exclusion over || always evaluating to true\n"
-               "- Comparisons of modulo results that are always true/false.\n";
+               "- Comparisons of modulo results that are always true/false.\n"
+               "- Known variable values => condition is always true/false\n";
     }
 };
 /// @}

@@ -21,10 +21,12 @@
 //---------------------------------------------------------------------------
 
 #include "checkcondition.h"
+#include "astutils.h"
 #include "checkother.h"
 #include "symboldatabase.h"
 
 #include <limits>
+#include <stack>
 
 //---------------------------------------------------------------------------
 
@@ -78,6 +80,34 @@ void CheckCondition::assignIf()
     }
 }
 
+static bool isParameterChanged(const Token *partok)
+{
+    bool addressOf = Token::Match(partok, "[(,] &");
+    unsigned int argumentNumber = 0;
+    const Token *ftok;
+    for (ftok = partok; ftok && ftok->str() != "("; ftok = ftok->previous()) {
+        if (ftok->str() == ")")
+            ftok = ftok->link();
+        else if (argumentNumber == 0U && ftok->str() == "&")
+            addressOf = true;
+        else if (ftok->str() == ",")
+            argumentNumber++;
+    }
+    ftok = ftok ? ftok->previous() : nullptr;
+    if (!(ftok && ftok->function()))
+        return true;
+    if (ftok->function()->isConst())
+        return false;
+    const Variable *par = ftok->function()->getArgumentVar(argumentNumber);
+    if (!par)
+        return true;
+    if (par->isConst())
+        return false;
+    if (addressOf || par->isReference() || par->isPointer())
+        return true;
+    return false;
+}
+
 /** parse scopes recursively */
 bool CheckCondition::assignIfParseScope(const Token * const assignTok,
                                         const Token * const startTok,
@@ -99,22 +129,8 @@ bool CheckCondition::assignIfParseScope(const Token * const assignTok,
         }
         if (Token::Match(tok2, "++|-- %varid%", varid) || Token::Match(tok2, "%varid% ++|--", varid))
             return true;
-        if (Token::Match(tok2, "[(,] &| %varid% [,)]", varid)) {
-            unsigned int argumentNumber = 0;
-            const Token *ftok;
-            for (ftok = tok2; ftok && ftok->str() != "("; ftok = ftok->previous()) {
-                if (ftok->str() == ")")
-                    ftok = ftok->link();
-                else if (ftok->str() == ",")
-                    argumentNumber++;
-            }
-            ftok = ftok ? ftok->previous() : nullptr;
-            if (!(ftok && ftok->function()))
-                return true;
-            const Variable *par = ftok->function()->getArgumentVar(argumentNumber);
-            if (par == nullptr || par->isReference() || par->isPointer())
-                return true;
-        }
+        if (Token::Match(tok2, "[(,] &| %varid% [,)]", varid) && isParameterChanged(tok2))
+            return true;
         if (tok2->str() == "}")
             return false;
         if (Token::Match(tok2, "break|continue|return"))
@@ -201,6 +217,24 @@ static void getnumchildren(const Token *tok, std::list<MathLib::bigint> &numchil
         getnumchildren(tok->astOperand2(), numchildren);
 }
 
+/* Return whether tok is in the body for a function returning a boolean. */
+static bool inBooleanFunction(const Token *tok)
+{
+    const Scope *scope = tok ? tok->scope() : 0;
+    while (scope && scope->isLocal())
+        scope = scope->nestedIn;
+    if (scope && scope->type == Scope::eFunction) {
+        const Function *func = scope->function;
+        if (func) {
+            const Token *ret = func->retDef;
+            while (ret && Token::Match(ret, "static|const"))
+                ret = ret->next();
+            return ret && (ret->str() == "bool");
+        }
+    }
+    return false;
+}
+
 void CheckCondition::checkBadBitmaskCheck()
 {
     if (!_settings->isEnabled("warning"))
@@ -212,7 +246,8 @@ void CheckCondition::checkBadBitmaskCheck()
             const bool isBoolean = Token::Match(parent, "&&|%oror%") ||
                                    (parent->str() == "?" && parent->astOperand1() == tok) ||
                                    (parent->str() == "=" && parent->astOperand2() == tok && parent->astOperand1() && parent->astOperand1()->variable() && parent->astOperand1()->variable()->typeStartToken()->str() == "bool") ||
-                                   (parent->str() == "(" && Token::Match(parent->astOperand1(), "if|while"));
+                                   (parent->str() == "(" && Token::Match(parent->astOperand1(), "if|while")) ||
+                                   (parent->str() == "return" && parent->astOperand1() == tok && inBooleanFunction(tok));
 
             const bool isTrue = (tok->astOperand1()->values.size() == 1 && tok->astOperand1()->values.front().intvalue != 0 && !tok->astOperand1()->values.front().conditional) ||
                                 (tok->astOperand2()->values.size() == 1 && tok->astOperand2()->values.front().intvalue != 0 && !tok->astOperand2()->values.front().conditional);
@@ -285,7 +320,7 @@ bool CheckCondition::isOverlappingCond(const Token * const cond1, const Token * 
         return false;
 
     // same expressions
-    if (isSameExpression(_tokenizer, cond1,cond2,constFunctions))
+    if (isSameExpression(_tokenizer->isCPP(), cond1,cond2,constFunctions))
         return true;
 
     // bitwise overlap for example 'x&7' and 'x==1'
@@ -308,7 +343,7 @@ bool CheckCondition::isOverlappingCond(const Token * const cond1, const Token * 
         if (!num2->isNumber() || MathLib::isNegative(num2->str()))
             return false;
 
-        if (!isSameExpression(_tokenizer, expr1,expr2,constFunctions))
+        if (!isSameExpression(_tokenizer->isCPP(), expr1,expr2,constFunctions))
             return false;
 
         const MathLib::bigint value1 = MathLib::toLongNumber(num1->str());
@@ -361,47 +396,6 @@ void CheckCondition::multiConditionError(const Token *tok, unsigned int line1)
 // Detect oppositing inner and outer conditions
 //---------------------------------------------------------------------------
 
-bool CheckCondition::isOppositeCond(bool isNot, const Token * const cond1, const Token * const cond2, const std::set<std::string> &constFunctions) const
-{
-    if (!cond1 || !cond2)
-        return false;
-
-    if (cond1->str() == "!")
-        return isSameExpression(_tokenizer, cond1->astOperand1(), cond2, constFunctions);
-
-    if (cond2->str() == "!")
-        return isSameExpression(_tokenizer, cond1, cond2->astOperand1(), constFunctions);
-
-    if (!cond1->isComparisonOp() || !cond2->isComparisonOp())
-        return false;
-
-    const std::string &comp1 = cond1->str();
-
-    // condition found .. get comparator
-    std::string comp2;
-    if (isSameExpression(_tokenizer, cond1->astOperand1(), cond2->astOperand1(), constFunctions) &&
-        isSameExpression(_tokenizer, cond1->astOperand2(), cond2->astOperand2(), constFunctions)) {
-        comp2 = cond2->str();
-    } else if (isSameExpression(_tokenizer, cond1->astOperand1(), cond2->astOperand2(), constFunctions) &&
-               isSameExpression(_tokenizer, cond1->astOperand2(), cond2->astOperand1(), constFunctions)) {
-        comp2 = cond2->str();
-        if (comp2[0] == '>')
-            comp2[0] = '<';
-        else if (comp2[0] == '<')
-            comp2[0] = '>';
-    }
-
-    // is condition opposite?
-    return ((comp1 == "==" && comp2 == "!=") ||
-            (comp1 == "!=" && comp2 == "==") ||
-            (comp1 == "<"  && comp2 == ">=") ||
-            (comp1 == "<=" && comp2 == ">") ||
-            (comp1 == ">"  && comp2 == "<=") ||
-            (comp1 == ">=" && comp2 == "<") ||
-            (!isNot && ((comp1 == "<" && comp2 == ">") ||
-                        (comp1 == ">" && comp2 == "<"))));
-}
-
 void CheckCondition::oppositeInnerCondition()
 {
     if (!_settings->isEnabled("warning"))
@@ -425,9 +419,9 @@ void CheckCondition::oppositeInnerCondition()
                 nonlocal |= (var && (!var->isLocal() || var->isStatic()) && !var->isArgument());
                 // TODO: if var is pointer check what it points at
                 nonlocal |= (var && (var->isPointer() || var->isReference()));
-            } else if (cond->isName()) {
+            } else if (!nonlocal && cond->isName()) {
                 // varid is 0. this is possibly a nonlocal variable..
-                nonlocal |= Token::Match(cond->astParent(), "%cop%|(");
+                nonlocal = Token::Match(cond->astParent(), "%cop%|(");
             }
         }
 
@@ -454,34 +448,14 @@ void CheckCondition::oppositeInnerCondition()
                 if (Token::Match(tok->previous(), "++|--|& %name%"))
                     break;
                 if (tok->variable() &&
-                    Token::Match(tok, "%name% . %name% (") &&
-                    !tok->variable()->isConst()) {
+                    !tok->variable()->isConst() &&
+                    Token::Match(tok, "%name% . %name% (")) {
                     const Function* function = tok->tokAt(2)->function();
                     if (!function || !function->isConst())
                         break;
                 }
-                if (Token::Match(tok->previous(), "[(,] %name% [,)]")) {
-                    // is variable unchanged? default is false..
-                    bool unchanged = false;
-
-                    // locate start parentheses in function call..
-                    unsigned int argumentNumber = 0;
-                    const Token *start = tok->previous();
-                    while (start && start->str() == ",") {
-                        start = start->astParent();
-                        ++argumentNumber;
-                    }
-
-                    start = start ? start->previous() : nullptr;
-                    if (start && start->function()) {
-                        const Variable *arg = start->function()->getArgumentVar(argumentNumber);
-                        if (arg && !arg->isPointer() && !arg->isReference())
-                            unchanged = true;
-                    }
-
-                    if (!unchanged)
-                        break;
-                }
+                if (Token::Match(tok->previous(), "[(,] %name% [,)]") && isParameterChanged(tok))
+                    break;
             }
         }
         if (!ifToken)
@@ -491,7 +465,7 @@ void CheckCondition::oppositeInnerCondition()
         const Token *cond1 = scope->classDef->next()->astOperand2();
         const Token *cond2 = ifToken->next()->astOperand2();
 
-        if (isOppositeCond(false, cond1, cond2, _settings->library.functionpure))
+        if (isOppositeCond(false, _tokenizer->isCPP(), cond1, cond2, _settings->library.functionpure))
             oppositeInnerConditionError(scope->classDef, cond2);
     }
 }
@@ -606,6 +580,61 @@ static inline T getvalue(const int test, const T value1, const T value2)
     return 0;
 }
 
+static bool parseComparison(const Token *comp, bool *not1, std::string *op, std::string *value, const Token **expr)
+{
+    *not1 = false;
+    while (comp && comp->str() == "!") {
+        *not1 = !(*not1);
+        comp = comp->astOperand1();
+    }
+
+    if (!comp)
+        return false;
+
+    if (!comp->isComparisonOp() || !comp->astOperand1() || !comp->astOperand2()) {
+        *op = "!=";
+        *value = "0";
+        *expr = comp;
+    } else if (comp->astOperand1()->isLiteral()) {
+        if (comp->astOperand1()->isExpandedMacro())
+            return false;
+        *op = invertOperatorForOperandSwap(comp->str());
+        *value = comp->astOperand1()->str();
+        *expr = comp->astOperand2();
+    } else if (comp->astOperand2()->isLiteral()) {
+        if (comp->astOperand2()->isExpandedMacro())
+            return false;
+        *op = comp->str();
+        *value = comp->astOperand2()->str();
+        *expr = comp->astOperand1();
+    } else {
+        *op = "!=";
+        *value = "0";
+        *expr = comp;
+    }
+
+    // Only float and int values are currently handled
+    if (!MathLib::isInt(*value) && !MathLib::isFloat(*value))
+        return false;
+
+    return true;
+}
+
+static std::string conditionString(bool not1, const Token *expr1, const std::string &op, const std::string &value1)
+{
+    if (expr1->astParent()->isComparisonOp())
+        return std::string(not1 ? "!(" : "") +
+               (expr1->isName() ? expr1->str() : std::string("EXPR")) +
+               " " +
+               op +
+               " " +
+               value1 +
+               (not1 ? ")" : "");
+
+    return std::string(not1 ? "!" : "") +
+           (expr1->isName() ? expr1->str() : std::string("EXPR"));
+}
+
 void CheckCondition::checkIncorrectLogicOperator()
 {
     const bool printStyle = _settings->isEnabled("style");
@@ -619,142 +648,146 @@ void CheckCondition::checkIncorrectLogicOperator()
         const Scope * scope = symbolDatabase->functionScopes[ii];
 
         for (const Token* tok = scope->classStart->next(); tok != scope->classEnd; tok = tok->next()) {
-            // Opposite comparisons
-            if (Token::Match(tok, "%oror%|&&") &&
-                tok->astOperand1() &&
-                tok->astOperand2() &&
-                (tok->astOperand1()->isName() || tok->astOperand2()->isName()) &&
-                isOppositeCond(true, tok->astOperand1(), tok->astOperand2(), _settings->library.functionpure)) {
+            if (!Token::Match(tok, "%oror%|&&") || !tok->astOperand1() || !tok->astOperand2())
+                continue;
+
+            // Opposite comparisons around || or && => always true or always false
+            if ((tok->astOperand1()->isName() || tok->astOperand2()->isName()) &&
+                isOppositeCond(true, _tokenizer->isCPP(), tok->astOperand1(), tok->astOperand2(), _settings->library.functionpure)) {
 
                 const bool alwaysTrue(tok->str() == "||");
                 incorrectLogicOperatorError(tok, tok->expressionString(), alwaysTrue);
+                continue;
             }
 
-            else if (Token::Match(tok, "&&|%oror%")) {
-                if (printStyle && (tok->str() == "||") && tok->astOperand1() && tok->astOperand2() && tok->astOperand2()->str() == "&&") {
-                    const Token* tok2 = tok->astOperand2()->astOperand1();
-                    if (isOppositeCond(true, tok->astOperand1(), tok2, _settings->library.functionpure)) {
-                        redundantConditionError(tok, tok2->expressionString() + ". 'A && (!A || B)' is equivalent to 'A || B'");
+
+            // 'A && (!A || B)' is equivalent with 'A && B'
+            // 'A || (!A && B)' is equivalent with 'A || B'
+            if (printStyle && tok->astOperand1() && tok->astOperand2() &&
+                ((tok->str() == "||" && tok->astOperand2()->str() == "&&") ||
+                 (tok->str() == "&&" && tok->astOperand2()->str() == "||"))) {
+                const Token* tok2 = tok->astOperand2()->astOperand1();
+                if (isOppositeCond(true, _tokenizer->isCPP(), tok->astOperand1(), tok2, _settings->library.functionpure)) {
+                    std::string expr1(tok->astOperand1()->expressionString());
+                    std::string expr2(tok->astOperand2()->astOperand1()->expressionString());
+                    std::string expr3(tok->astOperand2()->astOperand2()->expressionString());
+
+                    if (expr1.length() + expr2.length() + expr3.length() > 50U) {
+                        if (expr1[0] == '!' && expr2[0] != '!') {
+                            expr1 = "!A";
+                            expr2 = "A";
+                        } else {
+                            expr1 = "A";
+                            expr2 = "!A";
+                        }
+
+                        expr3 = "B";
                     }
+
+                    const std::string cond1 = expr1 + " " + tok->str() + " (" + expr2 + " " + tok->astOperand2()->str() + " " + expr3 + ")";
+                    const std::string cond2 = expr1 + " " + tok->str() + " " + expr3;
+
+                    redundantConditionError(tok, tok2->expressionString() + ". '" + cond1 + "' is equivalent to '" + cond2 + "'");
+                    continue;
                 }
-                // Comparison #1 (LHS)
-                const Token *comp1 = tok->astOperand1();
-                if (comp1 && comp1->str() == tok->str())
-                    comp1 = comp1->astOperand2();
+            }
 
-                // Comparison #2 (RHS)
-                const Token *comp2 = tok->astOperand2();
+            // Comparison #1 (LHS)
+            const Token *comp1 = tok->astOperand1();
+            if (comp1 && comp1->str() == tok->str())
+                comp1 = comp1->astOperand2();
 
-                if (!comp1 || !comp1->isComparisonOp() || !comp1->astOperand1() || !comp1->astOperand2())
-                    continue;
-                if (!comp2 || !comp2->isComparisonOp() || !comp2->astOperand1() || !comp2->astOperand2())
-                    continue;
+            // Comparison #2 (RHS)
+            const Token *comp2 = tok->astOperand2();
 
-                std::string op1, value1;
-                const Token *expr1;
-                if (comp1->astOperand1()->isLiteral()) {
-                    op1 = invertOperatorForOperandSwap(comp1->str());
-                    value1 = comp1->astOperand1()->str();
-                    expr1 = comp1->astOperand2();
-                } else if (comp1->astOperand2()->isLiteral()) {
-                    op1 = comp1->str();
-                    value1 = comp1->astOperand2()->str();
-                    expr1 = comp1->astOperand1();
+            // Parse LHS
+            bool not1;
+            std::string op1, value1;
+            const Token *expr1;
+            if (!parseComparison(comp1, &not1, &op1, &value1, &expr1))
+                continue;
+
+            // Parse RHS
+            bool not2;
+            std::string op2, value2;
+            const Token *expr2;
+            if (!parseComparison(comp2, &not2, &op2, &value2, &expr2))
+                continue;
+
+            if (isSameExpression(_tokenizer->isCPP(), comp1, comp2, _settings->library.functionpure))
+                continue; // same expressions => only report that there are same expressions
+            if (!isSameExpression(_tokenizer->isCPP(), expr1, expr2, _settings->library.functionpure))
+                continue;
+
+            const bool isfloat = astIsFloat(expr1, true) || MathLib::isFloat(value1) || astIsFloat(expr2, true) || MathLib::isFloat(value2);
+
+            // don't check floating point equality comparisons. that is bad
+            // and deserves different warnings.
+            if (isfloat && (op1 == "==" || op1 == "!=" || op2 == "==" || op2 == "!="))
+                continue;
+
+            const double d1 = (isfloat) ? MathLib::toDoubleNumber(value1) : 0;
+            const double d2 = (isfloat) ? MathLib::toDoubleNumber(value2) : 0;
+            const MathLib::bigint i1 = (isfloat) ? 0 : MathLib::toLongNumber(value1);
+            const MathLib::bigint i2 = (isfloat) ? 0 : MathLib::toLongNumber(value2);
+            const bool useUnsignedInt = (std::numeric_limits<MathLib::bigint>::max()==i1)||(std::numeric_limits<MathLib::bigint>::max()==i2);
+            const MathLib::biguint u1 = (useUnsignedInt) ? MathLib::toLongNumber(value1) : 0;
+            const MathLib::biguint u2 = (useUnsignedInt) ? MathLib::toLongNumber(value2) : 0;
+            // evaluate if expression is always true/false
+            bool alwaysTrue = true, alwaysFalse = true;
+            bool firstTrue = true, secondTrue = true;
+            for (int test = 1; test <= 5; ++test) {
+                // test:
+                // 1 => testvalue is less than both value1 and value2
+                // 2 => testvalue is value1
+                // 3 => testvalue is between value1 and value2
+                // 4 => testvalue value2
+                // 5 => testvalue is larger than both value1 and value2
+                bool result1, result2;
+                if (isfloat) {
+                    const double testvalue = getvalue<double>(test, d1, d2);
+                    result1 = checkFloatRelation(op1, testvalue, d1);
+                    result2 = checkFloatRelation(op2, testvalue, d2);
+                } else if (useUnsignedInt) {
+                    const MathLib::biguint testvalue = getvalue<MathLib::biguint>(test, u1, u2);
+                    result1 = checkIntRelation(op1, testvalue, u1);
+                    result2 = checkIntRelation(op2, testvalue, u2);
                 } else {
-                    continue;
+                    const MathLib::bigint testvalue = getvalue<MathLib::bigint>(test, i1, i2);
+                    result1 = checkIntRelation(op1, testvalue, i1);
+                    result2 = checkIntRelation(op2, testvalue, i2);
                 }
-
-                std::string op2, value2;
-                const Token *expr2;
-                if (comp2->astOperand1()->isLiteral()) {
-                    op2 = invertOperatorForOperandSwap(comp2->str());
-                    value2 = comp2->astOperand1()->str();
-                    expr2 = comp2->astOperand2();
-                } else if (comp2->astOperand2()->isLiteral()) {
-                    op2 = comp2->str();
-                    value2 = comp2->astOperand2()->str();
-                    expr2 = comp2->astOperand1();
+                if (not1)
+                    result1 = !result1;
+                if (not2)
+                    result2 = !result2;
+                if (tok->str() == "&&") {
+                    alwaysTrue &= (result1 && result2);
+                    alwaysFalse &= !(result1 && result2);
                 } else {
-                    continue;
+                    alwaysTrue &= (result1 || result2);
+                    alwaysFalse &= !(result1 || result2);
                 }
+                firstTrue &= !(!result1 && result2);
+                secondTrue &= !(result1 && !result2);
+            }
 
-                // Only float and int values are currently handled
-                if (!MathLib::isInt(value1) && !MathLib::isFloat(value1))
-                    continue;
-                if (!MathLib::isInt(value2) && !MathLib::isFloat(value2))
-                    continue;
-
-                if (isSameExpression(_tokenizer, comp1, comp2, _settings->library.functionpure))
-                    continue; // same expressions => only report that there are same expressions
-                if (!isSameExpression(_tokenizer, expr1, expr2, _settings->library.functionpure))
-                    continue;
-
-                const bool isfloat = astIsFloat(expr1, true) || MathLib::isFloat(value1) || astIsFloat(expr2, true) || MathLib::isFloat(value2);
-
-                // don't check floating point equality comparisons. that is bad
-                // and deserves different warnings.
-                if (isfloat && (op1 == "==" || op1 == "!=" || op2 == "==" || op2 == "!="))
-                    continue;
-
-                const double d1 = (isfloat) ? MathLib::toDoubleNumber(value1) : 0;
-                const double d2 = (isfloat) ? MathLib::toDoubleNumber(value2) : 0;
-                const MathLib::bigint i1 = (isfloat) ? 0 : MathLib::toLongNumber(value1);
-                const MathLib::bigint i2 = (isfloat) ? 0 : MathLib::toLongNumber(value2);
-                const bool useUnsignedInt = (std::numeric_limits<MathLib::bigint>::max()==i1)||(std::numeric_limits<MathLib::bigint>::max()==i2);
-                const MathLib::biguint u1 = (useUnsignedInt) ? MathLib::toLongNumber(value1) : 0;
-                const MathLib::biguint u2 = (useUnsignedInt) ? MathLib::toLongNumber(value2) : 0;
-                // evaluate if expression is always true/false
-                bool alwaysTrue = true, alwaysFalse = true;
-                bool firstTrue = true, secondTrue = true;
-                for (int test = 1; test <= 5; ++test) {
-                    // test:
-                    // 1 => testvalue is less than both value1 and value2
-                    // 2 => testvalue is value1
-                    // 3 => testvalue is between value1 and value2
-                    // 4 => testvalue value2
-                    // 5 => testvalue is larger than both value1 and value2
-                    bool result1, result2;
-                    if (isfloat) {
-                        const double testvalue = getvalue<double>(test, d1, d2);
-                        result1 = checkFloatRelation(op1, testvalue, d1);
-                        result2 = checkFloatRelation(op2, testvalue, d2);
-                    } else if (useUnsignedInt) {
-                        const MathLib::biguint testvalue = getvalue<MathLib::biguint>(test, u1, u2);
-                        result1 = checkIntRelation(op1, testvalue, u1);
-                        result2 = checkIntRelation(op2, testvalue, u2);
-                    } else {
-                        const MathLib::bigint testvalue = getvalue<MathLib::bigint>(test, i1, i2);
-                        result1 = checkIntRelation(op1, testvalue, i1);
-                        result2 = checkIntRelation(op2, testvalue, i2);
-                    }
-                    if (tok->str() == "&&") {
-                        alwaysTrue &= (result1 && result2);
-                        alwaysFalse &= !(result1 && result2);
-                    } else {
-                        alwaysTrue &= (result1 || result2);
-                        alwaysFalse &= !(result1 || result2);
-                    }
-                    firstTrue &= !(!result1 && result2);
-                    secondTrue &= !(result1 && !result2);
-                }
-
-                const std::string cond1str = (expr1->isName() ? expr1->str() : "EXPR") + " " + op1 + " " + value1;
-                const std::string cond2str = (expr2->isName() ? expr2->str() : "EXPR") + " " + op2 + " " + value2;
-                if (printWarning && (alwaysTrue || alwaysFalse)) {
-                    const std::string text = cond1str + " " + tok->str() + " " + cond2str;
-                    incorrectLogicOperatorError(tok, text, alwaysTrue);
-                } else if (printStyle && secondTrue) {
-                    const std::string text = "If " + cond1str + ", the comparison " + cond2str +
-                                             " is always " + (secondTrue ? "true" : "false") + ".";
-                    redundantConditionError(tok, text);
-                } else if (printStyle && firstTrue) {
-                    //const std::string text = "The comparison " + cond1str + " is always " +
-                    //                         (firstTrue ? "true" : "false") + " when " +
-                    //                         cond2str + ".";
-                    const std::string text = "If " + cond2str + ", the comparison " + cond1str +
-                                             " is always " + (firstTrue ? "true" : "false") + ".";
-                    redundantConditionError(tok, text);
-                }
+            const std::string cond1str = conditionString(not1, expr1, op1, value1);
+            const std::string cond2str = conditionString(not2, expr2, op2, value2);
+            if (printWarning && (alwaysTrue || alwaysFalse)) {
+                const std::string text = cond1str + " " + tok->str() + " " + cond2str;
+                incorrectLogicOperatorError(tok, text, alwaysTrue);
+            } else if (printStyle && secondTrue) {
+                const std::string text = "If '" + cond1str + "', the comparison '" + cond2str +
+                                         "' is always " + (secondTrue ? "true" : "false") + ".";
+                redundantConditionError(tok, text);
+            } else if (printStyle && firstTrue) {
+                //const std::string text = "The comparison " + cond1str + " is always " +
+                //                         (firstTrue ? "true" : "false") + " when " +
+                //                         cond2str + ".";
+                const std::string text = "If '" + cond2str + "', the comparison '" + cond1str +
+                                         "' is always " + (firstTrue ? "true" : "false") + ".";
+                redundantConditionError(tok, text);
             }
         }
     }
@@ -838,7 +871,7 @@ void CheckCondition::clarifyCondition()
                 for (const Token *tok2 = tok->tokAt(3); tok2; tok2 = tok2->next()) {
                     if (tok2->str() == "(" || tok2->str() == "[")
                         tok2 = tok2->link();
-                    else if (tok2->type() == Token::eComparisonOp) {
+                    else if (tok2->tokType() == Token::eComparisonOp) {
                         // This might be a template
                         if (!isC && tok2->link())
                             break;
@@ -917,4 +950,61 @@ void CheckCondition::clarifyConditionError(const Token *tok, bool assign, bool b
                 Severity::style,
                 "clarifyCondition",
                 errmsg);
+}
+
+
+void CheckCondition::alwaysTrueFalse()
+{
+    if (!_settings->isEnabled("style"))
+        return;
+
+    const SymbolDatabase *symbolDatabase = _tokenizer->getSymbolDatabase();
+    const std::size_t functions = symbolDatabase->functionScopes.size();
+
+    for (std::size_t i = 0; i < functions; ++i) {
+        const Scope * scope = symbolDatabase->functionScopes[i];
+        for (const Token* tok = scope->classStart->next(); tok != scope->classEnd; tok = tok->next()) {
+            if (!Token::Match(tok, "%comp%|!"))
+                continue;
+            if (tok->link()) // don't write false positives when templates are used
+                continue;
+            if (tok->values.size() != 1U)
+                continue;
+            if (!tok->values.front().isKnown())
+                continue;
+            if (!tok->astParent() || !Token::Match(tok->astParent()->previous(), "%name% ("))
+                continue;
+
+            // Don't warn when there are expanded macros..
+            bool isExpandedMacro = false;
+            std::stack<const Token*> tokens;
+            tokens.push(tok);
+            while (!tokens.empty()) {
+                const Token *tok2 = tokens.top();
+                tokens.pop();
+                if (!tok2)
+                    continue;
+                tokens.push(tok2->astOperand1());
+                tokens.push(tok2->astOperand2());
+                if (tok2->isExpandedMacro()) {
+                    isExpandedMacro = true;
+                    break;
+                }
+            }
+            if (isExpandedMacro)
+                continue;
+
+            alwaysTrueFalseError(tok, tok->values.front().intvalue != 0);
+        }
+    }
+}
+
+void CheckCondition::alwaysTrueFalseError(const Token *tok, bool knownResult)
+{
+    const std::string expr = tok ? tok->expressionString() : std::string("x");
+
+    reportError(tok,
+                Severity::style,
+                "knownConditionTrueFalse",
+                "Condition '" + expr + "' is always " + (knownResult ? "true" : "false"));
 }

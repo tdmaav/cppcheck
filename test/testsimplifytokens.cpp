@@ -59,7 +59,6 @@ private:
         TEST_CASE(removePreIncrement);
 
         TEST_CASE(elseif1);
-        TEST_CASE(ifa_ifa);     // "if (a) { if (a) .." => "if (a) { if (1) .."
 
         TEST_CASE(sizeof_array);
         TEST_CASE(sizeof5);
@@ -97,10 +96,6 @@ private:
         TEST_CASE(doWhileAssign); // varid
         TEST_CASE(test_4881); // similar to doWhileAssign (#4911), taken from #4881 with full code
 
-        // "if(0==x)" => "if(!x)"
-        TEST_CASE(simplifyIfNot);
-        TEST_CASE(simplifyIfNotNull);
-
         TEST_CASE(combine_wstrings);
 
         // Simplify "not" to "!" (#345)
@@ -137,7 +132,7 @@ private:
         TEST_CASE(simplifyOperator1);
         TEST_CASE(simplifyOperator2);
 
-        TEST_CASE(reverseArraySyntax)
+        TEST_CASE(simplifyArrayAccessSyntax)
         TEST_CASE(simplify_numeric_condition)
         TEST_CASE(simplify_condition);
 
@@ -198,9 +193,9 @@ private:
         TEST_CASE(enum41); // ticket #5212 (valgrind errors during enum simplification)
         TEST_CASE(enum42); // ticket #5182 (template function call in enum value)
         TEST_CASE(enum43); // lhs in assignment
+        TEST_CASE(enum44);
         TEST_CASE(enumscope1); // ticket #3949
         TEST_CASE(duplicateDefinition); // ticket #3565
-        TEST_CASE(invalid_enum); // #5600
 
         // remove "std::" on some standard functions
         TEST_CASE(removestd);
@@ -263,6 +258,7 @@ private:
         TEST_CASE(removeUnnecessaryQualification14);
         TEST_CASE(removeUnnecessaryQualification15);
         TEST_CASE(removeUnnecessaryQualification16);
+        TEST_CASE(removeUnnecessaryQualification17);
 
         TEST_CASE(simplifyVarDecl1); // ticket # 2682 segmentation fault
         TEST_CASE(simplifyVarDecl2); // ticket # 2834 segmentation fault
@@ -365,7 +361,7 @@ private:
 
 
     void cast() {
-        ASSERT_EQUALS("if ( ! p ) { ; }", tok("if (p == (char *)0);"));
+        ASSERT_EQUALS("if ( p == 0 ) { ; }", tok("if (p == (char *)0);"));
         ASSERT_EQUALS("return str ;", tok("return (char *)str;"));
 
         ASSERT_EQUALS("if ( * a )", tok("if ((char)*a)"));
@@ -373,7 +369,7 @@ private:
         ASSERT_EQUALS("if ( * a )", tok("if ((unsigned int)(unsigned char)*a)"));
         ASSERT_EQUALS("class A { A operator* ( int ) ; } ;", tok("class A { A operator *(int); };"));
         ASSERT_EQUALS("class A { A operator* ( int ) const ; } ;", tok("class A { A operator *(int) const; };"));
-        ASSERT_EQUALS("if ( ! p ) { ; }", tok("if (p == (char *)(char *)0);"));
+        ASSERT_EQUALS("if ( p == 0 ) { ; }", tok("if (p == (char *)(char *)0);"));
 
         // no simplification as the cast may be important here. see #2897 for example
         ASSERT_EQUALS("; * ( ( char * ) p + 1 ) = 0 ;", tok("; *((char *)p + 1) = 0;"));
@@ -685,13 +681,14 @@ private:
         ASSERT_EQUALS("void f ( ) { int p ; if ( -1 == p ) { } }", tok("void f(){int p; if(-1==(p)){}}"));
         ASSERT_EQUALS("void f ( ) { int p ; if ( p ) { } }", tok("void f(){int p; if((p)){}}"));
         ASSERT_EQUALS("return p ;", tok("return (p);"));
-        ASSERT_EQUALS("void f ( ) { int * p ; if ( ! * p ) { } }", tok("void f(){int *p; if (*(p) == 0) {}}"));
-        ASSERT_EQUALS("void f ( ) { int * p ; if ( ! * p ) { } }", tok("void f(){int *p; if (*p == 0) {}}"));
+        ASSERT_EQUALS("void f ( ) { int * p ; if ( * p == 0 ) { } }", tok("void f(){int *p; if (*(p) == 0) {}}"));
+        ASSERT_EQUALS("void f ( ) { int * p ; if ( * p == 0 ) { } }", tok("void f(){int *p; if (*p == 0) {}}"));
         ASSERT_EQUALS("void f ( int & p ) { p = 1 ; }", tok("void f(int &p) {(p) = 1;}"));
         ASSERT_EQUALS("void f ( ) { int p [ 10 ] ; p [ 0 ] = 1 ; }", tok("void f(){int p[10]; (p)[0] = 1;}"));
-        ASSERT_EQUALS("void f ( ) { int p ; if ( ! p ) { } }", tok("void f(){int p; if ((p) == 0) {}}"));
+        ASSERT_EQUALS("void f ( ) { int p ; if ( p == 0 ) { } }", tok("void f(){int p; if ((p) == 0) {}}"));
         ASSERT_EQUALS("void f ( ) { int * p ; * p = 1 ; }", tok("void f(){int *p; *(p) = 1;}"));
         ASSERT_EQUALS("void f ( ) { int p ; if ( p ) { } p = 1 ; }", tok("void f(){int p; if ( p ) { } (p) = 1;}"));
+        ASSERT_EQUALS("void f ( ) { a . b ; }", tok("void f ( ) { ( & a ) -> b ; }")); // Ticket #5776
 
         // keep parentheses..
         ASSERT_EQUALS("b = a ;", tok("b = (char)a;"));
@@ -824,7 +821,7 @@ private:
                                     "else { "
                                     "if ( g == 2 ) "
                                     "{ "
-                                    "if ( ! f ) { coo ( ) ; } "
+                                    "if ( f == 0 ) { coo ( ) ; } "
                                     "else { "
                                     "if ( f == 1 ) "
                                     "{ "
@@ -836,15 +833,24 @@ private:
                                     "}";
             ASSERT_EQUALS(tok(expected), tok(src));
         }
+
+        // Ticket #6860 - lambdas
+        {
+            const char src[] = "( []{if (ab) {cd}else if(ef) { gh } else { ij }kl}() )";
+            const char expected[] = "\n\n##file 0\n1: ( [ ] { if ( ab ) { cd } else { if ( ef ) { gh } else { ij } } kl } ( ) )\n";
+            ASSERT_EQUALS(expected, elseif(src));
+        }
+        {
+            const char src[] = "[ []{if (ab) {cd}else if(ef) { gh } else { ij }kl}() ]";
+            const char expected[] = "\n\n##file 0\n1: [ [ ] { if ( ab ) { cd } else { if ( ef ) { gh } else { ij } } kl } ( ) ]\n";
+            ASSERT_EQUALS(expected, elseif(src));
+        }
+        {
+            const char src[] = "= { []{if (ab) {cd}else if(ef) { gh } else { ij }kl}() }";
+            const char expected[] = "\n\n##file 0\n1: = { [ ] { if ( ab ) { cd } else { if ( ef ) { gh } else { ij } } kl } ( ) }\n";
+            ASSERT_EQUALS(expected, elseif(src));
+        }
     }
-
-
-    void ifa_ifa() {
-        ASSERT_EQUALS("int a ; if ( a ) { { ab } cd }", tok("int a ; if (a) { if (a) { ab } cd }", true));
-        ASSERT_EQUALS("int a ; if ( a ) { { ab } cd }", tok("int a ; if (unlikely(a)) { if (a) { ab } cd }", true));
-    }
-
-
 
 
     unsigned int sizeofFromTokenizer(const char type[]) {
@@ -1592,7 +1598,7 @@ private:
                                "{ "
                                "FILE * f ; "
                                "f = fopen ( \"foo\" , \"r\" ) ; "
-                               "if ( ! f ) "
+                               "if ( f == 0 ) "
                                "{ "
                                "return -1 ; "
                                "} "
@@ -1671,26 +1677,6 @@ private:
                       tok("char *s; do { } while (0 == (s=new char[10]));"));
         // #4911
         ASSERT_EQUALS("; do { current = f ( ) ; } while ( ( current ) != 0 ) ;", simplifyIfAndWhileAssign(";do { } while((current=f()) != NULL);"));
-    }
-
-    void simplifyIfNot() {
-        ASSERT_EQUALS("if ( ! x ) { ; }", tok("if(0==x);"));
-        ASSERT_EQUALS("if ( ! x ) { ; }", tok("if(x==0);"));
-        ASSERT_EQUALS("if ( ! ( a = b ) ) { ; }", tok("if(0==(a=b));"));
-        ASSERT_EQUALS("if ( ! a && b ( ) ) { ; }", tok("if( 0 == a && b() );"));
-        ASSERT_EQUALS("if ( b ( ) && ! a ) { ; }", tok("if( b() && 0 == a );"));
-        ASSERT_EQUALS("if ( ! ( a = b ) ) { ; }", tok("if((a=b)==0);"));
-        ASSERT_EQUALS("if ( ! x . y ) { ; }", tok("if(x.y==0);"));
-        ASSERT_EQUALS("if ( ! x ) { ; }", tok("if((x==0));"));
-        ASSERT_EQUALS("if ( ( ! x ) && ! y ) { ; }", tok("if((x==0) && y==0);"));
-        ASSERT_EQUALS("if ( ! ( ! fclose ( fd ) ) ) { ; }", tok("if(!(fclose(fd) == 0));"));
-    }
-
-    void simplifyIfNotNull() {
-        const char code[] = "void f(int x) {\n"
-                            "    x = (x != 0);\n"
-                            "}";
-        ASSERT_EQUALS("void f ( int x ) { }", tok(code, true));
     }
 
     void not1() {
@@ -2537,8 +2523,9 @@ private:
                           "}"));
     }
 
-    void reverseArraySyntax() {
-        ASSERT_EQUALS("a [ 13 ]", tok("13[a]"));
+    void simplifyArrayAccessSyntax() {
+        ASSERT_EQUALS("\n\n##file 0\n"
+                      "1: int a@1 ; a@1 [ 13 ] ;\n", tokenizeDebugListing("int a; 13[a];"));
     }
 
     void simplify_numeric_condition() {
@@ -3188,6 +3175,13 @@ private:
             ASSERT_EQUALS(expected, checkSimplifyEnum(code, false)); // Compile as C code: enum has name 'class'
             checkSimplifyEnum(code, true); // Compile as C++ code: Don't crash
         }
+
+        {
+            // Ticket #6810
+            ASSERT_THROW(checkSimplifyEnum("enum x : enum x {} :"), InternalError);
+            ASSERT_THROW(checkSimplifyEnum("enum x : enum x {} () :"), InternalError);
+            ASSERT_THROW(checkSimplifyEnum("enum x : :: {} () :"), InternalError);
+        }
     }
 
     void enum16() { // ticket #1988
@@ -3250,6 +3244,17 @@ private:
         const char code3[] = "enum en { x = 0 };\n"
                              "void f() { if (aa) ; else if (bb==x) df; }\n";
         checkSimplifyEnum(code3);
+        ASSERT_EQUALS("", errout.str());
+
+        // avoid false positive: Initializer list
+        const char code4[] = "struct S {\n"
+                             "    enum { E = 1 };\n"
+                             "    explicit S(float f)\n"
+                             "        : f_(f * E)\n"
+                             "    {}\n"
+                             "    float f_;\n"
+                             "};";
+        checkSimplifyEnum(code4);
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -3410,6 +3415,16 @@ private:
         ASSERT_EQUALS("A = 1 ;", checkSimplifyEnum(code));
     }
 
+    void enum44() {
+        const char code1[] = "enum format_t { YYYYMMDD = datemask_traits< datemask<'Y', 'Y', 'Y', 'Y', '/', 'M', 'M', '/', 'D', 'D'> >::value, };\n"
+                             "YYYYMMDD;";
+        ASSERT_EQUALS("( datemask_traits < datemask < 'Y' , 'Y' , 'Y' , 'Y' , '/' , 'M' , 'M' , '/' , 'D' , 'D' > > :: value ) ;", checkSimplifyEnum(code1));
+
+        const char code2[] = "enum format_t { YYYYMMDD = datemask_traits< datemask<'Y', 'Y', 'Y', 'Y', '/', 'M', 'M', '/', 'D', 'D'>>::value, };\n"
+                             "YYYYMMDD;";
+        ASSERT_EQUALS("( datemask_traits < datemask < 'Y' , 'Y' , 'Y' , 'Y' , '/' , 'M' , 'M' , '/' , 'D' , 'D' > > :: value ) ;", checkSimplifyEnum(code2));
+    }
+
     void enumscope1() { // #3949 - don't simplify enum from one function in another function
         const char code[] = "void foo() { enum { A = 0, B = 1 }; }\n"
                             "void bar() { int a = A; }";
@@ -3423,17 +3438,6 @@ private:
         tokenizer.tokenize(istr, "test.c");
         Token *x_token = tokenizer.list.front()->tokAt(5);
         ASSERT_EQUALS(false, tokenizer.duplicateDefinition(&x_token, tokenizer.tokens()));
-    }
-
-    void invalid_enum() { // #5600: missing include causes invalid enum
-        const char code [] = "enum {\n"
-                             "    NUM_OPCODES = \n"
-                             // #include "definition"
-                             "};\n"
-                             "struct bytecode {};\n"
-                             "jv jq_next() { opcode = ((opcode) +NUM_OPCODES);\n"
-                             "}";
-        ASSERT_THROW(checkSimplifyEnum(code), InternalError);
     }
 
     void removestd() {
@@ -3855,8 +3859,6 @@ private:
         ASSERT_EQUALS("class C { int f ( ) ; } ;", tok("class C { int f() override ; };", true));
         ASSERT_EQUALS("class C { int f ( ) ; } ;", tok("class C { int f() final ; };", true));
         ASSERT_EQUALS("void f ( ) { int final [ 10 ] ; }", tok("void f() { int final[10]; }", true));
-        ASSERT_EQUALS("if ( a ) { }", tok("if ( likely ( a ) ) { }", true));
-        ASSERT_EQUALS("if ( a ) { }", tok("if ( unlikely ( a ) ) { }", true));
         ASSERT_EQUALS("int * p ;", tok("int * __restrict p;", "test.c"));
         ASSERT_EQUALS("int * * p ;", tok("int * __restrict__ * p;", "test.c"));
         ASSERT_EQUALS("void foo ( float * a , float * b ) ;", tok("void foo(float * __restrict__ a, float * __restrict__ b);", "test.c"));
@@ -4129,6 +4131,21 @@ private:
                             "};\n";
         tok(code, false);
         ASSERT_EQUALS("[test.cpp:3]: (portability) The extra qualification 'Fred::' is unnecessary and is considered an error by many compilers.\n", errout.str());
+    }
+
+    void removeUnnecessaryQualification17() { // #6628 False positive: The extra qualification 'namespace::' is unnecessary and is considered an error by many compilers.
+        const char code[] = "namespace my_application {\n"
+                            "  std::string version();\n"
+                            "}\n"
+                            "namespace my_application_test {\n"
+                            "  class my_application {\n"
+                            "    void version() {\n"
+                            "        std::string version = ::my_application::version();\n"
+                            "    }\n"
+                            "  };\n"
+                            "}";
+        tok(code, false);
+        ASSERT_EQUALS("", errout.str());
     }
 
     void simplifyVarDecl1() { // ticket # 2682 segmentation fault

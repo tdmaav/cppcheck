@@ -130,7 +130,7 @@ void TokenList::addtoken(const std::string & str, const unsigned int lineno, con
 
     // Replace hexadecimal value with decimal
     std::string str2;
-    if (MathLib::isHex(str) || MathLib::isOct(str) || MathLib::isBin(str)) {
+    if (MathLib::isIntHex(str) || MathLib::isOct(str) || MathLib::isBin(str)) {
         std::ostringstream str2stream;
         str2stream << MathLib::toULongNumber(str);
         str2 = str2stream.str();
@@ -196,7 +196,7 @@ void TokenList::insertTokens(Token *dest, const Token *src, unsigned int n)
         dest->fileIndex(src->fileIndex());
         dest->linenr(src->linenr());
         dest->varId(src->varId());
-        dest->type(src->type());
+        dest->tokType(src->tokType());
         dest->flags(src->flags());
         src  = src->next();
         --n;
@@ -303,9 +303,9 @@ bool TokenList::createTokens(std::istream &code, const std::string& file0)
         } else if (std::strchr("+-", ch) &&
                    CurrentToken.length() > 0 &&
                    std::isdigit((unsigned char)CurrentToken[0]) &&
-                   (CurrentToken[CurrentToken.length()-1] == 'e' ||
-                    CurrentToken[CurrentToken.length()-1] == 'E') &&
-                   !MathLib::isHex(CurrentToken)) {
+                   (CurrentToken.back() == 'e' ||
+                    CurrentToken.back() == 'E') &&
+                   !MathLib::isIntHex(CurrentToken)) {
             // Don't separate doubles "4.2e+10"
         } else if (CurrentToken.empty() && ch == '.' && std::isdigit((unsigned char)code.peek())) {
             // tokenize .125 into 0.125
@@ -400,7 +400,7 @@ unsigned long long TokenList::calculateChecksum() const
 {
     unsigned long long checksum = 0;
     for (const Token* tok = front(); tok; tok = tok->next()) {
-        const unsigned int subchecksum1 = tok->flags() + tok->varId() + static_cast<unsigned int>(tok->type());
+        const unsigned int subchecksum1 = tok->flags() + tok->varId() + static_cast<unsigned int>(tok->tokType());
         unsigned int subchecksum2 = 0;
         for (std::size_t i = 0; i < tok->str().size(); i++)
             subchecksum2 += (unsigned int)tok->str()[i];
@@ -427,7 +427,8 @@ struct AST_state {
     unsigned int depth;
     unsigned int inArrayAssignment;
     bool cpp;
-    explicit AST_state(bool cpp_) : depth(0), inArrayAssignment(0), cpp(cpp_) {}
+    unsigned int assign;
+    explicit AST_state(bool cpp_) : depth(0), inArrayAssignment(0), cpp(cpp_), assign(0U) {}
 };
 
 static bool iscast(const Token *tok)
@@ -516,7 +517,9 @@ static void compileTerm(Token *&tok, AST_state& state)
 
     if (tok->isLiteral()) {
         state.op.push(tok);
-        tok = tok->next();
+        do {
+            tok = tok->next();
+        } while (Token::Match(tok, "%name%|%str%"));
     } else if (tok->isName() && tok->str() != "case") {
         if (tok->str() == "return") {
             compileUnaryOp(tok, state, compileExpression);
@@ -528,9 +531,13 @@ static void compileTerm(Token *&tok, AST_state& state)
             while (tok->next() && tok->next()->isName())
                 tok = tok->next();
             state.op.push(tok);
-            if (tok->next() && tok->linkAt(1) && Token::Match(tok, "%name% <"))
+            if (Token::Match(tok, "%name% <") && tok->linkAt(1))
                 tok = tok->linkAt(1);
             tok = tok->next();
+            if (Token::Match(tok, "%str%")) {
+                while (Token::Match(tok, "%name%|%str%"))
+                    tok = tok->next();
+            }
         }
     } else if (tok->str() == "{") {
         if (!state.inArrayAssignment && tok->strAt(-1) != "=") {
@@ -540,7 +547,10 @@ static void compileTerm(Token *&tok, AST_state& state)
             if (tok->link() != tok->next()) {
                 state.inArrayAssignment++;
                 compileUnaryOp(tok, state, compileExpression);
-                state.inArrayAssignment--;
+                while (Token::Match(tok, "} [,}]") && state.inArrayAssignment > 0U) {
+                    tok = tok->next();
+                    state.inArrayAssignment--;
+                }
             } else {
                 state.op.push(tok);
             }
@@ -572,7 +582,7 @@ static bool isPrefixUnary(const Token* tok, bool cpp)
 {
     if (!tok->previous()
         || ((Token::Match(tok->previous(), "(|[|{|%op%|;|}|?|:|,|.|return|::") || (cpp && tok->strAt(-1) == "throw"))
-            && (tok->previous()->type() != Token::eIncDecOp || tok->type() == Token::eIncDecOp)))
+            && (tok->previous()->tokType() != Token::eIncDecOp || tok->tokType() == Token::eIncDecOp)))
         return true;
 
     return tok->strAt(-1) == ")" && iscast(tok->linkAt(-1));
@@ -582,7 +592,7 @@ static void compilePrecedence2(Token *&tok, AST_state& state)
 {
     compileScope(tok, state);
     while (tok) {
-        if (tok->type() == Token::eIncDecOp && !isPrefixUnary(tok, state.cpp)) {
+        if (tok->tokType() == Token::eIncDecOp && !isPrefixUnary(tok, state.cpp)) {
             compileUnaryOp(tok, state, compileScope);
         } else if (tok->str() == "." && tok->strAt(1) != "*") {
             if (tok->strAt(1) == ".") {
@@ -641,10 +651,10 @@ static void compilePrecedence3(Token *&tok, AST_state& state)
 {
     compilePrecedence2(tok, state);
     while (tok) {
-        if ((Token::Match(tok, "[+-!~*&]") || tok->type() == Token::eIncDecOp) &&
+        if ((Token::Match(tok, "[+-!~*&]") || tok->tokType() == Token::eIncDecOp) &&
             isPrefixUnary(tok, state.cpp)) {
             if (Token::Match(tok, "* [*,)]")) {
-                Token* tok2 = tok;
+                Token* tok2 = tok->next();
                 while (tok2->next() && tok2->str() == "*")
                     tok2 = tok2->next();
                 if (Token::Match(tok2, "[>),]")) {
@@ -726,7 +736,7 @@ static void compileMulDiv(Token *&tok, AST_state& state)
     while (tok) {
         if (Token::Match(tok, "[/%]") || (tok->str() == "*" && !tok->astOperand1())) {
             if (Token::Match(tok, "* [*,)]")) {
-                Token* tok2 = tok;
+                Token* tok2 = tok->next();
                 while (tok2->next() && tok2->str() == "*")
                     tok2 = tok2->next();
                 if (Token::Match(tok2, "[>),]")) {
@@ -844,10 +854,22 @@ static void compileAssignTernary(Token *&tok, AST_state& state)
     while (tok) {
         // TODO: http://en.cppreference.com/w/cpp/language/operator_precedence says:
         //       "The expression in the middle of the conditional operator (between ? and :) is parsed as if parenthesized: its precedence relative to ?: is ignored."
-        if (tok->isAssignmentOp() || Token::Match(tok, "[?:]")) {
-            if (tok->str() == "?" && tok->strAt(1) == ":") {
+        if (tok->isAssignmentOp()) {
+            state.assign++;
+            compileBinOp(tok, state, compileAssignTernary);
+            if (state.assign > 0U)
+                state.assign--;
+        } else if (tok->str() == "?") {
+            if (tok->strAt(1) == ":") {
                 state.op.push(0);
             }
+            const unsigned int assign = state.assign;
+            state.assign = 0U;
+            compileBinOp(tok, state, compileAssignTernary);
+            state.assign = assign;
+        } else if (tok->str() == ":") {
+            if (state.assign > 0U)
+                break;
             compileBinOp(tok, state, compileAssignTernary);
         } else break;
     }

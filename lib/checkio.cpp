@@ -168,7 +168,7 @@ void CheckIO::checkFileUsage()
                     tok->strAt(-1) == "=") {
                     if (tok->str() != "tmpfile") {
                         const Token* modeTok = tok->tokAt(2)->nextArgument();
-                        if (modeTok && modeTok->type() == Token::eString)
+                        if (modeTok && modeTok->tokType() == Token::eString)
                             mode = modeTok->strValue();
                     } else
                         mode = "wb+";
@@ -176,7 +176,7 @@ void CheckIO::checkFileUsage()
                     operation = Filepointer::OPEN;
                 } else if (windows && Token::Match(tok, "fopen_s|freopen_s|_wfopen_s|_wfreopen_s ( & %name%")) {
                     const Token* modeTok = tok->tokAt(2)->nextArgument()->nextArgument();
-                    if (modeTok && modeTok->type() == Token::eString)
+                    if (modeTok && modeTok->tokType() == Token::eString)
                         mode = modeTok->strValue();
                     fileTok = tok->tokAt(3);
                     operation = Filepointer::OPEN;
@@ -251,7 +251,7 @@ void CheckIO::checkFileUsage()
                 while (Token::Match(fileTok, "%name% ."))
                     fileTok = fileTok->tokAt(2);
 
-                if (!fileTok || !fileTok->varId())
+                if (!fileTok || !fileTok->varId() || fileTok->strAt(1) == "[")
                     continue;
 
                 if (filepointers.find(fileTok->varId()) == filepointers.end()) { // function call indicates: Its a File
@@ -367,12 +367,9 @@ void CheckIO::seekOnAppendedFileError(const Token *tok)
 //---------------------------------------------------------------------------
 void CheckIO::invalidScanf()
 {
-    const bool printWarning = _settings->isEnabled("warning");
-    const bool printPortability = _settings->isEnabled("portability");
-    if (!printWarning && !printPortability)
+    if (!_settings->isEnabled("warning"))
         return;
 
-    const bool windows = _settings->isWindowsPlatform();
     const SymbolDatabase * const symbolDatabase = _tokenizer->getSymbolDatabase();
     std::size_t functions = symbolDatabase->functionScopes.size();
     for (std::size_t j = 0; j < functions; ++j) {
@@ -383,7 +380,7 @@ void CheckIO::invalidScanf()
                 formatToken = tok->tokAt(2);
             else if (Token::Match(tok, "sscanf|vsscanf|fscanf|vfscanf (")) {
                 const Token* nextArg = tok->tokAt(2)->nextArgument();
-                if (nextArg && nextArg->type() == Token::eString)
+                if (nextArg && nextArg->tokType() == Token::eString)
                     formatToken = nextArg;
                 else
                     continue;
@@ -406,10 +403,8 @@ void CheckIO::invalidScanf()
                 }
 
                 else if (std::isalpha((unsigned char)formatstr[i]) || formatstr[i] == '[') {
-                    if (printWarning && (formatstr[i] == 's' || formatstr[i] == '[' || formatstr[i] == 'S' || (formatstr[i] == 'l' && formatstr[i+1] == 's')))  // #3490 - field width limits are only necessary for string input
-                        invalidScanfError(tok, false);
-                    else if (printPortability && formatstr[i] != 'n' && formatstr[i] != 'c' && !windows)
-                        invalidScanfError(tok, true); // Warn about libc bug in versions prior to 2.13-25
+                    if (formatstr[i] == 's' || formatstr[i] == '[' || formatstr[i] == 'S' || (formatstr[i] == 'l' && formatstr[i+1] == 's'))  // #3490 - field width limits are only necessary for string input
+                        invalidScanfError(tok);
                     format = false;
                 }
             }
@@ -417,50 +412,31 @@ void CheckIO::invalidScanf()
     }
 }
 
-void CheckIO::invalidScanfError(const Token *tok, bool portability)
+void CheckIO::invalidScanfError(const Token *tok)
 {
-    if (portability)
-        reportError(tok, Severity::portability,
-                    "invalidscanf_libc", "scanf without field width limits can crash with huge input data on some versions of libc.\n"
-                    "scanf without field width limits can crash with huge input data on libc versions older than 2.13-25. Add a field "
-                    "width specifier to fix this problem:\n"
-                    "    %i => %3i\n"
-                    "\n"
-                    "Sample program that can crash:\n"
-                    "\n"
-                    "#include <stdio.h>\n"
-                    "int main()\n"
-                    "{\n"
-                    "    int a;\n"
-                    "    scanf(\"%i\", &a);\n"
-                    "    return 0;\n"
-                    "}\n"
-                    "\n"
-                    "To make it crash:\n"
-                    "perl -e 'print \"5\"x2100000' | ./a.out");
-    else
-        reportError(tok, Severity::warning,
-                    "invalidscanf", "scanf without field width limits can crash with huge input data.\n"
-                    "scanf without field width limits can crash with huge input data. Add a field width "
-                    "specifier to fix this problem:\n"
-                    "    %s => %20s\n"
-                    "\n"
-                    "Sample program that can crash:\n"
-                    "\n"
-                    "#include <stdio.h>\n"
-                    "int main()\n"
-                    "{\n"
-                    "    char c[5];\n"
-                    "    scanf(\"%s\", c);\n"
-                    "    return 0;\n"
-                    "}\n"
-                    "\n"
-                    "Typing in 5 or more characters may make the program crash. The correct usage "
-                    "here is 'scanf(\"%4s\", c);', as the maximum field width does not include the "
-                    "terminating null byte.\n"
-                    "Source: http://linux.die.net/man/3/scanf\n"
-                    "Source: http://www.opensource.apple.com/source/xnu/xnu-1456.1.26/libkern/stdio/scanf.c"
-                   );
+
+    reportError(tok, Severity::warning,
+                "invalidscanf", "scanf without field width limits can crash with huge input data.\n"
+                "scanf without field width limits can crash with huge input data. Add a field width "
+                "specifier to fix this problem:\n"
+                "    %s => %20s\n"
+                "\n"
+                "Sample program that can crash:\n"
+                "\n"
+                "#include <stdio.h>\n"
+                "int main()\n"
+                "{\n"
+                "    char c[5];\n"
+                "    scanf(\"%s\", c);\n"
+                "    return 0;\n"
+                "}\n"
+                "\n"
+                "Typing in 5 or more characters may make the program crash. The correct usage "
+                "here is 'scanf(\"%4s\", c);', as the maximum field width does not include the "
+                "terminating null byte.\n"
+                "Source: http://linux.die.net/man/3/scanf\n"
+                "Source: http://www.opensource.apple.com/source/xnu/xnu-1456.1.26/libkern/stdio/scanf.c"
+               );
 }
 
 //---------------------------------------------------------------------------
@@ -526,7 +502,6 @@ void CheckIO::checkWrongPrintfScanfArguments()
 
             const Token* argListTok = 0; // Points to first va_list argument
             const Token* formatStringTok = 0; // Points to format string token
-            std::string formatString;
 
             bool scan = false;
             bool scanf_s = false;
@@ -589,10 +564,10 @@ void CheckIO::checkWrongPrintfScanfArguments()
                 continue;
             }
 
-            if (formatStringTok)
-                formatString = formatStringTok->str();
-            else
+            if (!formatStringTok)
                 continue;
+
+            const std::string& formatString = formatStringTok->str();
 
             // Count format string parameters..
             unsigned int numFormat = 0;
@@ -600,7 +575,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
             bool percent = false;
             const Token* argListTok2 = argListTok;
             std::set<unsigned int> parameterPositionsUsed;
-            for (std::string::iterator i = formatString.begin(); i != formatString.end(); ++i) {
+            for (std::string::const_iterator i = formatString.begin(); i != formatString.end(); ++i) {
                 if (*i == '%') {
                     percent = !percent;
                 } else if (percent && *i == '[') {
@@ -703,7 +678,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                                     invalidScanfFormatWidthError(tok, numFormat, numWidth, argInfo.variableInfo);
                                             }
                                         }
-                                        if (argListTok && argListTok->type() != Token::eString &&
+                                        if (argListTok && argListTok->tokType() != Token::eString &&
                                             argInfo.isKnownType() && argInfo.isArrayOrPointer() &&
                                             (!Token::Match(argInfo.typeToken, "char|wchar_t") ||
                                              argInfo.typeToken->strAt(-1) == "const")) {
@@ -731,7 +706,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                     case 'X':
                                     case 'o':
                                         specifier += *i;
-                                        if (argInfo.typeToken->type() == Token::eString)
+                                        if (argInfo.typeToken->tokType() == Token::eString)
                                             invalidScanfArgTypeError_int(tok, numFormat, specifier, &argInfo, true);
                                         else if (argInfo.isKnownType()) {
                                             if (!Token::Match(argInfo.typeToken, "char|short|int|long")) {
@@ -808,7 +783,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                     case 'd':
                                     case 'i':
                                         specifier += *i;
-                                        if (argInfo.typeToken->type() == Token::eString)
+                                        if (argInfo.typeToken->tokType() == Token::eString)
                                             invalidScanfArgTypeError_int(tok, numFormat, specifier, &argInfo, false);
                                         else if (argInfo.isKnownType()) {
                                             if (!Token::Match(argInfo.typeToken, "char|short|int|long")) {
@@ -881,7 +856,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                         break;
                                     case 'u':
                                         specifier += *i;
-                                        if (argInfo.typeToken->type() == Token::eString)
+                                        if (argInfo.typeToken->tokType() == Token::eString)
                                             invalidScanfArgTypeError_int(tok, numFormat, specifier, &argInfo, true);
                                         else if (argInfo.isKnownType()) {
                                             if (!Token::Match(argInfo.typeToken, "char|short|int|long")) {
@@ -962,7 +937,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                     case 'G':
                                     case 'a':
                                         specifier += *i;
-                                        if (argInfo.typeToken->type() == Token::eString)
+                                        if (argInfo.typeToken->tokType() == Token::eString)
                                             invalidScanfArgTypeError_float(tok, numFormat, specifier, &argInfo);
                                         else if (argInfo.isKnownType()) {
                                             if (!Token::Match(argInfo.typeToken, "float|double")) {
@@ -1047,7 +1022,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                 while (!done) {
                                     switch (*i) {
                                     case 's':
-                                        if (argListTok->type() != Token::eString &&
+                                        if (argListTok->tokType() != Token::eString &&
                                             argInfo.isKnownType() && !argInfo.isArrayOrPointer()) {
                                             if (!Token::Match(argInfo.typeToken, "char|wchar_t")) {
                                                 if (!(!argInfo.isArrayOrPointer() && argInfo.element))
@@ -1057,7 +1032,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                         done = true;
                                         break;
                                     case 'n':
-                                        if ((argInfo.isKnownType() && (!argInfo.isArrayOrPointer() || argInfo.typeToken->strAt(-1) == "const")) || argListTok->type() == Token::eString)
+                                        if ((argInfo.isKnownType() && (!argInfo.isArrayOrPointer() || argInfo.typeToken->strAt(-1) == "const")) || argListTok->tokType() == Token::eString)
                                             invalidPrintfArgTypeError_n(tok, numFormat, &argInfo);
                                         done = true;
                                         break;
@@ -1066,7 +1041,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                     case 'X':
                                     case 'o':
                                         specifier += *i;
-                                        if (argInfo.typeToken->type() == Token::eString)
+                                        if (argInfo.typeToken->tokType() == Token::eString)
                                             invalidPrintfArgTypeError_int(tok, numFormat, specifier, &argInfo);
                                         else if (argInfo.isKnownType()) {
                                             if (argInfo.isArrayOrPointer() && !argInfo.element) {
@@ -1128,7 +1103,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                     case 'd':
                                     case 'i':
                                         specifier += *i;
-                                        if (argInfo.typeToken->type() == Token::eString) {
+                                        if (argInfo.typeToken->tokType() == Token::eString) {
                                             invalidPrintfArgTypeError_sint(tok, numFormat, specifier, &argInfo);
                                         } else if (argInfo.isKnownType()) {
                                             if (argInfo.isArrayOrPointer() && !argInfo.element) {
@@ -1194,7 +1169,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                         break;
                                     case 'u':
                                         specifier += *i;
-                                        if (argInfo.typeToken->type() == Token::eString) {
+                                        if (argInfo.typeToken->tokType() == Token::eString) {
                                             invalidPrintfArgTypeError_uint(tok, numFormat, specifier, &argInfo);
                                         } else if (argInfo.isKnownType()) {
                                             if (argInfo.isArrayOrPointer() && !argInfo.element) {
@@ -1254,7 +1229,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                         done = true;
                                         break;
                                     case 'p':
-                                        if (argInfo.typeToken->type() == Token::eString)
+                                        if (argInfo.typeToken->tokType() == Token::eString)
                                             invalidPrintfArgTypeError_p(tok, numFormat, &argInfo);
                                         else if (argInfo.isKnownType() && !argInfo.isArrayOrPointer())
                                             invalidPrintfArgTypeError_p(tok, numFormat, &argInfo);
@@ -1266,7 +1241,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                                     case 'g':
                                     case 'G':
                                         specifier += *i;
-                                        if (argInfo.typeToken->type() == Token::eString)
+                                        if (argInfo.typeToken->tokType() == Token::eString)
                                             invalidPrintfArgTypeError_float(tok, numFormat, specifier, &argInfo);
                                         else if (argInfo.isKnownType()) {
                                             if (argInfo.isArrayOrPointer() && !argInfo.element) {
@@ -1380,18 +1355,18 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * tok, const Settings *settings,
     : variableInfo(nullptr)
     , typeToken(nullptr)
     , functionInfo(nullptr)
+    , tempToken(nullptr)
     , element(false)
     , _template(false)
     , address(false)
     , isCPP(_isCPP)
-    , tempToken(nullptr)
 {
     if (tok) {
-        if (tok->type() == Token::eString) {
+        if (tok->tokType() == Token::eString) {
             typeToken = tok;
             return;
-        } else if (tok->str() == "&" || tok->type() == Token::eVariable ||
-                   tok->type() == Token::eFunction || Token::Match(tok, "%type% ::") ||
+        } else if (tok->str() == "&" || tok->tokType() == Token::eVariable ||
+                   tok->tokType() == Token::eFunction || Token::Match(tok, "%type% ::") ||
                    (Token::Match(tok, "static_cast|reinterpret_cast|const_cast <") &&
                     Token::simpleMatch(tok->linkAt(1), "> (") &&
                     Token::Match(tok->linkAt(1)->linkAt(1), ") ,|)"))) {
@@ -1407,7 +1382,7 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * tok, const Settings *settings,
             }
             while (Token::Match(tok, "%type% ::"))
                 tok = tok->tokAt(2);
-            if (!tok || !(tok->type() == Token::eVariable || tok->type() == Token::eFunction))
+            if (!tok || !(tok->tokType() == Token::eVariable || tok->tokType() == Token::eFunction))
                 return;
             const Token *varTok = nullptr;
             const Token *tok1 = tok->next();
@@ -1415,7 +1390,7 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * tok, const Settings *settings,
                 if (tok1->str() == "," || tok1->str() == ")") {
                     if (tok1->previous()->str() == "]") {
                         varTok = tok1->linkAt(-1)->previous();
-                        if (varTok->str() == ")" && varTok->link()->previous()->type() == Token::eFunction) {
+                        if (varTok->str() == ")" && varTok->link()->previous()->tokType() == Token::eFunction) {
                             const Function * function = varTok->link()->previous()->function();
                             if (function && function->retDef) {
                                 typeToken = function->retDef;
@@ -1426,7 +1401,7 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * tok, const Settings *settings,
                             }
                             return;
                         }
-                    } else if (tok1->previous()->str() == ")" && tok1->linkAt(-1)->previous()->type() == Token::eFunction) {
+                    } else if (tok1->previous()->str() == ")" && tok1->linkAt(-1)->previous()->tokType() == Token::eFunction) {
                         const Function * function = tok1->linkAt(-1)->previous()->function();
                         if (function && function->retDef) {
                             typeToken = function->retDef;
@@ -1492,7 +1467,7 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * tok, const Settings *settings,
                     }
 
                     return;
-                } else if (!(tok1->str() == "." || tok1->type() == Token::eVariable || tok1->type() == Token::eFunction))
+                } else if (!(tok1->str() == "." || tok1->tokType() == Token::eVariable || tok1->tokType() == Token::eFunction))
                     return;
             }
 
@@ -1900,7 +1875,7 @@ void CheckIO::argumentType(std::ostream& os, const ArgumentInfo * argInfo)
     if (argInfo) {
         os << "\'";
         const Token *type = argInfo->typeToken;
-        if (type->type() == Token::eString) {
+        if (type->tokType() == Token::eString) {
             if (type->isLong())
                 os << "const wchar_t *";
             else

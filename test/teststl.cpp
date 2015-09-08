@@ -45,7 +45,6 @@ private:
         TEST_CASE(iterator11);
         TEST_CASE(iterator12);
         TEST_CASE(iterator13);
-        TEST_CASE(iterator14); // #5598 invalid code causing a crash
 
         TEST_CASE(dereference);
         TEST_CASE(dereference_break);  // #3644 - handle "break"
@@ -72,6 +71,7 @@ private:
         TEST_CASE(eraseAssignByFunctionCall);
         TEST_CASE(eraseErase);
         TEST_CASE(eraseByValue);
+        TEST_CASE(eraseIf);
         TEST_CASE(eraseOnVector);
 
         TEST_CASE(pushback1);
@@ -296,6 +296,20 @@ private:
               "    std::vector<int>::iterator it = std::find_first_of(ints1.begin(), ints1.end(), ints2.begin(), ints2.end());\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        // #6839
+        check("void f(const std::wstring& a, const std::wstring& b) {\n"
+              "    const std::string tp1 = std::string(a.begin(), b.end());\n"
+              "    const std::wstring tp2 = std::string(b.begin(), a.end());\n"
+              "    const std::u16string tp3(a.begin(), b.end());\n"
+              "    const std::u32string tp4(b.begin(), a.end());\n"
+              "    const std::string fp1 = std::string(a.begin(), a.end());\n"
+              "    const std::string tp2(a.begin(), a.end());\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (error) Iterators of different containers are used together.\n"
+                      "[test.cpp:3]: (error) Iterators of different containers are used together.\n"
+                      "[test.cpp:4]: (error) Iterators of different containers are used together.\n"
+                      "[test.cpp:5]: (error) Iterators of different containers are used together.\n", errout.str());
     }
 
     void iterator9() {
@@ -436,11 +450,6 @@ private:
               "    while (!z && it!=t.end())\n"
               "        v++it;\n"
               "}");
-        ASSERT_EQUALS("", errout.str());
-    }
-
-    void iterator14() {
-        check(" { { void foo() { struct }; template <typename> struct S { Used x; void bar() } auto f = [this] { }; } };");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -640,6 +649,7 @@ private:
     void erase1() {
         check("void f()\n"
               "{\n"
+              "    std::list<int>::iterator it;\n"
               "    for (it = foo.begin(); it != foo.end(); ++it) {\n"
               "        foo.erase(it);\n"
               "    }\n"
@@ -647,14 +657,22 @@ private:
               "        foo.erase(it);\n"
               "    }\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (error) Iterator 'it' used after element has been erased.\n"
-                      "[test.cpp:6] -> [test.cpp:7]: (error) Iterator 'it' used after element has been erased.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:4] -> [test.cpp:5]: (error) Iterator 'it' used after element has been erased.\n"
+                      "[test.cpp:7] -> [test.cpp:8]: (error) Iterator 'it' used after element has been erased.\n", errout.str());
 
         check("void f(std::list<int> &ints)\n"
               "{\n"
               "    std::list<int>::iterator i = ints.begin();\n"
               "    i = ints.erase(i);\n"
               "    *i = 0;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f()\n"
+              "{\n"
+              "    std::list<int>::iterator i;\n"
+              "    while (i != x.y.end())\n"
+              "        i = x.y.erase(i);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
 
@@ -765,7 +783,7 @@ private:
     void eraseBreak() {
         check("void f()\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        foo.erase(it);\n"
               "        if (x)"
@@ -776,7 +794,7 @@ private:
 
         check("void f()\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        if (x) {\n"
               "            foo.erase(it);\n"
@@ -788,7 +806,7 @@ private:
 
         check("void f(int x)\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        foo.erase(it);\n"
               "        if (x)"
@@ -881,13 +899,13 @@ private:
               "        }\n"
               "    }\n"
               "}");
-        TODO_ASSERT_EQUALS("[test.cpp:9]: (error) Dangerous iterator usage after erase()-method.\n", "", errout.str());
+        ASSERT_EQUALS("[test.cpp:5] -> [test.cpp:9]: (error) Iterator 'it' used after element has been erased.\n", errout.str());
     }
 
     void eraseGoto() {
         check("void f()\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        foo.erase(it);\n"
               "        goto abc;\n"
@@ -900,7 +918,7 @@ private:
     void eraseAssign1() {
         check("void f()\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        foo.erase(it);\n"
               "        it = foo.begin();\n"
@@ -1022,6 +1040,19 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void eraseIf() {
+        // #4816
+        check("void func(std::list<std::string> strlist) {\n"
+              "    for (std::list<std::string>::iterator str = strlist.begin(); str != strlist.end(); str++) {\n"
+              "        if (func2(*str)) {\n"
+              "    	       strlist.erase(str);\n"
+              "            if (strlist.empty())\n"
+              "                 return;\n"
+              "        }\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (error) Iterator 'str' used after element has been erased.\n", errout.str());
+    }
 
     void eraseOnVector() {
         check("void f(const std::vector<int>& m_ImplementationMap) {\n"

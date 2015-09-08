@@ -141,6 +141,8 @@ private:
         TEST_CASE(simplifyTypedef108); // ticket #4777
         TEST_CASE(simplifyTypedef109); // ticket #1823 - rvalue reference
         TEST_CASE(simplifyTypedef110); // ticket #6268
+        TEST_CASE(simplifyTypedef111); // ticket #6345
+        TEST_CASE(simplifyTypedef112); // ticket #6048
 
         TEST_CASE(simplifyTypedefFunction1);
         TEST_CASE(simplifyTypedefFunction2); // ticket #1685
@@ -682,7 +684,7 @@ private:
                 "class Fred { "
                 ""
                 "const unsigned int * * get ( ) { return test ; } "
-                "const static unsigned int * test ( const unsigned int * p ) { return p ; } "
+                "static const unsigned int * test ( const unsigned int * p ) { return p ; } "
                 "} ;";
 
             ASSERT_EQUALS(expected, tok(code, false));
@@ -1451,7 +1453,7 @@ private:
                             "type4 t4;";
 
         // The expected result..
-        const char expected[] = "char * t1 [ 10 ] ; "
+        const char expected[] = "char ( * t1 ) [ 10 ] ; "
                                 "char ( * ( * tp1 ) [ 2 ] ) [ 10 ] ; "
                                 "char ( & t2 ) [ 10 ] ; "
                                 "char ( & t3 ) [ x ] ; "
@@ -2371,6 +2373,58 @@ private:
                                 "} "
                                 "}";
         ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void simplifyTypedef111() {     // ticket #6345
+        const char code1[] = "typedef typename A B;\n"
+                             "typedef typename B C;\n"
+                             "typename C c;\n";
+        const char expected1[] = "typename A c ;";
+        ASSERT_EQUALS(expected1, tok(code1));
+
+        const char code2[] = "typedef typename A B;\n"
+                             "typedef typename B C;\n"
+                             "C c;\n";
+        const char expected2[] = "typename A c ;";
+        ASSERT_EQUALS(expected2, tok(code2));
+
+        const char code3[] = "typedef typename A B;\n"
+                             "typedef B C;\n"
+                             "C c;\n";
+        const char expected3[] = "typename A c ;";
+        ASSERT_EQUALS(expected3, tok(code3));
+
+        const char code4[] = "typedef A B;\n"
+                             "typedef typename B C;\n"
+                             "C c;\n";
+        const char expected4[] = "typename A c ;";
+        ASSERT_EQUALS(expected4, tok(code4));
+
+        const char code5[] = "typedef A B;\n"
+                             "typedef B C;\n"
+                             "C c;\n";
+        const char expected5[] = "A c ;";
+        ASSERT_EQUALS(expected5, tok(code5));
+
+    }
+
+    void simplifyTypedef112() {     // ticket #6048
+        const char code[] = "template<\n"
+                            "typename DataType,\n"
+                            "typename SpaceType,\n"
+                            "typename TrafoConfig>\n"
+                            "class AsmTraits1 {\n"
+                            "    typedef typename SpaceType::TrafoType TrafoType;\n"
+                            "    typedef typename TrafoType::ShapeType ShapeType;\n"
+                            "    typedef typename TrafoType::template Evaluator<ShapeType, DataType>::Type TrafoEvaluator;\n"
+                            "    enum  {\n"
+                            "      domain_dim = TrafoEvaluator::domain_dim,\n"
+                            "    };\n"
+                            "};";
+
+        const char expected[] = "template < typename DataType , typename SpaceType , typename TrafoConfig > class AsmTraits1 { } ;";
+        ASSERT_EQUALS(expected, tok(code));
         ASSERT_EQUALS("", errout.str());
     }
 
