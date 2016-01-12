@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -46,6 +46,8 @@ private:
         TEST_CASE(inlinesuppress_unusedFunction); // #4210 - unusedFunction
         TEST_CASE(globalsuppress_unusedFunction); // #4946
         TEST_CASE(suppressionWithRelativePaths); // #4733
+        TEST_CASE(suppressingSyntaxErrors); // #7076
+        TEST_CASE(suppressingSyntaxErrorsInline); // #5917
     }
 
     void suppressionsBadId1() const {
@@ -143,7 +145,7 @@ private:
 
         CppCheck cppCheck(*this, true);
         Settings& settings = cppCheck.settings();
-        settings._inlineSuppressions = true;
+        settings.inlineSuppressions = true;
         settings.addEnabled("information");
         settings.jointSuppressionReport = true;
         if (!suppression.empty()) {
@@ -167,8 +169,8 @@ private:
         files["test.cpp"] = 1;
 
         Settings settings;
-        settings._jobs = 1;
-        settings._inlineSuppressions = true;
+        settings.jobs = 1;
+        settings.inlineSuppressions = true;
         settings.addEnabled("information");
         if (!suppression.empty()) {
             ASSERT_EQUALS("", settings.nomsg.addSuppressionLine(suppression));
@@ -370,9 +372,9 @@ private:
         CppCheck cppCheck(*this, true);
         Settings& settings = cppCheck.settings();
         settings.addEnabled("style");
-        settings._inlineSuppressions = true;
-        settings._relativePaths = true;
-        settings._basePaths.push_back("/somewhere");
+        settings.inlineSuppressions = true;
+        settings.relativePaths = true;
+        settings.basePaths.push_back("/somewhere");
         const char code[] =
             "struct Point\n"
             "{\n"
@@ -383,6 +385,30 @@ private:
             "};";
         cppCheck.check("/somewhere/test.cpp", code);
         ASSERT_EQUALS("",errout.str());
+    }
+
+    void suppressingSyntaxErrors() { // syntaxErrors should be suppressable (#7076)
+        std::map<std::string, std::string> files;
+        files["test.cpp"] = "if if\n";
+
+        checkSuppression(files, "syntaxError:test.cpp:1");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void suppressingSyntaxErrorsInline() { // syntaxErrors should be suppressable (#5917)
+        std::map<std::string, std::string> files;
+        files["test.cpp"] = "double result(0.0);\n"
+                            "_asm\n"
+                            "{\n"
+                            "   // cppcheck-suppress syntaxError\n"
+                            "   push  EAX               ; save EAX for callers \n"
+                            "   mov   EAX,Real10        ; get the address pointed to by Real10\n"
+                            "   fld   TBYTE PTR [EAX]   ; load an extended real (10 bytes)\n"
+                            "   fstp  QWORD PTR result  ; store a double (8 bytes)\n"
+                            "   pop   EAX               ; restore EAX\n"
+                            "}";
+        checkSuppression(files, "");
+        ASSERT_EQUALS("", errout.str());
     }
 };
 

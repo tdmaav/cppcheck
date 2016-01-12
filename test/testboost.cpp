@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,17 +27,18 @@ public:
     }
 
 private:
+    Settings settings;
+
     void run() {
+        settings.addEnabled("style");
+        settings.addEnabled("performance");
+
         TEST_CASE(BoostForeachContainerModification)
     }
 
     void check(const char code[]) {
         // Clear the error buffer..
         errout.str("");
-
-        Settings settings;
-        settings.addEnabled("style");
-        settings.addEnabled("performance");
 
         // Tokenize..
         Tokenizer tokenizer(&settings, this);

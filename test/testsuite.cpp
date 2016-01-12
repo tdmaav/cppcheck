@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,9 +18,10 @@
 
 #include "testsuite.h"
 #include "options.h"
+#include "redirect.h"
 
-#include <iostream>
 #include <cstdio>
+#include <iostream>
 #include <list>
 
 std::ostringstream errout;
@@ -86,7 +87,6 @@ bool TestFixture::prepareTest(const char testname[])
         } else {
             std::cout << classname << "::" << testname << std::endl;
         }
-        _lib = Library();
         currentTest = classname + "::" + testname;
         return true;
     }

@@ -4,8 +4,8 @@
   <?define GuiBuildDir = "..\bin" ?>
   <?define TranslationsDir = "..\gui" ?>
   <?define CfgsDir = "..\cfg" ?>
+  <?define PtfsDir = "..\platforms" ?>
   <?define AddonsDir = "..\addons" ?>
-  <?define HelpDir = "..\gui\help" ?>
   <?define QtDllDir = "..\bin" ?>
 
   <?if $(var.Platform) = x64 ?>

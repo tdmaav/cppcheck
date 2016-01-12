@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,27 +30,24 @@ public:
     }
 
 private:
+    Settings settings0;
 
     void check(const char code[], bool experimental = true, const char filename[] = "test.cpp") {
         // Clear the error buffer..
         errout.str("");
 
-        Settings settings;
-        settings.inconclusive = true;
-        settings.experimental = experimental;
-        settings.addEnabled("warning");
-        settings.addEnabled("style");
-        settings.addEnabled("portability");
+        settings0.inconclusive = true;
+        settings0.experimental = experimental;
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(&settings0, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, filename);
         tokenizer.simplifyTokenList2();
 
         // Check for buffer overruns..
         CheckBufferOverrun checkBufferOverrun;
-        checkBufferOverrun.runSimplifiedChecks(&tokenizer, &settings, this);
+        checkBufferOverrun.runSimplifiedChecks(&tokenizer, &settings0, this);
     }
 
     void check(const char code[], const Settings &settings, const char filename[] = "test.cpp") {
@@ -70,6 +67,10 @@ private:
     }
 
     void run() {
+        settings0.addEnabled("warning");
+        settings0.addEnabled("style");
+        settings0.addEnabled("portability");
+
         TEST_CASE(noerr1);
         TEST_CASE(noerr2);
         TEST_CASE(noerr3);
@@ -140,6 +141,7 @@ private:
         TEST_CASE(array_index_string_literal);
         TEST_CASE(array_index_same_struct_and_var_name); // #4751 - not handled well when struct name and var name is same
         TEST_CASE(array_index_valueflow);
+        TEST_CASE(array_index_valueflow_pointer);
         TEST_CASE(array_index_function_parameter);
 
         TEST_CASE(buffer_overrun_2_struct);
@@ -1995,6 +1997,11 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:4]: (error) Array 'str[4]' accessed at index 4, which is out of bounds.\n", errout.str());
 
+        check("void f() {\n" // #6973
+              "    const char *name = \"\";\n"
+              "    if ( name[0] == 'U' ? name[1] : 0) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void array_index_same_struct_and_var_name() {
@@ -2056,6 +2063,47 @@ private:
 
         check("namespace { class X { static const int x[100]; };\n" // #6232
               "const int X::x[100] = {0}; }", false, "test.cpp");
+        ASSERT_EQUALS("", errout.str());
+
+    }
+
+    void array_index_valueflow_pointer() {
+        check("void f() {\n"
+              "  int a[10];\n"
+              "  int *p = a;\n"
+              "  p[20] = 0;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (error) Array 'a[10]' accessed at index 20, which is out of bounds.\n", errout.str());
+
+        {
+            // address of
+            check("void f() {\n"
+                  "  int a[10];\n"
+                  "  int *p = a;\n"
+                  "  p[10] = 0;\n"
+                  "}");
+            ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (error) Array 'a[10]' accessed at index 10, which is out of bounds.\n", errout.str());
+
+            check("void f() {\n"
+                  "  int a[10];\n"
+                  "  int *p = a;\n"
+                  "  dostuff(&p[10]);\n"
+                  "}");
+            ASSERT_EQUALS("", errout.str());
+        }
+
+        check("void f() {\n"
+              "  int a[X];\n" // unknown size
+              "  int *p = a;\n"
+              "  p[20] = 0;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n"
+              "  int a[2];\n"
+              "  char *p = (char *)a;\n" // cast
+              "  p[4] = 0;\n"
+              "}");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -2421,6 +2469,12 @@ private:
     void buffer_overrun_28() {
         check("char c = \"abc\"[4];");
         ASSERT_EQUALS("[test.cpp:1]: (error) Buffer is accessed out of bounds: \"abc\"\n", errout.str());
+
+        check("p = &\"abc\"[4];");
+        ASSERT_EQUALS("", errout.str());
+
+        check("char c = \"\\0abc\"[2];");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void buffer_overrun_bailoutIfSwitch() {
@@ -3427,80 +3481,63 @@ private:
               "void d() { struct b *f; f = malloc(108); }");
     }
 
-    void epcheck(const char code[], const char filename[] = "test.cpp") {
-        // Clear the error buffer..
-        errout.str("");
-
-        Settings settings;
-
-        // Tokenize..
-        Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, filename);
-        tokenizer.simplifyTokenList2();
-
-        // Check for buffer overruns..
-        CheckBufferOverrun checkBufferOverrun(&tokenizer, &settings, this);
-        checkBufferOverrun.bufferOverrun();
-    }
-
 
     void executionPaths1() {
-        epcheck("void f(int a)\n"
-                "{\n"
-                "    int buf[10];\n"
-                "    int i = 5;\n"
-                "    if (a == 1)\n"
-                "        i = 1000;\n"
-                "    buf[i] = 0;\n"
-                "}");
+        check("void f(int a)\n"
+              "{\n"
+              "    int buf[10];\n"
+              "    int i = 5;\n"
+              "    if (a == 1)\n"
+              "        i = 1000;\n"
+              "    buf[i] = 0;\n"
+              "}");
         ASSERT_EQUALS("[test.cpp:7]: (error) Array 'buf[10]' accessed at index 1000, which is out of bounds.\n", errout.str());
 
-        epcheck("void f(int a)\n"
-                "{\n"
-                "    int buf[10][5];\n"
-                "    int i = 5;\n"
-                "    if (a == 1)\n"
-                "        i = 1000;\n"
-                "    buf[i][0] = 0;\n"
-                "}");
+        check("void f(int a)\n"
+              "{\n"
+              "    int buf[10][5];\n"
+              "    int i = 5;\n"
+              "    if (a == 1)\n"
+              "        i = 1000;\n"
+              "    buf[i][0] = 0;\n"
+              "}");
         ASSERT_EQUALS("[test.cpp:7]: (error) Array 'buf[10][5]' index buf[1000][0] out of bounds.\n", errout.str());
     }
 
     void executionPaths2() {
-        epcheck("void foo()\n"
-                "{\n"
-                "    char a[64];\n"
-                "    int sz = sizeof(a);\n"
-                "    bar(&sz);\n"
-                "    a[sz] = 0;\n"
-                "}");
+        check("void foo()\n"
+              "{\n"
+              "    char a[64];\n"
+              "    int sz = sizeof(a);\n"
+              "    bar(&sz);\n"
+              "    a[sz] = 0;\n"
+              "}");
         ASSERT_EQUALS("", errout.str());
     }
 
     void executionPaths3() {
-        epcheck("void f(char *VLtext)\n"
-                "{\n"
-                "    if ( x ) {\n"
-                "        return VLtext[0];\n"
-                "    } else {\n"
-                "        int wordlen = ab();\n"
-                "        VLtext[wordlen] = 0;\n"
-                "    }\n"
-                "}");
+        check("void f(char *VLtext)\n"
+              "{\n"
+              "    if ( x ) {\n"
+              "        return VLtext[0];\n"
+              "    } else {\n"
+              "        int wordlen = ab();\n"
+              "        VLtext[wordlen] = 0;\n"
+              "    }\n"
+              "}");
         ASSERT_EQUALS("", errout.str());
     }
 
     void executionPaths5() {
         // No false positive
-        epcheck("class A {\n"
-                "    void foo() {\n"
-                "        int j = g();\n"
-                "        arr[j]=0;\n"
-                "    }\n"
-                "\n"
-                "    int arr[2*BSize + 2];\n"
-                "};");
+        check("class A {\n"
+              "    void foo() {\n"
+              "        int j = g();\n"
+              "        arr[j]=0;\n"
+              "    }\n"
+              "\n"
+              "    int arr[2*BSize + 2];\n"
+              "};");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -3511,7 +3548,7 @@ private:
                             "    if (x) { i = 1000; }\n"
                             "    a[i] = 0;\n"
                             "}";
-        epcheck(code);
+        check(code);
         ASSERT_EQUALS("[test.cpp:4]: (error) Array 'a[10]' accessed at index 1000, which is out of bounds.\n", errout.str());
     }
 

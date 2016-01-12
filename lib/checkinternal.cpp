@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,10 +20,10 @@
 
 #include "checkinternal.h"
 #include "symboldatabase.h"
+#include "utils.h"
 #include <string>
 #include <set>
 #include <cstring>
-#include <cctype>
 
 // Register this check class (by creating a static instance of it).
 // Disabled in release builds
@@ -147,6 +147,7 @@ void CheckInternal::checkTokenSimpleMatchPatterns()
 namespace {
     const std::set<std::string> magics = make_container< std::set<std::string> > ()
                                          << "%any%"
+                                         << "%assign%"
                                          << "%bool%"
                                          << "%char%"
                                          << "%comp%"
@@ -203,6 +204,7 @@ void CheckInternal::checkMissingPercentCharacter()
 namespace {
     const std::set<std::string> knownPatterns = make_container< std::set<std::string> > ()
             << "%any%"
+            << "%assign%"
             << "%bool%"
             << "%char%"
             << "%comp%"

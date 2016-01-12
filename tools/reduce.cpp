@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -674,7 +674,7 @@ int main(int argc, char *argv[])
                 if (path[path.length()-1] != '/')
                     path += '/';
 
-                settings._includePaths.push_back(path);
+                settings.includePaths.push_back(path);
             }
         } else if (strncmp(argv[i], "--maxtime=", 10) == 0)
             settings.maxtime = std::atoi(argv[i] + 10);
@@ -702,7 +702,7 @@ int main(int argc, char *argv[])
         } else if (std::strcmp(argv[i], "--debug-warnings") == 0)
             settings.debugwarnings = true;
         else if (std::strcmp(argv[i], "-f") == 0 || std::strcmp(argv[i], "--force") == 0)
-            settings._force = true;
+            settings.force = true;
         else if (std::strncmp(argv[i], "--enable=", 9) == 0) {
             std::string errmsg = settings.addEnabled(argv[i] + 9);
             if (!errmsg.empty()) {
@@ -719,21 +719,21 @@ int main(int argc, char *argv[])
         } else if (std::strcmp(argv[i], "--inconclusive") == 0)
             settings.inconclusive = true;
         else if (std::strncmp(argv[i], "--max-configs=", 14) == 0) {
-            settings._force = false;
+            settings.force = false;
 
             std::istringstream iss(14+argv[i]);
-            if (!(iss >> settings._maxConfigs)) {
+            if (!(iss >> settings.maxConfigs)) {
                 std::cerr << "argument to '--max-configs=' is not a number." << std::endl;
                 return false;
             }
 
-            if (settings._maxConfigs < 1) {
+            if (settings.maxConfigs < 1) {
                 std::cerr << "argument to '--max-configs=' must be greater than 0." << std::endl;
                 return false;
             }
 
             maxconfigs = true;
-        } else if (settings.filename==NULL && strchr(argv[i],'.'))
+        } else if (settings.filename==nullptr && strchr(argv[i],'.'))
             settings.filename = argv[i];
         else if (settings.linenr == 0U && MathLib::isInt(argv[i]))
             settings.linenr = std::atoi(argv[i]);
@@ -743,13 +743,13 @@ int main(int argc, char *argv[])
         }
     }
 
-    if (def && !settings._force && !maxconfigs)
-        settings._maxConfigs = 1U;
+    if (def && !settings.force && !maxconfigs)
+        settings.maxConfigs = 1U;
 
-    if (settings._force)
-        settings._maxConfigs = ~0U;
+    if (settings.force)
+        settings.maxConfigs = ~0U;
 
-    if ((!settings.hang && settings.linenr == 0U) || settings.filename == NULL) {
+    if ((!settings.hang && settings.linenr == 0U) || settings.filename == nullptr) {
         std::cerr << "Syntax:" << std::endl
                   << argv[0] << " [--stdout] [--cfg=X] [--hang] [--maxtime=60] [-D define] [-I includepath] [--force] [--enable=<id>] [--inconclusive] [--debug-warnings] [--max-configs=<limit>] filename [linenr]" << std::endl;
         return EXIT_FAILURE;

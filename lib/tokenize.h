@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -71,6 +71,11 @@ public:
      */
     bool IsScopeNoReturn(const Token *endScopeToken, bool *unknown = nullptr) const;
 
+    bool createTokens(std::istream &code,
+                      const char FileName[]);
+
+    bool simplifyTokens1(const std::string &configuration,
+                         bool noSymbolDB_AST = false);
     /**
      * Tokenize code
      * @param code input stream for code, e.g.
@@ -204,6 +209,10 @@ public:
     /** Simplify labels and 'case|default' syntaxes.
       */
     void simplifyLabelsCaseDefault();
+
+    /** simplify case ranges (gcc extension)
+      */
+    void simplifyCaseRange();
 
     /** Remove macros in global scope */
     void removeMacrosInGlobalScope();
@@ -352,11 +361,6 @@ public:
      * A c;
      */
     void simplifyTypedef();
-
-    /**
-     * Simplify float casts (float)1 => 1.0
-     */
-    void simplifyFloatCasts();
 
     /**
      * Simplify casts
@@ -517,8 +521,6 @@ public:
      */
     static std::string simplifyString(const std::string &source);
 
-private:
-
     /**
      * is token pointing at function head?
      * @param tok         A '(' or ')' token in a possible function head
@@ -526,6 +528,17 @@ private:
      * @return token matching with endsWith if syntax seems to be a function head else nullptr
      */
     const Token * isFunctionHead(const Token *tok, const std::string &endsWith) const;
+
+private:
+
+    /**
+     * is token pointing at function head?
+     * @param tok         A '(' or ')' token in a possible function head
+     * @param endsWith    string after function head
+     * @param cpp         c++ code
+     * @return token matching with endsWith if syntax seems to be a function head else nullptr
+     */
+    static const Token * isFunctionHead(const Token *tok, const std::string &endsWith, bool cpp);
 
     /**
      * simplify "while (0)"
@@ -557,12 +570,6 @@ private:
 
     /** Simplify function pointers */
     void simplifyFunctionPointers();
-
-    /**
-     * Remove exception specifications.
-     */
-    void removeExceptionSpecifications();
-
 
     /**
      * Send error message to error logger about internal bug.
@@ -640,11 +647,6 @@ private:
     void removeUnnecessaryQualification();
 
     /**
-     * unnecessary member qualification error
-     */
-    void unnecessaryQualificationError(const Token *tok, const std::string &qualification) const;
-
-    /**
      * Add std:: in front of std classes, when using namespace std; was given
      */
     void simplifyNamespaceStd();
@@ -692,6 +694,11 @@ private:
     bool simplifyStrlen();
 
     /**
+    * Prepare ternary operators with parentheses so that the AST can be created
+    * */
+    void prepareTernaryOpForAST();
+
+    /**
      * check for duplicate enum definition
      */
     bool duplicateDefinition(Token **tokPtr, const Token *name) const;
@@ -710,12 +717,24 @@ private:
     bool duplicateTypedef(Token **tokPtr, const Token *name, const Token *typeDef, const std::set<std::string>& structs) const;
     void duplicateTypedefError(const Token *tok1, const Token *tok2, const std::string & type) const;
 
-    /**
-     * Report error - duplicate declarations
-     */
-    void duplicateDeclarationError(const Token *tok1, const Token *tok2, const std::string &type) const;
-
     void unsupportedTypedef(const Token *tok) const;
+
+    void setVarIdClassDeclaration(Token * const startToken,
+                                  const std::map<std::string, unsigned int> &variableId,
+                                  const unsigned int scopeStartVarId,
+                                  std::map<unsigned int, std::map<std::string,unsigned int> >& structMembers);
+
+
+    /**
+     * Simplify e.g. 'return(strncat(temp,"a",1));' into
+     * strncat(temp,"a",1); return temp;
+     */
+    void simplifyReturnStrncat();
+
+    /**
+     * Output list of unknown types.
+     */
+    void printUnknownTypes() const;
 
 public:
 
@@ -754,19 +773,6 @@ public:
     unsigned int varIdCount() const {
         return _varId;
     }
-
-
-    /**
-     * Simplify e.g. 'return(strncat(temp,"a",1));' into
-     * strncat(temp,"a",1); return temp;
-     */
-    void simplifyReturnStrncat();
-
-    /**
-     * Output list of unknown types.
-     */
-    void printUnknownTypes() const;
-
 
     /**
      * Token list: stores all tokens.
@@ -811,7 +817,7 @@ public:
     /**
     * Helper function to check for start of function execution scope.
     * Do not use this in checks.  Use the symbol database.
-    * @param tok --> pointer to end parentheses of parameter list
+    * @param tok pointer to end parentheses of parameter list
     * @return pointer to start brace of function scope or nullptr if not start.
     */
     static const Token * startOfExecutableScope(const Token * tok);
@@ -822,11 +828,6 @@ private:
 
     /** Disable assignment operator, no implementation */
     Tokenizer &operator=(const Tokenizer &);
-
-    Token * startOfFunction(Token * tok) const;
-    static Token * startOfExecutableScope(Token * tok) {
-        return const_cast<Token*>(startOfExecutableScope(const_cast<const Token *>(tok)));
-    }
 
     Token *processFunc(Token *tok2, bool inOperator) const;
 

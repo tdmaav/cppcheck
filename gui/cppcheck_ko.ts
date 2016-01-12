@@ -34,8 +34,12 @@ of the GNU General Public License version 3</source>
         <translation type="obsolete">Copyright © 2007-2012 Daniel Marjamäki and cppcheck team. {2007-2013 ?}</translation>
     </message>
     <message utf8="true">
-        <source>Copyright © 2007-2015 Daniel Marjamäki and cppcheck team.</source>
-        <translation type="unfinished">Copyright © 2007-2012 Daniel Marjamäki and cppcheck team. {2007-2013 ?} {2007-2015 ?}</translation>
+        <source>Copyright © 2007-2016 Daniel Marjamäki and cppcheck team.</source>
+        <translation type="obsolete">Copyright © 2007-2012 Daniel Marjamäki and cppcheck team. {2007-2013 ?} {2007-2016 ?}</translation>
+    </message>
+    <message utf8="true">
+        <source>Copyright © 2007-2016 Cppcheck team.</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -195,6 +199,38 @@ Kate로 파일을 열고, 해당 행으로 이동하는 예제:
     </message>
     <message>
         <source>Open library file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sort</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Filter:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Comments</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Save as</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cppcheck</source>
+        <translation type="unfinished">Cppcheck</translation>
+    </message>
+    <message>
+        <source>Can not open file %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Can not save file %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Save the library as</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -394,7 +430,7 @@ Kate로 파일을 열고, 해당 행으로 이동하는 예제:
     </message>
     <message>
         <source>&amp;Recheck files</source>
-        <translation>파일 재검사(&amp;R)</translation>
+        <translation type="obsolete">파일 재검사(&amp;R)</translation>
     </message>
     <message>
         <source>Ctrl+R</source>
@@ -749,65 +785,13 @@ Do you want to remove the file from the recently used projects -list?</source>
 최근 프로젝트 목록에서 파일을 제거하시겠습니까?</translation>
     </message>
     <message>
-        <source>Dutch</source>
-        <translation>네덜란드어</translation>
-    </message>
-    <message>
-        <source>English</source>
-        <translation>영어</translation>
-    </message>
-    <message>
-        <source>Finnish</source>
-        <translation>핀란드어</translation>
-    </message>
-    <message>
-        <source>French</source>
-        <translation>프랑스어</translation>
-    </message>
-    <message>
-        <source>German</source>
-        <translation>독일어</translation>
-    </message>
-    <message>
-        <source>Japanese</source>
-        <translation>일본어</translation>
-    </message>
-    <message>
-        <source>Korean</source>
-        <translation>한국어</translation>
-    </message>
-    <message>
-        <source>Russian</source>
-        <translation>러시아어</translation>
-    </message>
-    <message>
-        <source>Serbian</source>
-        <translation>세르비아어</translation>
-    </message>
-    <message>
-        <source>Spanish</source>
-        <translation>스페인어</translation>
-    </message>
-    <message>
-        <source>Swedish</source>
-        <translation>스웨덴어</translation>
-    </message>
-    <message>
         <source>Current results will be cleared.
 
 Opening a new XML file will clear current results.Do you want to proceed?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Italian</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Show S&amp;cratchpad...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Chinese (Simplified)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -923,6 +907,38 @@ Options:
         <source>Open library editor</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Auto-detect language</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enforce C++</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enforce C</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Recheck modified files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Recheck all files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>C/C++ Source (%1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unknown element</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unknown issue</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Platforms</name>
@@ -948,7 +964,11 @@ Options:
     </message>
     <message>
         <source>Built-in</source>
-        <translation>내장 방식</translation>
+        <translation type="obsolete">내장 방식</translation>
+    </message>
+    <message>
+        <source>Native</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
@@ -1107,6 +1127,25 @@ Options:
     </message>
 </context>
 <context>
+    <name>QPlatformTheme</name>
+    <message>
+        <source>OK</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation type="unfinished">닫기</translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>ResultsTree</name>
     <message>
         <source>File</source>
@@ -1236,6 +1275,14 @@ Please select the directory where file is located.</source>
         <source>Open containing folder</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Inconclusive</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Recheck</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>ResultsView</name>
@@ -1291,6 +1338,10 @@ To toggle what kind of errors are shown, open view menu.</source>
     </message>
     <message>
         <source>No errors found, nothing to print.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>First included by</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1393,18 +1444,26 @@ To toggle what kind of errors are shown, open view menu.</source>
     </message>
     <message>
         <source>Advanced</source>
-        <translation>고급</translation>
+        <translation type="obsolete">고급</translation>
     </message>
     <message>
         <source>&amp;Show inconclusive errors</source>
-        <translation>불확실한 에러 표시(&amp;S)</translation>
+        <translation type="obsolete">불확실한 에러 표시(&amp;S)</translation>
     </message>
     <message>
         <source>S&amp;how internal warnings in log</source>
-        <translation>로그에 내부 경고 표시(&amp;H)</translation>
+        <translation type="obsolete">로그에 내부 경고 표시(&amp;H)</translation>
     </message>
     <message>
         <source>Display error Id in column &quot;Id&quot;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Check for inconclusive errors also</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Show internal warnings in log</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1429,6 +1488,10 @@ To toggle what kind of errors are shown, open view menu.</source>
     <message>
         <source>Select include directory</source>
         <translation>Include 디렉토리 선택</translation>
+    </message>
+    <message>
+        <source> [Default]</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

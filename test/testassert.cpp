@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,12 +26,11 @@ public:
     TestAssert() : TestFixture("TestAssert") {}
 
 private:
+    Settings settings;
+
     void check(const char code[], const char *filename = "test.cpp") {
         // Clear the error buffer..
         errout.str("");
-
-        Settings settings;
-        settings.addEnabled("warning");
 
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
@@ -44,6 +43,8 @@ private:
     }
 
     void run() {
+        settings.addEnabled("warning");
+
         TEST_CASE(assignmentInAssert);
         TEST_CASE(functionCallInAssert);
         TEST_CASE(memberFunctionCallInAssert);

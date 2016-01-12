@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,9 +28,23 @@ public:
     }
 
 private:
-
+    Settings settings0;
+    Settings settings1;
 
     void run() {
+        settings0.addEnabled("style");
+        settings0.addEnabled("warning");
+
+        const char cfg[] = "<?xml version=\"1.0\"?>\n"
+                           "<def>\n"
+                           "  <function name=\"bar\"> <pure/> </function>\n"
+                           "</def>";
+        tinyxml2::XMLDocument xmldoc;
+        xmldoc.Parse(cfg, sizeof(cfg));
+        settings1.addEnabled("style");
+        settings1.addEnabled("warning");
+        settings1.library.load(xmldoc);
+
         TEST_CASE(assignAndCompare);   // assignment and comparison don't match
         TEST_CASE(mismatchingBitAnd);  // overlapping bitmasks
         TEST_CASE(compare);            // mismatching LHS/RHS in comparison
@@ -65,25 +79,23 @@ private:
         TEST_CASE(clarifyCondition6);     // #3818
 
         TEST_CASE(alwaysTrue);
+
+        TEST_CASE(checkInvalidTestForOverflow);
     }
 
     void check(const char code[], const char* filename = "test.cpp") {
         // Clear the error buffer..
         errout.str("");
 
-        Settings settings;
-        settings.addEnabled("style");
-        settings.addEnabled("warning");
-
         CheckCondition checkCondition;
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(&settings0, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, filename);
-        checkCondition.runChecks(&tokenizer, &settings, this);
+        checkCondition.runChecks(&tokenizer, &settings0, this);
         tokenizer.simplifyTokenList2();
-        checkCondition.runSimplifiedChecks(&tokenizer, &settings, this);
+        checkCondition.runSimplifiedChecks(&tokenizer, &settings0, this);
     }
 
     void assignAndCompare() {
@@ -165,6 +177,15 @@ private:
         check("void f(int x) {\n"
               "    extern int y; y = x & 7;\n"
               "    while (y==8);\n" // non-local variable => no error
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(int x) {\n"
+              "    int a = 100;\n"
+              "    while (x) {\n"
+              "        int y = 16 | a;\n"
+              "        while (y != 0) y--;\n"
+              "    }\n"
               "}");
         ASSERT_EQUALS("", errout.str());
 
@@ -355,28 +376,17 @@ private:
         // Clear the error buffer..
         errout.str("");
 
-        const char cfg[] = "<?xml version=\"1.0\"?>\n"
-                           "<def>\n"
-                           "  <function name=\"bar\"> <pure/> </function>\n"
-                           "</def>";
-        tinyxml2::XMLDocument xmldoc;
-        xmldoc.Parse(cfg, sizeof(cfg));
-
-        Settings settings;
-        settings.addEnabled("style");
-        settings.addEnabled("warning");
-        settings.library.load(xmldoc);
-
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(&settings1, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, "test.cpp");
 
         CheckCondition checkCondition;
-        checkCondition.runChecks(&tokenizer, &settings, this);
+        checkCondition.runChecks(&tokenizer, &settings1, this);
         tokenizer.simplifyTokenList2();
-        checkCondition.runSimplifiedChecks(&tokenizer, &settings, this);
+        checkCondition.runSimplifiedChecks(&tokenizer, &settings1, this);
     }
+
     void duplicateIf() {
         check("void f(int a, int &b) {\n"
               "    if (a) { b = 1; }\n"
@@ -952,6 +962,24 @@ private:
               "  if (a>b || a<b) {}\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        // #6064 False positive incorrectLogicOperator - invalid assumption about template type?
+        check("template<typename T> T icdf( const T uniform ) {\n"
+              "   if ((0<uniform) && (uniform<1))\n"
+              "     {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        // #6081 False positive: incorrectLogicOperator, with close negative comparisons
+        check("double neg = -1.0 - 1.0e-13;\n"
+              "void foo() {\n"
+              "    if ((neg < -1.0) && (neg > -1.0 - 1.0e-12))\n"
+              "        return;\n"
+              "    else\n"
+              "        return;\n"
+              "}");
+        TODO_ASSERT_EQUALS("", "[test.cpp:3]: (warning) Logical conjunction always evaluates to false: neg < -1.0 && neg > -1.0.\n", errout.str());
+
     }
 
     void incorrectLogicOperator8() { // opposite expressions
@@ -1536,11 +1564,7 @@ private:
               "    if (init == 0x89504e470d0a1a0a || init == 0x8a4d4e470d0a1a0a)\n"
               "        ;\n"
               "}");
-#ifdef _MSC_VER
         ASSERT_EQUALS("", errout.str());
-#else
-        TODO_ASSERT_EQUALS("", "[test.cpp:2]: (style) Redundant condition: If 'init == 9894494448401390090', the comparison 'init == 9965707617509186058' is always true.\n", errout.str());
-#endif
     }
 
     void testBug5309() {
@@ -1579,6 +1603,38 @@ private:
               "  int x = 0;\n"
               "  if (a) { return; }\n" // <- this is just here to fool simplifyKnownVariabels
               "  if ($x != $0) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void checkInvalidTestForOverflow() {
+        check("void f(char *p, unsigned int x) {\n"
+              "    assert((p + x) < p);\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (warning) Invalid test for overflow '(p+x)<p'. Condition is always false unless there is overflow, and overflow is UB.\n", errout.str());
+
+        check("void f(char *p, unsigned int x) {\n"
+              "    assert((p + x) >= p);\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (warning) Invalid test for overflow '(p+x)>=p'. Condition is always true unless there is overflow, and overflow is UB.\n", errout.str());
+
+        check("void f(char *p, unsigned int x) {\n"
+              "    assert(p > (p + x));\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (warning) Invalid test for overflow 'p>(p+x)'. Condition is always false unless there is overflow, and overflow is UB.\n", errout.str());
+
+        check("void f(char *p, unsigned int x) {\n"
+              "    assert(p <= (p + x));\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (warning) Invalid test for overflow 'p<=(p+x)'. Condition is always true unless there is overflow, and overflow is UB.\n", errout.str());
+
+        check("void f(signed int x) {\n"
+              "    assert(x + 100 < x);\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (warning) Invalid test for overflow 'x+100<x'. Condition is always false unless there is overflow, and overflow is UB.\n", errout.str());
+
+        check("void f(signed int x) {\n" // unsigned overflow => dont warn
+              "    assert(x + 100U < x);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
     }

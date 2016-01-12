@@ -14,8 +14,7 @@ import os
 import datetime
 import time
 
-DEBIAN = ['ftp://ftp.sunet.se/pub/Linux/distributions/Debian/debian/',
-          'http://ftp.sunet.se/pub/Linux/distributions/Debian/debian/',
+DEBIAN = ['ftp://ftp.se.debian.org/debian/',
           'ftp://ftp.debian.org/debian/']
 
 
@@ -90,14 +89,14 @@ def removeAllExceptResults():
                     shutil.rmtree(filename, onerror=handleRemoveReadonly)
                 elif filename != 'results.txt':
                     os.remove(filename)
-        except WindowsError, err:
+        except WindowsError as err:
             time.sleep(30)
             if count == 0:
                 print('Failed to cleanup files/folders')
                 print(err)
                 sys.exit(1)
             continue
-        except OSError, err:
+        except OSError as err:
             time.sleep(30)
             if count == 0:
                 print('Failed to cleanup files/folders')
@@ -168,7 +167,7 @@ def scanarchive(filepath, jobs):
          '-D__GCC__',
          '--enable=style',
          '--error-exitcode=0',
-         '--exception-handling',
+         '--exception-handling=stderr',
          jobs,
          '.'],
         stdout=subprocess.PIPE,
@@ -179,6 +178,7 @@ def scanarchive(filepath, jobs):
     if p.returncode == 0:
         results.write(comm[1])
     elif comm[0].find('cppcheck: error: could not find or open any of the paths given.') < 0:
+        results.write(comm[1])
         results.write('Exit code is not zero! Crash?\n')
     results.write('\n')
     results.close()

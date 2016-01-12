@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -62,6 +62,9 @@
 #define SETTINGS_STD_C99                "Platform C99"
 #define SETTINGS_STD_C11                "Platform C11"
 #define SETTINGS_STD_POSIX              "Platform Posix"
+
+// Language enforcement
+#define SETTINGS_ENFORCED_LANGUAGE      "Enforced language"
 
 // Other settings
 #define SETTINGS_CHECK_FORCE            "Check force"

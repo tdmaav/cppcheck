@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -44,6 +44,7 @@ private:
             doc.Parse(xmldata, sizeof(xmldata));
             settings.library.load(doc);
         }
+        settings.addEnabled("warning");
 
         TEST_CASE(nullpointerAfterLoop);
         TEST_CASE(nullpointer1);
@@ -101,7 +102,6 @@ private:
         // Clear the error buffer..
         errout.str("");
 
-        settings.addEnabled("warning");
         settings.inconclusive = inconclusive;
 
         // Tokenize..
@@ -2029,6 +2029,36 @@ private:
                       "[test.cpp:5]: (error) Possible null pointer dereference: p\n"
                       "[test.cpp:7]: (error) Possible null pointer dereference: p\n"
                       "[test.cpp:8]: (error) Possible null pointer dereference: p\n", errout.str());
+
+        check("void f(std::string s1, const std::string& s2, const std::string* s3) {\n"
+              "    void* p = 0;\n"
+              "    if (x) { return; }\n"
+              "    foo(0 == s1.size());\n"
+              "    foo(0 == s2.size());\n"
+              "    foo(0 == s3->size());\n"
+              "    foo(s1.size() == 0);\n"
+              "    foo(s2.size() == 0);\n"
+              "    foo(s3->size() == 0);\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(std::string s1, const std::string& s2) {\n"
+              "    if (x) { return; }\n"
+              "    foo(0 == s1[0]);\n"
+              "    foo(0 == s2[0]);\n"
+              "    foo(s1[0] == 0);\n"
+              "    foo(s2[0] == 0);\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(std::string s1, const std::string& s2) {\n"
+              "    if (x) { return; }\n"
+              "    foo(s1 == '\\0');\n"
+              "    foo(s2 == '\\0');\n"
+              "    foo('\\0' == s1);\n"
+              "    foo('\\0' == s2);\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
 
         check("class Bar {\n"
               "    std::string s;\n"

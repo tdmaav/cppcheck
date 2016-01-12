@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,17 +31,18 @@ public:
     }
 
 private:
+    Settings settings;
 
     void run() {
         TEST_CASE(line1); // Ticket #4408
         TEST_CASE(line2); // Ticket #5423
         TEST_CASE(testaddtoken);
+        TEST_CASE(inc);
     }
 
     // inspired by #5895
     void testaddtoken() {
         const std::string code = "0x89504e470d0a1a0a";
-        Settings settings;
         TokenList tokenlist(&settings);
         tokenlist.addtoken(code, 1, 1, false);
         ASSERT_EQUALS("9894494448401390090", tokenlist.front()->str());
@@ -69,8 +70,6 @@ private:
 
         errout.str("");
 
-        Settings settings;
-
         TokenList tokenList(&settings);
         std::istringstream istr(code);
         bool res = tokenList.createTokens(istr, "a.cpp");
@@ -96,8 +95,6 @@ private:
 
         errout.str("");
 
-        const Settings settings;
-
         // tokenize..
         TokenList tokenlist(&settings);
         std::istringstream istr(code);
@@ -106,8 +103,18 @@ private:
         ASSERT_EQUALS(Path::toNativeSeparators("[c:\\a.h:8]"), tokenlist.fileLine(tokenlist.front()));
     }
 
+    void inc() const {
+        const char code[] = "a++1;1++b;";
 
+        errout.str("");
 
+        // tokenize..
+        TokenList tokenlist(&settings);
+        std::istringstream istr(code);
+        tokenlist.createTokens(istr, "a.cpp");
+
+        ASSERT(Token::simpleMatch(tokenlist.front(), "a + + 1 ; 1 + + b ;"));
+    }
 };
 
 REGISTER_TEST(TestTokenList)

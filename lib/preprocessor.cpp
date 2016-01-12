@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -174,9 +174,9 @@ std::string Preprocessor::read(std::istream &istr, const std::string &filename)
     // The UTF-16 BOM is 0xfffe or 0xfeff.
     unsigned int bom = 0;
     if (istr.peek() >= 0xfe) {
-        bom = ((unsigned int)istr.get() << 8);
+        bom = ((unsigned char)istr.get() << 8);
         if (istr.peek() >= 0xfe)
-            bom |= (unsigned int)istr.get();
+            bom |= (unsigned char)istr.get();
         else
             bom = 0; // allowed boms are 0/0xfffe/0xfeff
     }
@@ -485,7 +485,7 @@ std::string Preprocessor::removeComments(const std::string &str, const std::stri
             errmsg.str("");
             errmsg << "The code contains unhandled characters " << info << ". Checking continues, but do not expect valid results.\n"
                    << "The code contains characters that are unhandled " << info << ". Neither unicode nor extended ASCII are supported. Checking continues, but do not expect valid results.";
-            writeError(filename, lineno, _errorLogger, "unhandledCharacters", errmsg.str());
+            writeError(Path::simplifyPath(filename), lineno, _errorLogger, "unhandledCharacters", errmsg.str());
         }
 
         if (_settings.terminated())
@@ -535,7 +535,7 @@ std::string Preprocessor::removeComments(const std::string &str, const std::stri
                 break;
             std::string comment(str, commentStart, i - commentStart);
 
-            if (_settings._inlineSuppressions) {
+            if (_settings.inlineSuppressions) {
                 std::istringstream iss(comment);
                 std::string word;
                 iss >> word;
@@ -572,7 +572,7 @@ std::string Preprocessor::removeComments(const std::string &str, const std::stri
                 fallThroughComment = true;
             }
 
-            if (_settings._inlineSuppressions) {
+            if (_settings.inlineSuppressions) {
                 std::istringstream iss(comment);
                 std::string word;
                 iss >> word;
@@ -632,8 +632,7 @@ std::string Preprocessor::removeComments(const std::string &str, const std::stri
                 // add a suppression if the next token is 'case' or 'default'
                 if (detectFallThroughComments && fallThroughComment) {
                     const std::string::size_type j = str.find_first_not_of("abcdefghijklmnopqrstuvwxyz", i);
-                    const std::string tok = str.substr(i, j - i);
-                    if (tok == "case" || tok == "default")
+                    if (str.compare(i, j-i, "case") == 0 || str.compare(i, j-i, "default") == 0)
                         suppressionIDs.push_back("switchCaseFallThrough");
                     fallThroughComment = false;
                 }
@@ -642,9 +641,9 @@ std::string Preprocessor::removeComments(const std::string &str, const std::stri
                 if (!suppressionIDs.empty()) {
                     // Relative filename
                     std::string relativeFilename(filename);
-                    if (_settings._relativePaths) {
-                        for (std::size_t j = 0U; j < _settings._basePaths.size(); ++j) {
-                            const std::string bp = _settings._basePaths[j] + "/";
+                    if (_settings.relativePaths) {
+                        for (std::size_t j = 0U; j < _settings.basePaths.size(); ++j) {
+                            const std::string bp = _settings.basePaths[j] + "/";
                             if (relativeFilename.compare(0,bp.size(),bp)==0) {
                                 relativeFilename = relativeFilename.substr(bp.size());
                             }
@@ -662,8 +661,12 @@ std::string Preprocessor::removeComments(const std::string &str, const std::stri
                 }
             }
 
+            // C++14 digit separators
+            if (ch == '\'' && std::isxdigit(previous))
+                ; // Just skip it.
+
             // String or char constants..
-            if (ch == '\"' || ch == '\'') {
+            else if (ch == '\"' || ch == '\'') {
                 code << char(ch);
                 char chNext;
                 do {
@@ -1033,7 +1036,7 @@ void Preprocessor::preprocess(std::istream &srcCodeStream, std::string &processe
 
     std::map<std::string, std::string> defs(getcfgmap(_settings.userDefines, &_settings, filename));
 
-    if (_settings._maxConfigs == 1U) {
+    if (_settings.maxConfigs == 1U) {
         std::set<std::string> pragmaOnce;
         std::list<std::string> includes;
         processedFile = handleIncludes(processedFile, filename, includePaths, defs, pragmaOnce, includes);
@@ -1062,13 +1065,15 @@ void Preprocessor::handleUndef(std::list<std::string> &configurations) const
                 else if (cfg->compare(0,it->length(),*it)==0 && cfg->find_first_of(";=") == it->length())
                     undef = true;
                 else if (cfg->find(";" + *it) == std::string::npos)
-                    ;
+                    continue;
                 else if (cfg->find(";" + *it + ";") != std::string::npos)
                     undef = true;
                 else if (cfg->find(";" + *it + "=") != std::string::npos)
                     undef = true;
                 else if (cfg->find(";" + *it) + it->size() + 1U == cfg->size())
                     undef = true;
+                if (undef)
+                    break;
             }
 
             if (undef)
@@ -1439,8 +1444,9 @@ std::list<std::string> Preprocessor::getcfgs(const std::string &filedata, const 
 
             // Get name of define
             std::string defineName(*it2);
-            if (defineName.find_first_of("=(") != std::string::npos)
-                defineName.erase(defineName.find_first_of("=("));
+            const std::string::size_type end = defineName.find_first_of("=(");
+            if (end != std::string::npos)
+                defineName.erase(end);
 
             // Remove ifdef configurations that match the defineName
             while ((pos = cfg.find(defineName, pos)) != std::string::npos) {
@@ -1592,7 +1598,7 @@ void Preprocessor::simplifyCondition(const std::map<std::string, std::string> &c
     if (Token::Match(tokenizer.tokens(), "( %name% )")) {
         std::map<std::string,std::string>::const_iterator var = cfg.find(tokenizer.tokens()->strAt(1));
         if (var != cfg.end()) {
-            const std::string &value = (*var).second;
+            const std::string &value = var->second;
             condition = (value == "0") ? "0" : "1";
         } else if (match)
             condition = "0";
@@ -1806,16 +1812,18 @@ std::string Preprocessor::getcode(const std::string &filedata, const std::string
 
             typedef std::set<std::string>::const_iterator It;
             for (It it = _settings.userUndefs.begin(); it != _settings.userUndefs.end(); ++it) {
-                std::string::size_type pos = line.find_first_not_of(' ',8);
-                if (pos != std::string::npos) {
-                    std::string::size_type pos2 = line.find(*it,pos);
-                    if ((pos2 != std::string::npos) &&
-                        ((line.size() == pos2 + (*it).size()) ||
-                         (line[pos2 + (*it).size()] == ' ') ||
-                         (line[pos2 + (*it).size()] == '('))) {
-                        match = false;
-                        break;
-                    }
+                const std::string::size_type symbolPos = line.find_first_not_of(' ', 8);
+                if (symbolPos == std::string::npos)
+                    continue;
+                const std::string::size_type undefMatchPos = line.find(*it, symbolPos);
+                if (undefMatchPos == std::string::npos)
+                    continue;
+                const std::string::size_type behindUndefPos = undefMatchPos + (*it).size();
+                if ((line.size() == behindUndefPos) ||
+                    (line[behindUndefPos] == ' ') ||
+                    (line[behindUndefPos] == '(')) {
+                    match = false;
+                    break;
                 }
             }
 
@@ -1834,8 +1842,9 @@ std::string Preprocessor::getcode(const std::string &filedata, const std::string
                     cfgmap[line.substr(8)] = "";
                 else if (line[pos] == ' ') {
                     std::string value(line.substr(pos + 1));
-                    if (cfgmap.find(value) != cfgmap.end())
-                        value = cfgmap[value];
+                    std::map<std::string, std::string>::const_iterator cfgpos = cfgmap.find(value);
+                    if (cfgpos != cfgmap.end())
+                        value = cfgpos->second;
                     cfgmap[line.substr(8, pos - 8)] = value;
                 } else
                     cfgmap[line.substr(8, pos - 8)] = "";
@@ -1908,8 +1917,8 @@ std::string Preprocessor::getcode(const std::string &filedata, const std::string
 
         // #error => return ""
         if (match && line.compare(0, 6, "#error") == 0) {
-            if (!_settings.userDefines.empty() && !_settings._force) {
-                error(filenames.top(), lineno, line);
+            if (!_settings.userDefines.empty() && !_settings.force) {
+                error(Path::simplifyPath(filenames.top()), lineno, line);
             }
             return "";
         }
@@ -1961,9 +1970,7 @@ void Preprocessor::error(const std::string &filename, unsigned int linenr, const
 {
     std::list<ErrorLogger::ErrorMessage::FileLocation> locationList;
     if (!filename.empty()) {
-        ErrorLogger::ErrorMessage::FileLocation loc;
-        loc.line = linenr;
-        loc.setfile(filename);
+        ErrorLogger::ErrorMessage::FileLocation loc(filename, linenr);
         locationList.push_back(loc);
     }
     _errorLogger->reportErr(ErrorLogger::ErrorMessage(locationList,
@@ -2017,10 +2024,11 @@ static bool openHeader(std::string &filename, const std::list<std::string> &incl
         return true;
     }
 
-    std::list<std::string> includePaths2(includePaths);
-    includePaths2.push_front("");
+    fin.open(filename.c_str());
+    if (fin.is_open())
+        return true;
 
-    for (std::list<std::string>::const_iterator iter = includePaths2.begin(); iter != includePaths2.end(); ++iter) {
+    for (std::list<std::string>::const_iterator iter = includePaths.begin(); iter != includePaths.end(); ++iter) {
         const std::string nativePath(Path::toNativeSeparators(*iter));
         fin.open((nativePath + filename).c_str());
         if (fin.is_open()) {
@@ -2406,16 +2414,15 @@ static void skipstring(const std::string &line, std::string::size_type &pos)
 
 /**
  * Remove heading and trailing whitespaces from the input parameter.
+ * If string is all spaces/tabs, return empty string.
  * @param s The string to trim.
  */
 static std::string trim(const std::string& s)
 {
     const std::string::size_type beg = s.find_first_not_of(" \t");
     if (beg == std::string::npos)
-        return s;
+        return "";
     const std::string::size_type end = s.find_last_not_of(" \t");
-    if (end == std::string::npos)
-        return s.substr(beg);
     return s.substr(beg, end - beg + 1);
 }
 
@@ -2755,8 +2762,9 @@ public:
                             const std::map<std::string, PreprocessorMacro *>::const_iterator it = macros.find(str);
                             if (it != macros.end() && it->second->_macro.find('(') == std::string::npos) {
                                 str = it->second->_macro;
-                                if (str.find(' ') != std::string::npos)
-                                    str.erase(0, str.find(' '));
+                                const std::string::size_type whitespacePos = str.find(' ');
+                                if (whitespacePos != std::string::npos)
+                                    str.erase(0, whitespacePos);
                                 else
                                     str = "";
                             }
@@ -2767,11 +2775,14 @@ public:
                         continue;
                     }
                     optcomma = false;
+                    // separate ++ and -- with space
+                    if (!str.empty() && !macrocode.empty() && (str[0] == '+' || str[0] == '-') && str[0] == macrocode[macrocode.size()-1U])
+                        macrocode += ' ';
                     macrocode += str;
                     if (Token::Match(tok, "%name% %name%|%num%") ||
                         Token::Match(tok, "%num% %name%") ||
                         Token::simpleMatch(tok, "> >"))
-                        macrocode += " ";
+                        macrocode += ' ';
                 }
             }
         }
@@ -3041,7 +3052,7 @@ std::string Preprocessor::expandMacros(const std::string &code, std::string file
                     ++pos;
 
                     if (pos >= line.size()) {
-                        writeError(filename,
+                        writeError(Path::simplifyPath(filename),
                                    linenr + tmpLinenr,
                                    errorLogger,
                                    "noQuoteCharPair",

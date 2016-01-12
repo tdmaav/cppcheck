@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,7 +31,6 @@
 #include "config.h"
 #include "token.h"
 #include "mathlib.h"
-#include "utils.h"
 
 class Tokenizer;
 class Settings;
@@ -50,7 +49,7 @@ enum AccessControl { Public, Protected, Private, Global, Namespace, Argument, Lo
  * @brief Array dimension information.
  */
 struct Dimension {
-    Dimension() : start(NULL), end(NULL), num(0), known(true) { }
+    Dimension() : start(nullptr), end(nullptr), num(0), known(true) { }
 
     const Token *start;  // size start token
     const Token *end;    // size end token
@@ -71,7 +70,7 @@ public:
     class BaseInfo {
     public:
         BaseInfo() :
-            type(NULL), nameTok(NULL), access(Public), isVirtual(false) {
+            type(nullptr), nameTok(nullptr), access(Public), isVirtual(false) {
         }
 
         std::string name;
@@ -87,7 +86,7 @@ public:
 
     struct FriendInfo {
         FriendInfo() :
-            nameStart(NULL), nameEnd(NULL), type(NULL) {
+            nameStart(nullptr), nameEnd(nullptr), type(nullptr) {
         }
 
         const Token* nameStart;
@@ -594,21 +593,23 @@ private:
 class CPPCHECKLIB Function {
     /** @brief flags mask used to access specific bit. */
     enum {
-        fHasBody       = (1 << 0),  /** @brief has implementation */
-        fIsInline      = (1 << 1),  /** @brief implementation in class definition */
-        fIsConst       = (1 << 2),  /** @brief is const */
-        fIsVirtual     = (1 << 3),  /** @brief is virtual */
-        fIsPure        = (1 << 4),  /** @brief is pure virtual */
-        fIsStatic      = (1 << 5),  /** @brief is static */
-        fIsStaticLocal = (1 << 6),  /** @brief is static local */
-        fIsExtern      = (1 << 7),  /** @brief is extern */
-        fIsFriend      = (1 << 8),  /** @brief is friend */
-        fIsExplicit    = (1 << 9),  /** @brief is explicit */
-        fIsDefault     = (1 << 10), /** @brief is default */
-        fIsDelete      = (1 << 11), /** @brief is delete */
-        fIsNoExcept    = (1 << 12), /** @brief is noexcept */
-        fIsThrow       = (1 << 13), /** @brief is throw */
-        fIsOperator    = (1 << 14)  /** @brief is operator */
+        fHasBody        = (1 << 0),  /** @brief has implementation */
+        fIsInline       = (1 << 1),  /** @brief implementation in class definition */
+        fIsConst        = (1 << 2),  /** @brief is const */
+        fIsVirtual      = (1 << 3),  /** @brief is virtual */
+        fIsPure         = (1 << 4),  /** @brief is pure virtual */
+        fIsStatic       = (1 << 5),  /** @brief is static */
+        fIsStaticLocal  = (1 << 6),  /** @brief is static local */
+        fIsExtern       = (1 << 7),  /** @brief is extern */
+        fIsFriend       = (1 << 8),  /** @brief is friend */
+        fIsExplicit     = (1 << 9),  /** @brief is explicit */
+        fIsDefault      = (1 << 10), /** @brief is default */
+        fIsDelete       = (1 << 11), /** @brief is delete */
+        fIsNoExcept     = (1 << 12), /** @brief is noexcept */
+        fIsThrow        = (1 << 13), /** @brief is throw */
+        fIsOperator     = (1 << 14), /** @brief is operator */
+        fHasLvalRefQual = (1 << 15), /** @brief has & lvalue ref-qualifier */
+        fHasRvalRefQual = (1 << 16)  /** @brief has && rvalue ref-qualifier */
     };
 
     /**
@@ -633,14 +634,14 @@ public:
     enum Type { eConstructor, eCopyConstructor, eMoveConstructor, eOperatorEqual, eDestructor, eFunction };
 
     Function()
-        : tokenDef(NULL),
-          argDef(NULL),
-          token(NULL),
-          arg(NULL),
-          retDef(NULL),
-          retType(NULL),
-          functionScope(NULL),
-          nestedIn(NULL),
+        : tokenDef(nullptr),
+          argDef(nullptr),
+          token(nullptr),
+          arg(nullptr),
+          retDef(nullptr),
+          retType(nullptr),
+          functionScope(nullptr),
+          nestedIn(nullptr),
           initArgCount(0),
           type(eFunction),
           access(Public),
@@ -740,6 +741,12 @@ public:
     bool isOperator() const {
         return getFlag(fIsOperator);
     }
+    bool hasLvalRefQualifier() const {
+        return getFlag(fHasLvalRefQual);
+    }
+    bool hasRvalRefQualifier() const {
+        return getFlag(fHasRvalRefQual);
+    }
 
     void hasBody(bool state) {
         setFlag(fHasBody, state);
@@ -785,6 +792,12 @@ public:
     }
     void isOperator(bool state) {
         setFlag(fIsOperator, state);
+    }
+    void hasLvalRefQualifier(bool state) {
+        setFlag(fHasLvalRefQual, state);
+    }
+    void hasRvalRefQualifier(bool state) {
+        setFlag(fHasRvalRefQual, state);
     }
 
     const Token *tokenDef; // function name token in class definition
@@ -1002,11 +1015,19 @@ public:
      */
     void debugMessage(const Token *tok, const std::string &msg) const;
 
-    void printOut(const char * title = NULL) const;
+    void printOut(const char * title = nullptr) const;
     void printVariable(const Variable *var, const char *indent) const;
     void printXml(std::ostream &out) const;
 
     bool isCPP() const;
+
+    /*
+     * @brief Do a sanity check
+     */
+    void validate() const;
+
+    /** Set valuetype in provided tokenlist */
+    static void setValueTypeInTokenList(Token *tokens, bool cpp, char defaultSignedness);
 
 private:
     friend class Scope;
@@ -1016,14 +1037,18 @@ private:
     Function *addGlobalFunctionDecl(Scope*& scope, const Token* tok, const Token *argStart, const Token* funcStart);
     Function *addGlobalFunction(Scope*& scope, const Token*& tok, const Token *argStart, const Token* funcStart);
     void addNewFunction(Scope **info, const Token **tok);
-    bool isFunction(const Token *tok, const Scope* outerScope, const Token **funcStart, const Token **argStart);
+    bool isFunction(const Token *tok, const Scope* outerScope, const Token **funcStart, const Token **argStart) const;
     const Type *findTypeInNested(const Token *tok, const Scope *startScope) const;
     const Scope *findNamespace(const Token * tok, const Scope * scope) const;
     Function *findFunctionInScope(const Token *func, const Scope *ns);
+    /**
+     * Send error message to error logger about internal bug.
+     * @param tok the token that this bug concerns.
+     */
+    void cppcheckError(const Token *tok) const;
 
     /** Whether iName is a keyword as defined in http://en.cppreference.com/w/c/keyword and http://en.cppreference.com/w/cpp/keyword*/
     bool isReservedName(const std::string& iName) const;
-
 
     const Tokenizer *_tokenizer;
     const Settings *_settings;
@@ -1035,6 +1060,30 @@ private:
     /** list for missing types */
     std::list<Type> _blankTypes;
 };
+
+/** Value type */
+class CPPCHECKLIB ValueType {
+public:
+    enum Sign {UNKNOWN_SIGN, SIGNED, UNSIGNED} sign;
+    enum Type {UNKNOWN_TYPE, NONSTD, VOID, BOOL, CHAR, SHORT, INT, LONG, LONGLONG, FLOAT, DOUBLE, LONGDOUBLE} type;
+    unsigned int pointer; // 0=>not pointer, 1=>*, 2=>**, 3=>***, etc
+    unsigned int constness;  // bit 0=data, bit 1=*, bit 2=**
+    const Scope *typeScope;
+    std::string originalTypeName;
+
+    ValueType() : sign(UNKNOWN_SIGN), type(UNKNOWN_TYPE), pointer(0U), constness(0U), typeScope(nullptr) {}
+    ValueType(const ValueType &vt) : sign(vt.sign), type(vt.type), pointer(vt.pointer), constness(vt.constness), typeScope(vt.typeScope), originalTypeName(vt.originalTypeName) {}
+    ValueType(enum Sign s, enum Type t, unsigned int p) : sign(s), type(t), pointer(p), constness(0U), typeScope(nullptr) {}
+    ValueType(enum Sign s, enum Type t, unsigned int p, unsigned int c) : sign(s), type(t), pointer(p), constness(c), typeScope(nullptr) {}
+    ValueType(enum Sign s, enum Type t, unsigned int p, unsigned int c, const std::string &otn) : sign(s), type(t), pointer(p), constness(c), typeScope(nullptr), originalTypeName(otn) {}
+
+    bool isIntegral() const {
+        return (type >= ValueType::Type::BOOL && type <= ValueType::Type::LONGLONG);
+    }
+
+    std::string str() const;
+};
+
 
 //---------------------------------------------------------------------------
 #endif // symboldatabaseH

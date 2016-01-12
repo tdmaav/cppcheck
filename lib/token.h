@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -33,6 +33,7 @@ class Scope;
 class Type;
 class Function;
 class Variable;
+class ValueType;
 class Settings;
 
 /// @addtogroup Core
@@ -149,19 +150,20 @@ public:
      *
      * Possible patterns
      * - "%any%" any token
-     * - "%name%" any token which is a name, variable or type e.g. "hello" or "int"
-     * - "%type%" Anything that can be a variable type, e.g. "int", but not "delete".
-     * - "%num%" Any numeric token, e.g. "23"
+     * - "%assign%" a assignment operand
      * - "%bool%" true or false
      * - "%char%" Any token enclosed in &apos;-character.
      * - "%comp%" Any token such that isComparisonOp() returns true.
+     * - "%cop%" Any token such that isConstOp() returns true.
+     * - "%name%" any token which is a name, variable or type e.g. "hello" or "int"
+     * - "%num%" Any numeric token, e.g. "23"
+     * - "%op%" Any token such that isOp() returns true.
+     * - "%or%" A bitwise-or operator '|'
+     * - "%oror%" A logical-or operator '||'
+     * - "%type%" Anything that can be a variable type, e.g. "int", but not "delete".
      * - "%str%" Any token starting with &quot;-character (C-string).
      * - "%var%" Match with token with varId > 0
      * - "%varid%" Match with parameter varid
-     * - "%op%" Any token such that isOp() returns true.
-     * - "%cop%" Any token such that isConstOp() returns true.
-     * - "%or%" A bitwise-or operator '|'
-     * - "%oror%" A logical-or operator '||'
      * - "[abc]" Any of the characters 'a' or 'b' or 'c'
      * - "int|void|char" Any of the strings, int, void or char
      * - "int|void|char|" Any of the strings, int, void or char or empty string
@@ -169,15 +171,8 @@ public:
      * - "someRandomText" If token contains "someRandomText".
      *
      * multi-compare patterns such as "int|void|char" can contain %%or%, %%oror% and %%op%
-     * but it is not recommended to put such an %%cmd% as the first pattern.
-     *
-     * It's possible to use multi-compare patterns with all the other %%cmds%,
-     * except for %%varid%, and normal names, but the %%cmds% should be put as
-     * the first patterns in the list, then the normal names.
+     * it is recommended to put such an %%cmd% as the first pattern.
      * For example: "%var%|%num%|)" means yes to a variable, a number or ')'.
-     *
-     * @todo Make it possible to use the %%cmds% and the normal names in the
-     * multicompare list without an order.
      *
      * The patterns can be also combined to compare to multiple tokens at once
      * by separating tokens with a space, e.g.
@@ -222,6 +217,18 @@ public:
      * @param index position of character
      **/
     static std::string getCharAt(const Token *tok, std::size_t index);
+
+    const ValueType *valueType() const {
+        return valuetype;
+    }
+    void setValueType(ValueType *vt);
+
+    const ValueType *argumentType() const {
+        const Token *top = this;
+        while (top && !Token::Match(top->astParent(), ",|("))
+            top = top->astParent();
+        return top ? top->valuetype : nullptr;
+    }
 
     Token::Type tokType() const {
         return _tokType;
@@ -453,12 +460,11 @@ public:
      * Insert new token after this token. This function will handle
      * relations between next and previous token also.
      * @param tokenStr String for the new token.
+     * @param originalNameStr String used for Token::originalName().
      * @param prepend Insert the new token before this token when it's not
      * the first one on the tokens list.
      */
-    void insertToken(const std::string &tokenStr, bool prepend=false);
-
-    void insertToken(const std::string &tokenStr, const std::string &originalNameStr, bool prepend=false);
+    void insertToken(const std::string &tokenStr, const std::string &originalNameStr=emptyString, bool prepend=false);
 
     Token *previous() const {
         return _previous;
@@ -847,6 +853,9 @@ private:
     // original name like size_t
     std::string* _originalName;
 
+    // ValueType
+    ValueType *valuetype;
+
 public:
     void astOperand1(Token *tok);
     void astOperand2(Token *tok);
@@ -872,10 +881,9 @@ public:
      * For '*' and '&' tokens it is looked up if this is a
      * dereference or address-of. A dereference or address-of is not
      * counted as a calculation.
-     * @param goDownwards the function will look for calculations in all children of the tree
      * @return returns true if current token is a calculation
      */
-    bool isCalculation(bool goDownwards = false) const;
+    bool isCalculation() const;
 
     void clearAst() {
         _astOperand1 = _astOperand2 = _astParent = NULL;

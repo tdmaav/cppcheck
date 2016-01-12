@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -28,8 +28,11 @@ public:
     }
 
 private:
+    Settings settings;
 
     void run() {
+        settings.addEnabled("style");
+
         TEST_CASE(incondition);
         TEST_CASE(return1);
         TEST_CASE(return2);
@@ -57,13 +60,12 @@ private:
         TEST_CASE(ignore_declaration); // ignore declaration
     }
 
-    void check(const char code[], Settings::PlatformType platform = Settings::Unspecified) {
+    void check(const char code[], Settings::PlatformType platform = Settings::Native) {
         // Clear the error buffer..
         errout.str("");
 
-        Settings settings;
-        settings.addEnabled("style");
         settings.platform(platform);
+
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
@@ -333,7 +335,6 @@ private:
     }
 
     void multipleFiles() {
-        Settings settings;
         Tokenizer tokenizer(&settings, this);
         CheckUnusedFunctions c(&tokenizer, &settings, nullptr);
 

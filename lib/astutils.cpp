@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,111 +24,25 @@
 #include "tokenize.h"
 #include <set>
 
-static bool isChar(const Variable* var)
-{
-    return (var && !var->isPointer() && !var->isArray() && var->typeStartToken()->str() == "char");
-}
-
-static bool isSignedChar(const Variable* var)
-{
-    return (isChar(var) && !var->typeStartToken()->isUnsigned());
-}
-
 bool astIsSignedChar(const Token *tok)
 {
-    if (!tok)
-        return false;
-    if (tok->str() == "*" && tok->astOperand1() && !tok->astOperand2()) {
-        const Variable *var = tok->astOperand1()->variable();
-        if (!var || !var->isPointer())
-            return false;
-        const Token *type = var->typeStartToken();
-        while (type && type->str() == "const")
-            type = type->next();
-        return (type && type->str() == "char" && !type->isUnsigned());
-    }
-    return isSignedChar(tok->variable());
+    return tok && tok->valueType() && tok->valueType()->sign == ValueType::Sign::SIGNED && tok->valueType()->type == ValueType::Type::CHAR && tok->valueType()->pointer == 0U;
 }
 
 bool astIsIntegral(const Token *tok, bool unknown)
 {
-    // TODO: handle arrays
-    if (tok->isNumber())
-        return MathLib::isInt(tok->str());
-
-    if (tok->isName()) {
-        if (tok->variable())
-            return tok->variable()->isIntegralType();
-
+    const ValueType *vt = tok ? tok->valueType() : nullptr;
+    if (!vt)
         return unknown;
-    }
-    if (tok->str() == "(") {
-        // cast
-        if (Token::Match(tok, "( const| float|double )"))
-            return false;
-
-        // Function call
-        if (tok->previous()->function()) {
-            if (Token::Match(tok->previous()->function()->retDef, "float|double"))
-                return false;
-            else if (Token::Match(tok->previous()->function()->retDef, "bool|char|short|int|long"))
-                return true;
-        }
-
-        if (tok->strAt(-1) == "sizeof")
-            return true;
-
-        return unknown;
-    }
-
-    if (tok->astOperand2() && (tok->str() == "." || tok->str() == "::"))
-        return astIsIntegral(tok->astOperand2(), unknown);
-
-    if (tok->astOperand1() && tok->str() != "?")
-        return astIsIntegral(tok->astOperand1(), unknown);
-
-    return unknown;
+    return vt->isIntegral() && vt->pointer == 0U;
 }
 
 bool astIsFloat(const Token *tok, bool unknown)
 {
-    // TODO: handle arrays
-    if (tok->isNumber())
-        return MathLib::isFloat(tok->str());
-
-    if (tok->isName()) {
-        if (tok->variable())
-            return tok->variable()->isFloatingType();
-
+    const ValueType *vt = tok ? tok->valueType() : nullptr;
+    if (!vt)
         return unknown;
-    }
-    if (tok->str() == "(") {
-        // cast
-        if (Token::Match(tok, "( const| float|double )"))
-            return true;
-
-        // Function call
-        if (tok->previous()->function())
-            return Token::Match(tok->previous()->function()->retDef, "float|double");
-
-        if (tok->strAt(-1) == "sizeof")
-            return false;
-
-        return unknown;
-    }
-
-    if (tok->astOperand2() && (tok->str() == "." || tok->str() == "::"))
-        return astIsFloat(tok->astOperand2(), unknown);
-
-    if (tok->astOperand1() && tok->str() != "?" && astIsFloat(tok->astOperand1(), unknown))
-        return true;
-    if (tok->astOperand2() && astIsFloat(tok->astOperand2(), unknown))
-        return true;
-
-    if (tok->isOp())
-        return false;
-
-    return unknown;
+    return vt->type >= ValueType::Type::FLOAT && vt->pointer == 0U;
 }
 
 std::string astCanonicalType(const Token *expr)
@@ -184,7 +98,7 @@ const Token * astIsVariableComparison(const Token *tok, const std::string &comp,
     return ret;
 }
 
-bool isSameExpression(bool cpp, const Token *tok1, const Token *tok2, const std::set<std::string> &constFunctions)
+bool isSameExpression(bool cpp, bool macro, const Token *tok1, const Token *tok2, const std::set<std::string> &constFunctions)
 {
     if (tok1 == nullptr && tok2 == nullptr)
         return true;
@@ -196,17 +110,15 @@ bool isSameExpression(bool cpp, const Token *tok1, const Token *tok2, const std:
         if (tok2->str() == "." && tok2->astOperand1() && tok2->astOperand1()->str() == "this")
             tok2 = tok2->astOperand2();
     }
-    if (tok1->varId() != tok2->varId() || tok1->str() != tok2->str()) {
+    if (tok1->varId() != tok2->varId() || tok1->str() != tok2->str() || tok1->originalName() != tok2->originalName()) {
         if ((Token::Match(tok1,"<|>")   && Token::Match(tok2,"<|>")) ||
             (Token::Match(tok1,"<=|>=") && Token::Match(tok2,"<=|>="))) {
-            return isSameExpression(cpp, tok1->astOperand1(), tok2->astOperand2(), constFunctions) &&
-                   isSameExpression(cpp, tok1->astOperand2(), tok2->astOperand1(), constFunctions);
+            return isSameExpression(cpp, macro, tok1->astOperand1(), tok2->astOperand2(), constFunctions) &&
+                   isSameExpression(cpp, macro, tok1->astOperand2(), tok2->astOperand1(), constFunctions);
         }
         return false;
     }
-    if (tok1->str() == "." && tok1->originalName() != tok2->originalName())
-        return false;
-    if (tok1->isExpandedMacro() || tok2->isExpandedMacro())
+    if (macro && (tok1->isExpandedMacro() || tok2->isExpandedMacro()))
         return false;
     if (tok1->isName() && tok1->next()->str() == "(" && tok1->str() != "sizeof") {
         if (!tok1->function() && !Token::Match(tok1->previous(), ".|::") && constFunctions.find(tok1->str()) == constFunctions.end() && !tok1->isAttributeConst() && !tok1->isAttributePure())
@@ -254,18 +166,25 @@ bool isSameExpression(bool cpp, const Token *tok1, const Token *tok2, const std:
             return false;
     }
     bool noncommuative_equals =
-        isSameExpression(cpp, tok1->astOperand1(), tok2->astOperand1(), constFunctions);
+        isSameExpression(cpp, macro, tok1->astOperand1(), tok2->astOperand1(), constFunctions);
     noncommuative_equals = noncommuative_equals &&
-                           isSameExpression(cpp, tok1->astOperand2(), tok2->astOperand2(), constFunctions);
+                           isSameExpression(cpp, macro, tok1->astOperand2(), tok2->astOperand2(), constFunctions);
 
     if (noncommuative_equals)
         return true;
 
     const bool commutative = tok1->astOperand1() && tok1->astOperand2() && Token::Match(tok1, "%or%|%oror%|+|*|&|&&|^|==|!=");
     bool commuative_equals = commutative &&
-                             isSameExpression(cpp, tok1->astOperand2(), tok2->astOperand1(), constFunctions);
+                             isSameExpression(cpp, macro, tok1->astOperand2(), tok2->astOperand1(), constFunctions);
     commuative_equals = commuative_equals &&
-                        isSameExpression(cpp, tok1->astOperand1(), tok2->astOperand2(), constFunctions);
+                        isSameExpression(cpp, macro, tok1->astOperand1(), tok2->astOperand2(), constFunctions);
+
+    // in c++, "a"+b might be different to b+"a"
+    if (cpp && commuative_equals && tok1->str() == "+" &&
+        (tok1->astOperand1()->tokType() == Token::eString || tok1->astOperand2()->tokType() == Token::eString)) {
+        const Token * const other = tok1->astOperand1()->tokType() != Token::eString ? tok1->astOperand1() : tok1->astOperand2();
+        return other && astIsIntegral(other,false);
+    }
 
     return commuative_equals;
 }
@@ -278,11 +197,11 @@ bool isOppositeCond(bool isNot, bool cpp, const Token * const cond1, const Token
     if (cond1->str() == "!") {
         if (cond2->str() == "!=") {
             if (cond2->astOperand1() && cond2->astOperand1()->str() == "0")
-                return isSameExpression(cpp, cond1->astOperand1(), cond2->astOperand2(), constFunctions);
+                return isSameExpression(cpp, true, cond1->astOperand1(), cond2->astOperand2(), constFunctions);
             if (cond2->astOperand2() && cond2->astOperand2()->str() == "0")
-                return isSameExpression(cpp, cond1->astOperand1(), cond2->astOperand1(), constFunctions);
+                return isSameExpression(cpp, true, cond1->astOperand1(), cond2->astOperand1(), constFunctions);
         }
-        return isSameExpression(cpp, cond1->astOperand1(), cond2, constFunctions);
+        return isSameExpression(cpp, true, cond1->astOperand1(), cond2, constFunctions);
     }
 
     if (cond2->str() == "!")
@@ -295,11 +214,11 @@ bool isOppositeCond(bool isNot, bool cpp, const Token * const cond1, const Token
 
     // condition found .. get comparator
     std::string comp2;
-    if (isSameExpression(cpp, cond1->astOperand1(), cond2->astOperand1(), constFunctions) &&
-        isSameExpression(cpp, cond1->astOperand2(), cond2->astOperand2(), constFunctions)) {
+    if (isSameExpression(cpp, true, cond1->astOperand1(), cond2->astOperand1(), constFunctions) &&
+        isSameExpression(cpp, true, cond1->astOperand2(), cond2->astOperand2(), constFunctions)) {
         comp2 = cond2->str();
-    } else if (isSameExpression(cpp, cond1->astOperand1(), cond2->astOperand2(), constFunctions) &&
-               isSameExpression(cpp, cond1->astOperand2(), cond2->astOperand1(), constFunctions)) {
+    } else if (isSameExpression(cpp, true, cond1->astOperand1(), cond2->astOperand2(), constFunctions) &&
+               isSameExpression(cpp, true, cond1->astOperand2(), cond2->astOperand1(), constFunctions)) {
         comp2 = cond2->str();
         if (comp2[0] == '>')
             comp2[0] = '<';
@@ -350,3 +269,48 @@ bool isWithoutSideEffects(bool cpp, const Token* tok)
     return true;
 }
 
+bool isVariableChanged(const Token *start, const Token *end, const unsigned int varid)
+{
+    for (const Token *tok = start; tok != end; tok = tok->next()) {
+        if (tok->varId() == varid) {
+            if (Token::Match(tok, "%name% %assign%|++|--"))
+                return true;
+
+            if (Token::Match(tok->previous(), "++|-- %name%"))
+                return true;
+
+            if (Token::Match(tok->tokAt(-2), "[(,] & %var% [,)]"))
+                return true; // TODO: check if function parameter is const
+
+            if (Token::Match(tok->previous(), "[(,] %var% [,)]")) {
+                const Token *parent = tok->astParent();
+                while (parent && parent->str() == ",")
+                    parent = parent->astParent();
+                if (parent && Token::Match(parent->previous(), "%name% (") && !parent->previous()->function())
+                    return true;
+                // TODO: check if function parameter is non-const reference etc..
+            }
+
+            const Token *parent = tok->astParent();
+            while (Token::Match(parent, ".|::"))
+                parent = parent->astParent();
+            if (parent && parent->tokType() == Token::eIncDecOp)
+                return true;
+        }
+    }
+    return false;
+}
+
+int numberOfArguments(const Token *start)
+{
+    int arguments=0;
+    const Token* const openBracket = start->next();
+    if (openBracket && openBracket->str()=="(" && openBracket->next() && openBracket->next()->str()!=")") {
+        const Token* argument=openBracket->next();
+        while (argument) {
+            ++arguments;
+            argument = argument->nextArgument();
+        }
+    }
+    return arguments;
+}

@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -87,9 +87,23 @@ public:
     * @brief Start the threads to check the files
     *
     * @param settings Settings for checking
-    * @param recheck Should we reuse the files we checked earlier
+    * @param all true if all files, false if modified files
     */
-    void Check(const Settings &settings, bool recheck);
+    void Check(const Settings &settings, bool all);
+
+    /**
+    * @brief Set files to check
+    *
+    * @param all true if all files, false if modified files
+    */
+    void SetCheckFiles(bool all);
+
+    /**
+    * @brief Set selected files to check
+    *
+    * @param files list of files to be checked
+    */
+    void SetCheckFiles(QStringList files);
 
     /**
     * @brief Is checking running?
@@ -123,7 +137,21 @@ public:
      * @brief Get files that should be rechecked because they have been
      * changed.
      */
-    QStringList GetReCheckFiles() const;
+    QStringList GetReCheckFiles(bool all) const;
+
+    /**
+    * @brief Get start time of last check
+    *
+    * @return start time of last check
+    */
+    QDateTime GetCheckStartTime() const;
+
+    /**
+    * @brief Set start time of check
+    *
+    * @param checkStartTime saved start time of the last check
+    */
+    void SetCheckStartTime(QDateTime checkStartTime);
 
 signals:
     /**

@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,12 +26,11 @@ public:
     TestVaarg() : TestFixture("TestVaarg") {}
 
 private:
+    Settings settings;
+
     void check(const char code[]) {
         // Clear the error buffer..
         errout.str("");
-
-        Settings settings;
-        settings.addEnabled("warning");
 
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
@@ -44,11 +43,14 @@ private:
     }
 
     void run() {
+        settings.addEnabled("warning");
+
         TEST_CASE(wrongParameterTo_va_start);
         TEST_CASE(referenceAs_va_start);
         TEST_CASE(va_end_missing);
         TEST_CASE(va_list_usedBeforeStarted);
         TEST_CASE(va_start_subsequentCalls);
+        TEST_CASE(unknownFunctionScope);
     }
 
     void wrongParameterTo_va_start() {
@@ -223,6 +225,15 @@ private:
               "    va_end(arg_ptr);\n"
               "    va_start(arg_ptr, szBuffer);\n"
               "    va_end(arg_ptr);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void unknownFunctionScope() {
+        check("void BG_TString::Format() {\n"
+              "  BG_TChar * f;\n"
+              "  va_start(args,f);\n"
+              "  BG_TString result(f);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
     }

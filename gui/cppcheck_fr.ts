@@ -26,7 +26,7 @@ General Public License version 3</translation>
         <translation>Visitez le site Cppcheck : %1</translation>
     </message>
     <message utf8="true">
-        <source>Copyright © 2007-2015 Daniel Marjamäki and cppcheck team.</source>
+        <source>Copyright © 2007-2016 Cppcheck team.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -173,6 +173,38 @@ Parameters: -l(line) (file)</source>
     </message>
     <message>
         <source>Open library file</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Sort</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Filter:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Comments</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Save as</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cppcheck</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Can not open file %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Can not save file %1.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Save the library as</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -352,7 +384,7 @@ Parameters: -l(line) (file)</source>
     </message>
     <message>
         <source>&amp;Recheck files</source>
-        <translation type="unfinished">&amp;Revérifier les fichiers</translation>
+        <translation type="obsolete">&amp;Revérifier les fichiers</translation>
     </message>
     <message>
         <source>Ctrl+R</source>
@@ -449,30 +481,6 @@ Parameters: -l(line) (file)</source>
     <message>
         <source>Cppcheck - %1</source>
         <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>English</source>
-        <translation type="unfinished">Anglais</translation>
-    </message>
-    <message>
-        <source>Dutch</source>
-        <translation type="unfinished">Hollandais</translation>
-    </message>
-    <message>
-        <source>Finnish</source>
-        <translation type="unfinished">Finlandais</translation>
-    </message>
-    <message>
-        <source>Swedish</source>
-        <translation type="unfinished">Suédois</translation>
-    </message>
-    <message>
-        <source>German</source>
-        <translation type="unfinished">Allemand</translation>
-    </message>
-    <message>
-        <source>Russian</source>
-        <translation type="unfinished">Russe</translation>
     </message>
     <message>
         <source>&amp;Toolbars</source>
@@ -641,25 +649,9 @@ Do you want to stop the checking and exit Cppcheck?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Japanese</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Serbian</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>French</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>There was a problem with loading the editor application settings.
 
 This is probably because the settings were changed between the Cppcheck versions. Please check (and fix) the editor application settings, otherwise the editor program might not start correctly.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Spanish</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -741,25 +733,13 @@ Do you want to remove the file from the recently used projects -list?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Korean</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Current results will be cleared.
 
 Opening a new XML file will clear current results.Do you want to proceed?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Italian</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Show S&amp;cratchpad...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Chinese (Simplified)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -875,6 +855,38 @@ Options:
         <source>Open library editor</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Auto-detect language</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enforce C++</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Enforce C</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Recheck modified files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Recheck all files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>C/C++ Source (%1)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unknown element</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Unknown issue</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>Platforms</name>
@@ -899,7 +911,7 @@ Options:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Built-in</source>
+        <source>Native</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1059,6 +1071,25 @@ Options:
     </message>
 </context>
 <context>
+    <name>QPlatformTheme</name>
+    <message>
+        <source>OK</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Save</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>ResultsTree</name>
     <message>
         <source>File</source>
@@ -1182,6 +1213,14 @@ Please select the default editor application in preferences/Applications.</sourc
         <source>Open containing folder</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>Inconclusive</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Recheck</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>ResultsView</name>
@@ -1237,6 +1276,10 @@ Pour configurer les erreurs affichées, ouvrez le menu d&apos;affichage.</transl
     </message>
     <message>
         <source>No errors found, nothing to print.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>First included by</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1338,19 +1381,15 @@ Pour configurer les erreurs affichées, ouvrez le menu d&apos;affichage.</transl
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Advanced</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&amp;Show inconclusive errors</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>S&amp;how internal warnings in log</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Display error Id in column &quot;Id&quot;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Check for inconclusive errors also</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Show internal warnings in log</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1374,6 +1413,10 @@ Pour configurer les erreurs affichées, ouvrez le menu d&apos;affichage.</transl
     </message>
     <message>
         <source>[Default]</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source> [Default]</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

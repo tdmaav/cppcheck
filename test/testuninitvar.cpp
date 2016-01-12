@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -67,6 +67,8 @@ private:
         TEST_CASE(uninitvar_operator); // #6680
         TEST_CASE(uninitvar_ternaryexpression); // #4683
         TEST_CASE(uninitvar_pointertoarray);
+        TEST_CASE(uninitvar_cpp11ArrayInit); // #7010
+        TEST_CASE(uninitvar_rangeBasedFor); // #7078
         TEST_CASE(trac_4871);
 
         TEST_CASE(syntax_error); // Ticket #5073
@@ -610,6 +612,16 @@ private:
                        "}", "test.cpp", false);
         ASSERT_EQUALS("", errout.str());
 
+        checkUninitVar("int foo() {\n"
+                       "    int x,y=0;\n"
+                       "again:\n"
+                       "    if (y) return x;\n"
+                       "    x = a;\n"
+                       "    y = 1;\n"
+                       "    goto again;\n"
+                       "}", "test.c", false);
+        ASSERT_EQUALS("", errout.str());
+
         // Ticket #3873 (false positive)
         checkUninitVar("MachineLoopRange *MachineLoopRanges::getLoopRange(const MachineLoop *Loop) {\n"
                        "  MachineLoopRange *&Range = Cache[Loop];\n"
@@ -829,6 +841,13 @@ private:
                        "    C *c;\n"
                        "    if (fun(&c));\n"
                        "    c->Release();\n"
+                       "}");
+        ASSERT_EQUALS("", errout.str());
+
+        checkUninitVar("void f() {\n"
+                       "    C c;\n"
+                       "    if (fun(&c.d));\n"
+                       "    return c;\n"
                        "}");
         ASSERT_EQUALS("", errout.str());
 
@@ -1407,13 +1426,19 @@ private:
                        "    int a[1];\n"
                        "    return a[0];\n"
                        "}");
-        TODO_ASSERT_EQUALS("[test.cpp:3]: (error) Uninitialized variable: a\n", "", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (error) Uninitialized variable: a\n", errout.str());
 
         checkUninitVar("int foo() {\n"
                        "    int a[2][2];\n"
                        "    return a[0][1];\n"
                        "}");
-        TODO_ASSERT_EQUALS("[test.cpp:3]: (error) Uninitialized variable: a\n", "", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (error) Uninitialized variable: a\n", errout.str());
+
+        checkUninitVar("int foo() {\n"
+                       "    int a[10];\n"
+                       "    dostuff(a[0]);\n"
+                       "}");
+        ASSERT_EQUALS("", errout.str());
 
         // # 4740
         checkUninitVar("void f() {\n"
@@ -1428,6 +1453,15 @@ private:
                        "  char x[10];\n"
                        "  bar(x);\n"
                        "}");
+        ASSERT_EQUALS("", errout.str());
+
+        // struct
+        checkUninitVar("struct Fred { int x; int y; };\n"
+                       ""
+                       "void f() {\n"
+                       "  struct Fred fred[10];\n"
+                       "  fred[1].x = 0;\n"
+                       "}", "test.c");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -1465,6 +1499,14 @@ private:
                       errout.str());
     }
 
+    void uninitvar_cpp11ArrayInit() { // #7010
+        checkUninitVar("double foo(bool flag) {\n"
+                       "    double adIHPoint_local[4][4]{};\n"
+                       "    function(*adIHPoint_local);\n"
+                       "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
     // alloc..
     void uninitvar_alloc() {
         checkUninitVar("void f() {\n"
@@ -1487,19 +1529,17 @@ private:
                        "}");
         TODO_ASSERT_EQUALS("[test.cpp:4]: (error) Memory is allocated but not initialized: p\n", "", errout.str());
 
-        checkUninitVar("void f()\n"
-                       "{\n"
+        checkUninitVar("void f() {\n"
                        "    char *p = malloc(64);\n"
                        "    if (p[0]) { }\n"
                        "}");
-        TODO_ASSERT_EQUALS("[test.cpp:4]: (error) Memory is allocated but not initialized: p\n", "", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (error) Memory is allocated but not initialized: p\n", errout.str());
 
-        checkUninitVar("void f()\n"
-                       "{\n"
+        checkUninitVar("void f() {\n"
                        "    char *p = malloc(64);\n"
                        "    return p[0];\n"
                        "}");
-        TODO_ASSERT_EQUALS("[test.cpp:4]: (error) Memory is allocated but not initialized: p\n", "", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (error) Memory is allocated but not initialized: p\n", errout.str());
 
         checkUninitVar("void f()\n"
                        "{\n"
@@ -1976,8 +2016,7 @@ private:
         TODO_ASSERT_EQUALS("", "[test.cpp:3]: (error) Uninitialized variable: s\n", errout.str());
 
         checkUninitVar("void f() {\n"
-                       "    #define w(x) ({ x z;  (x*)z; })\n" // TODO: Preprocessor?
-                       "    int *n = w(typeof(*n));\n"
+                       "    int *n = ({ typeof(*n) z;  (typeof(*n)*)z; })\n"
                        "}", "test.cpp", false);
         ASSERT_EQUALS("", errout.str());
     }
@@ -2362,6 +2401,32 @@ private:
                        "}");
         ASSERT_EQUALS("", errout.str());
 
+        checkUninitVar("void f(int x) {\n" // #3948
+                       "  int value;\n"
+                       "  if (x !=-1)\n"
+                       "    value = getvalue();\n"
+                       "  if (x == -1 || value > 300) {}\n"
+                       "}");
+        ASSERT_EQUALS("", errout.str());
+
+        checkUninitVar("void f(int x) {\n"
+                       "  int value;\n"
+                       "  if (x == 32)\n"
+                       "    value = getvalue();\n"
+                       "  if (x == 1)\n"
+                       "    v = value;\n"
+                       "}");
+        ASSERT_EQUALS("[test.cpp:6]: (error) Uninitialized variable: value\n", errout.str());
+
+        checkUninitVar("void f(int x) {\n"
+                       "  int value;\n"
+                       "  if (x == 32)\n"
+                       "    value = getvalue();\n"
+                       "  if (x == 32) {}\n"
+                       "  else v = value;\n"
+                       "}");
+        ASSERT_EQUALS("[test.cpp:6]: (error) Uninitialized variable: value\n", errout.str());
+
         checkUninitVar("static int x;" // #4773
                        "int f() {\n"
                        "    int y;\n"
@@ -2711,6 +2776,12 @@ private:
         TODO_ASSERT_EQUALS("[test.cpp:4]: (error) Uninitialized variable: x\n",
                            "", errout.str());
 
+        checkUninitVar("void f() {\n"
+                       "    int x[10];\n"
+                       "    int &x0(*x);\n"
+                       "}");
+        ASSERT_EQUALS("", errout.str());
+
         // ....
         checkUninitVar("struct ABC { int a; };\n"  // struct initialization
                        "void clear(struct ABC &abc);\n"
@@ -3030,13 +3101,15 @@ private:
         ASSERT_EQUALS("", errout.str());
 
         {
-            checkUninitVar("void f(void) {\n"
+            checkUninitVar("struct AB { char a[10]; };\n"
+                           "void f(void) {\n"
                            "    struct AB ab;\n"
                            "    strcpy(ab.a, STR);\n"
                            "}\n", "test.c");
             ASSERT_EQUALS("", errout.str());
 
-            checkUninitVar("void f(void) {\n"
+            checkUninitVar("struct AB { char a[10]; };\n"
+                           "void f(void) {\n"
                            "    struct AB ab;\n"
                            "    strcpy(x, ab.a);\n"
                            "}\n", "test.c");
@@ -3058,6 +3131,33 @@ private:
                        "    do_something(ab);\n"
                        "}\n", "test.c");
         ASSERT_EQUALS("", errout.str());
+
+        {
+            // #6769 - calling method that might assign struct members
+            checkUninitVar("struct AB { int a; int b; void set(); };\n"
+                           "void f(void) {\n"
+                           "    struct AB ab;\n"
+                           "    ab.set();\n"
+                           "    x = ab;\n"
+                           "}\n");
+            ASSERT_EQUALS("", errout.str());
+
+            checkUninitVar("struct AB { int a; int get() const; };\n"
+                           "void f(void) {\n"
+                           "    struct AB ab;\n"
+                           "    ab.get();\n"
+                           "    x = ab;\n"
+                           "}\n");
+            ASSERT_EQUALS("[test.cpp:5]: (error) Uninitialized struct member: ab.a\n", errout.str());
+
+            checkUninitVar("struct AB { int a; void dostuff() {} };\n"
+                           "void f(void) {\n"
+                           "    struct AB ab;\n"
+                           "    ab.dostuff();\n"
+                           "    x = ab;\n"
+                           "}\n");
+            TODO_ASSERT_EQUALS("error", "", errout.str());
+        }
 
         checkUninitVar("struct AB { int a; struct { int b; int c; } s; };\n"
                        "void do_something(const struct AB ab);\n"
@@ -3306,12 +3406,6 @@ private:
                        "}");
         ASSERT_EQUALS("[test.cpp:2]: (error) Uninitialized variable: ptr3\n", errout.str());
 
-        checkUninitVar("void f() {\n" // #4911 - bad simplification => don't crash
-                       "    int a;\n"
-                       "    do { a=do_something() } while (a);\n"
-                       "}\n", "test.cpp", /*debugwarnings=*/true);
-        ASSERT_EQUALS("[test.cpp:3]: (debug) ValueFlow bailout: variable a stopping on }\n", errout.str());
-
         checkUninitVar("void f() {\n"
                        "    int x;\n"
                        "    while (a) {\n"
@@ -3358,8 +3452,6 @@ private:
                        "    i++;\n"
                        "}");
         ASSERT_EQUALS("", errout.str());
-
-        checkUninitVar(">{ x while (y) z int = }"); // #4175 : don't crash
 
         checkUninitVar("int f(void) {\n"
                        "   int x;\n"
@@ -3558,12 +3650,6 @@ private:
         ASSERT_EQUALS("", errout.str());
 
         checkUninitVar("void f() {\n"
-                       "    char *s = malloc(100);\n"
-                       "    *s = x;\n"
-                       "}");
-        ASSERT_EQUALS("", errout.str());
-
-        checkUninitVar("void f() {\n"
                        "    char *p = malloc(100);\n"
                        "    p || assert_failed();\n"
                        "}");
@@ -3620,6 +3706,16 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void uninitvar_rangeBasedFor() { // #7078
+        checkUninitVar("void function(Entry& entry) {\n"
+                       "    for (auto* expr : entry.exprs) {\n"
+                       "        expr->operate();\n"
+                       "        expr->operate();\n"
+                       "    }\n"
+                       "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
     void trac_4871() { // #4871
         checkUninitVar("void pickup(int a) {\n"
                        "bool using_planner_action;\n"
@@ -3640,25 +3736,14 @@ private:
     }
 
     void syntax_error() { // Ticket #5073
-        // Nominal mode => No output
-        checkUninitVar("struct flex_array {};\n"
-                       "struct cgroup_taskset {};\n"
-                       "void cgroup_attach_task() {\n"
-                       "  struct flex_array *group;\n"
-                       "  struct cgroup_taskset tset = { };\n"
-                       "  do { } while_each_thread(leader, tsk);\n"
-                       "}", "test.cpp", /*debugwarnings=*/false);
-        ASSERT_EQUALS("", errout.str());
-
-        // --debug-warnings mode => Debug warning
-        checkUninitVar("struct flex_array {};\n"
-                       "struct cgroup_taskset {};\n"
-                       "void cgroup_attach_task() {\n"
-                       "  struct flex_array *group;\n"
-                       "  struct cgroup_taskset tset = { };\n"
-                       "  do { } while_each_thread(leader, tsk);\n"
-                       "}", "test.cpp", /*debugwarnings=*/true);
-        ASSERT_EQUALS("[test.cpp:6]: (debug) assertion failed '} while ('\n", errout.str());
+        const char code[] = "struct flex_array {};\n"
+                            "struct cgroup_taskset {};\n"
+                            "void cgroup_attach_task() {\n"
+                            "  struct flex_array *group;\n"
+                            "  struct cgroup_taskset tset = { };\n"
+                            "  do { } while_each_thread(leader, tsk);\n"
+                            "}";
+        ASSERT_THROW(checkUninitVar(code), InternalError);
     }
 
     void checkDeadPointer(const char code[]) {

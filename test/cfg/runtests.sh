@@ -1,5 +1,6 @@
 #!/bin/bash
 set -e # abort on error
+set -x # be verbose
 
 if [[ `pwd` == */test/cfg ]] ; then # we are in test/cfg
 	CPPCHECK="../../cppcheck"
@@ -14,9 +15,9 @@ CPPCHECK_OPT='--check-library --enable=information --enable=style --error-exitco
 
 # Compiler settings
 CXX=g++
-CXX_OPT='-fsyntax-only -std=c++0x'
+CXX_OPT='-fsyntax-only -std=c++0x -Wno-format -Wno-format-security'
 CC=gcc
-CC_OPT='-Wno-nonnull -Wno-implicit-function-declaration -Wno-deprecated-declarations -fsyntax-only'
+CC_OPT='-Wno-format -Wno-nonnull -Wno-implicit-function-declaration -Wno-deprecated-declarations -Wno-format-security -Wno-nonnull -fsyntax-only'
 
 # posix.c
 ${CC} ${CC_OPT} ${DIR}posix.c

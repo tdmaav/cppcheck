@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,8 +32,16 @@ public:
     }
 
 private:
+    Settings settings;
 
     void run() {
+        // strcpy cfg
+        const char cfg[] = "<?xml version=\"1.0\"?>\n"
+                           "<def>\n"
+                           "  <function name=\"strcpy\"> <arg nr=\"1\"><not-null/></arg> </function>\n"
+                           "</def>";
+        settings.library.loadxmldata(cfg, sizeof(cfg));
+
         TEST_CASE(valueFlowNumber);
         TEST_CASE(valueFlowString);
         TEST_CASE(valueFlowPointerAlias);
@@ -72,15 +80,6 @@ private:
     }
 
     bool testValueOfX(const char code[], unsigned int linenr, int value) {
-        Settings settings;
-
-        // strcpy cfg
-        const char cfg[] = "<?xml version=\"1.0\"?>\n"
-                           "<def>\n"
-                           "  <function name=\"strcpy\"> <arg nr=\"1\"><not-null/></arg> </function>\n"
-                           "</def>";
-        settings.library.loadxmldata(cfg, sizeof(cfg));
-
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
@@ -101,15 +100,6 @@ private:
 
 
     bool testValueOfX(const char code[], unsigned int linenr, const char value[]) {
-        Settings settings;
-
-        // strcpy cfg
-        const char cfg[] = "<?xml version=\"1.0\"?>\n"
-                           "<def>\n"
-                           "  <function name=\"strcpy\"> <arg nr=\"1\"><not-null/></arg> </function>\n"
-                           "</def>";
-        settings.library.loadxmldata(cfg, sizeof(cfg));
-
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
@@ -130,7 +120,6 @@ private:
 
     bool testConditionalValueOfX(const char code[], unsigned int linenr, int value) {
         // Tokenize..
-        Settings settings;
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, "test.cpp");
@@ -149,7 +138,6 @@ private:
     }
 
     void bailout(const char code[]) {
-        Settings settings;
         settings.debugwarnings = true;
 
         // Tokenize..
@@ -157,10 +145,11 @@ private:
         std::istringstream istr(code);
         errout.str("");
         tokenizer.tokenize(istr, "test.cpp");
+
+        settings.debugwarnings = false;
     }
 
     std::list<ValueFlow::Value> tokenValues(const char code[], const char tokstr[]) {
-        const Settings settings;
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
         errout.str("");
@@ -176,8 +165,10 @@ private:
 
     void valueFlowNumber() {
         ASSERT_EQUALS(123, valueOfTok("x=123;",   "123").intvalue);
-        ASSERT_EQUALS(0,   valueOfTok("x=false;", "false").intvalue);
-        ASSERT_EQUALS(1,   valueOfTok("x=true;",  "true").intvalue);
+        ASSERT_EQUALS(0, valueOfTok("x=false;", "false").intvalue);
+        ASSERT_EQUALS(1, valueOfTok("x=true;",  "true").intvalue);
+        ASSERT_EQUALS((int)('a'), valueOfTok("x='a';",  "'a'").intvalue);
+        ASSERT_EQUALS((int)('\n'), valueOfTok("x='\\n';", "'\\n'").intvalue);
     }
 
     void valueFlowString() {
@@ -218,6 +209,13 @@ private:
                 "  *x = 0;\n"  // <- x can point at i
                 "}";
         ASSERT_EQUALS(true, testValueOfX(code, 4, "& i"));
+
+        code  = "void f() {\n"
+                "  struct X *x;\n"
+                "  x = &x[1];\n"
+                "}";
+        ASSERT_EQUALS(true, tokenValues(code, "&").empty());
+        ASSERT_EQUALS(true, tokenValues(code, "x [").empty());
     }
 
     void valueFlowArrayElement() {
@@ -240,6 +238,25 @@ private:
                 "    return x;\n"
                 "}";
         TODO_ASSERT_EQUALS(true, false, testValueOfX(code, 3U, "\"abcd\""));
+
+        code = "void f() {\n"
+               "  int a[10];\n"
+               "  int *x = a;\n" // <- a value is a
+               "  *x = 0;\n"     // .. => x value is a
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 4, "a"));
+
+        code  = "char f() {\n"
+                "    const char *x = \"abcd\";\n"
+                "    return x[0];\n"
+                "}";
+        ASSERT_EQUALS((int)('a'), valueOfTok(code, "[").intvalue);
+
+        code  = "char f() {\n"
+                "    const char *x = \"\";\n"
+                "    return x[0];\n"
+                "}";
+        ASSERT_EQUALS(0, valueOfTok(code, "[").intvalue);
     }
 
     void valueFlowCalculations() {
@@ -461,6 +478,13 @@ private:
         code = "void f(int *x) {\n"
                "  ((x=ret())&&\n"
                "   (*x==0));\n"  // <- x is not 0
+               "  if (x==0) {}\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 3U, 0));
+
+        code = "void f(int *x) {\n"
+               "  int a = (x && *x == '1');\n"
+               "  int b = a ? atoi(x) : 0;\n"  // <- x is not 0
                "  if (x==0) {}\n"
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 3U, 0));
@@ -781,6 +805,37 @@ private:
                "}\n";
         ASSERT_EQUALS(false, testValueOfX(code, 4U, 0));
 
+        // ?:
+        code = "void f() {\n"
+               "    int x = 8;\n"
+               "    a = ((x > 10) ?\n"
+               "        x : 0);\n" // <- x is not 8
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 4U, 8));
+
+        code = "void f() {\n" // #6973
+               "    char *x = \"\";\n"
+               "    a = ((x[0] == 'U') ?\n"
+               "        x[1] : 0);\n" // <- x is not ""
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 4U, "\"\""));
+
+        code = "void f() {\n" // #6973
+               "    char *x = getenv (\"LC_ALL\");\n"
+               "    if (x == NULL)\n"
+               "        x = \"\";\n"
+               "\n"
+               "    if ( (x[0] == 'U') &&\n"  // x can be ""
+               "         (x[1] ?\n"           // x can't be ""
+               "          x[3] :\n"           // x can't be ""
+               "          x[2] ))\n"          // x can't be ""
+               "    {}\n"
+               "}\n";
+        ASSERT_EQUALS(true, testValueOfX(code, 6U, "\"\""));
+        ASSERT_EQUALS(false, testValueOfX(code, 7U, "\"\""));
+        ASSERT_EQUALS(false, testValueOfX(code, 8U, "\"\""));
+        ASSERT_EQUALS(false, testValueOfX(code, 9U, "\"\""));
+
         // if/else
         code = "void f() {\n"
                "    int x = 123;\n"
@@ -833,10 +888,17 @@ private:
 
         code = "void f() {\n"
                "  X *x = getx();\n"
-               "  if(false) { x = 0; }\n"
+               "  if(0) { x = 0; }\n"
                "  else { x->y = 1; }\n"
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 4U, 0));
+
+        code = "void f() {\n" // #6239
+               "  int x = 4;\n"
+               "  if(1) { x = 0; }\n"
+               "  a = x;\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 4U, 4));
 
         code = "void f() {\n"
                "    int x = 32;\n"
@@ -928,17 +990,19 @@ private:
                "    int x = 0;\n"
                "    x = x & 0x1;\n"
                "    if (x == 0) { x = 2; }\n"
-               "    y = 42 / x;\n" // <- x can't be 0
+               "    y = 42 / x;\n" // <- x is 2
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 5U, 0));
+        ASSERT_EQUALS(true, testValueOfX(code, 5U, 2));
 
         code = "void f() {\n" // #6118 - FN
                "    int x = 0;\n"
                "    x = x & 0x1;\n"
                "    if (x == 0) { x += 2; }\n"
-               "    y = 42 / x;\n" // <- x can be 2
+               "    y = 42 / x;\n" // <- x is 2
                "}";
-        ASSERT_EQUALS(true, testValueOfX(code, 5U, 2));
+        ASSERT_EQUALS(false, testValueOfX(code, 5U, 0));
+        TODO_ASSERT_EQUALS(true, false, testValueOfX(code, 5U, 2));
 
         code = "void f(int mode) {\n"
                "    struct ABC *x;\n"
@@ -1315,6 +1379,13 @@ private:
                "}";
         ASSERT_EQUALS(false, testValueOfX(code,3U,0));
         ASSERT_EQUALS(false, testValueOfX(code,3U,0x80));
+
+        code = "int f() {\n"
+               "  int x = (19 - 3) & 15;\n"
+               "  return x;\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code,3U,0));
+        ASSERT_EQUALS(false, testValueOfX(code,3U,16));
     }
 
     void valueFlowSwitchVariable() {
@@ -1675,6 +1746,15 @@ private:
 
         code = "void f() {\n"
                "  int x = 0;\n"
+               "  do {\n"
+               "    if (x < 0) {}\n"
+               "    fred.dostuff(x);\n"
+               "  } while (abc);\n"
+               "}\n";
+        ASSERT(isNotKnownValues(code, "<"));
+
+        code = "void f() {\n"
+               "  int x = 0;\n"
                "  if (y) { dostuff(x); }\n"
                "  if (!x) {}\n"
                "}\n";
@@ -1707,6 +1787,17 @@ private:
                "    break;\n"
                "  }\n"
                "  if (!x) {}\n"  // <- possible value
+               "}";
+        ASSERT(isNotKnownValues(code, "!"));
+
+        code = "void f() {\n" // #7049
+               "  int x = 0;\n"
+               "  switch (a) {\n"
+               "  case 1:\n"
+               "    x = 1;\n"
+               "  case 2:\n"
+               "    if (!x) {}\n" // <- possible value
+               "  }\n"
                "}";
         ASSERT(isNotKnownValues(code, "!"));
 
@@ -1768,6 +1859,15 @@ private:
         value = valueOfTok(code, "+");
         ASSERT_EQUALS(13, value.intvalue);
         ASSERT(value.isPossible());
+
+        // known and possible value
+        code = "void f() {\n"
+               "    int x = 1;\n"
+               "    int y = 2 + x;\n" // <- known value, don't care about condition
+               "    if (x == 2) {}\n"
+               "}";
+        ASSERT_EQUALS(true,  testValueOfX(code, 3U, 1)); // value of x can be 1
+        ASSERT_EQUALS(false, testValueOfX(code, 3U, 2)); // value of x can't be 2
     }
 };
 

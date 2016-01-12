@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -93,6 +93,12 @@ private:
         ArgumentInfo(const ArgumentInfo &); // not implemented
         ArgumentInfo operator = (const ArgumentInfo &); // not implemented
     };
+
+    void checkFormatString(const Token * const tok,
+                           const Token * const formatStringTok,
+                           const Token *       argListTok,
+                           const bool scan,
+                           const bool scanf_s);
 
     // Reporting errors..
     void coutCerrMisusageError(const Token* tok, const std::string& streamName);

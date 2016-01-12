@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -58,12 +58,12 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     mPlatformActions(new QActionGroup(this)),
     mCStandardActions(new QActionGroup(this)),
     mCppStandardActions(new QActionGroup(this)),
+    mSelectLanguageActions(new QActionGroup(this)),
     mExiting(false)
 {
     mUI.setupUi(this);
-    mUI.mResults->Initialize(mSettings, mApplications);
-
     mThread = new ThreadHandler(this);
+    mUI.mResults->Initialize(mSettings, mApplications, mThread);
 
     // Filter timer to delay filtering results slightly while typing
     mFilterTimer = new QTimer(this);
@@ -102,7 +102,8 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     connect(mUI.mActionViewStats, SIGNAL(triggered()), this, SLOT(ShowStatistics()));
     connect(mUI.mActionLibraryEditor, SIGNAL(triggered()), this, SLOT(ShowLibraryEditor()));
 
-    connect(mUI.mActionRecheck, SIGNAL(triggered()), this, SLOT(ReCheck()));
+    connect(mUI.mActionRecheckModified, SIGNAL(triggered()), this, SLOT(ReCheckModified()));
+    connect(mUI.mActionRecheckAll, SIGNAL(triggered()), this, SLOT(ReCheckAll()));
 
     connect(mUI.mActionStop, SIGNAL(triggered()), this, SLOT(StopChecking()));
     connect(mUI.mActionSave, SIGNAL(triggered()), this, SLOT(Save()));
@@ -120,6 +121,7 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     connect(mThread, SIGNAL(Done()), this, SLOT(CheckDone()));
     connect(mUI.mResults, SIGNAL(GotResults()), this, SLOT(ResultsAdded()));
     connect(mUI.mResults, SIGNAL(ResultsHidden(bool)), mUI.mActionShowHidden, SLOT(setEnabled(bool)));
+    connect(mUI.mResults, SIGNAL(CheckSelected(QStringList)), this, SLOT(PerformSelectedFilesCheck(QStringList)));
     connect(mUI.mMenuView, SIGNAL(aboutToShow()), this, SLOT(AboutToShowViewMenu()));
 
     // File menu
@@ -143,7 +145,8 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     mUI.mActionPrintPreview->setEnabled(false);
     mUI.mActionClearResults->setEnabled(false);
     mUI.mActionSave->setEnabled(false);
-    mUI.mActionRecheck->setEnabled(false);
+    mUI.mActionRecheckModified->setEnabled(false);
+    mUI.mActionRecheckAll->setEnabled(false);
     EnableProjectOpenActions(true);
     EnableProjectActions(false);
 
@@ -186,6 +189,10 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     mUI.mActionCpp03->setActionGroup(mCppStandardActions);
     mUI.mActionCpp11->setActionGroup(mCppStandardActions);
 
+    mUI.mActionEnforceC->setActionGroup(mSelectLanguageActions);
+    mUI.mActionEnforceCpp->setActionGroup(mSelectLanguageActions);
+    mUI.mActionAutoDetectLanguage->setActionGroup(mSelectLanguageActions);
+
     // For Windows platforms default to Win32 checked platform.
     // For other platforms default to unspecified/default which means the
     // platform Cppcheck GUI was compiled on.
@@ -207,21 +214,26 @@ MainWindow::~MainWindow()
 
 void MainWindow::HandleCLIParams(const QStringList &params)
 {
+    int index;
     if (params.contains("-p")) {
-        const int ind = params.indexOf("-p");
-        if ((ind + 1) < params.length())
-            LoadProjectFile(params[ind + 1]);
+        index = params.indexOf("-p");
+        if ((index + 1) < params.length())
+            LoadProjectFile(params[index + 1]);
+    } else if ((index = params.indexOf(QRegExp(".*\\.cppcheck$", Qt::CaseInsensitive), 0)) >= 0 && index < params.length() && QFile(params[index]).exists()) {
+        LoadProjectFile(params[index]);
+    } else if ((index = params.indexOf(QRegExp(".*\\.xml$", Qt::CaseInsensitive), 0)) >= 0 && index < params.length() && QFile(params[index]).exists()) {
+        LoadResults(params[index]);
     } else if (params.contains("-l")) {
         QString logFile;
-        const int ind = params.indexOf("-l");
-        if ((ind + 1) < params.length())
-            logFile = params[ind + 1];
+        index = params.indexOf("-l");
+        if ((index + 1) < params.length())
+            logFile = params[index + 1];
 
         if (params.contains("-d")) {
             QString checkedDir;
-            const int ind = params.indexOf("-d");
-            if ((ind + 1) < params.length())
-                checkedDir = params[ind + 1];
+            index = params.indexOf("-d");
+            if ((index + 1) < params.length())
+                checkedDir = params[index + 1];
 
             LoadResults(logFile, checkedDir);
         } else {
@@ -275,6 +287,14 @@ void MainWindow::LoadSettings()
     mUI.mActionToolBarFilter->setChecked(showFilterToolbar);
     mUI.mToolBarFilter->setVisible(showFilterToolbar);
 
+    Settings::Language enforcedLanguage = (Settings::Language)mSettings->value(SETTINGS_ENFORCED_LANGUAGE, 0).toInt();
+    if (enforcedLanguage == Settings::CPP)
+        mUI.mActionEnforceCpp->setChecked(true);
+    else if (enforcedLanguage == Settings::C)
+        mUI.mActionEnforceC->setChecked(true);
+    else
+        mUI.mActionAutoDetectLanguage->setChecked(true);
+
     bool succeeded = mApplications->LoadSettings();
     if (!succeeded) {
         const QString msg = tr("There was a problem with loading the editor application settings.\n\n"
@@ -318,6 +338,13 @@ void MainWindow::SaveSettings() const
     mSettings->setValue(SETTINGS_TOOLBARS_MAIN_SHOW, mUI.mToolBarMain->isVisible());
     mSettings->setValue(SETTINGS_TOOLBARS_VIEW_SHOW, mUI.mToolBarView->isVisible());
     mSettings->setValue(SETTINGS_TOOLBARS_FILTER_SHOW, mUI.mToolBarFilter->isVisible());
+
+    if (mUI.mActionEnforceCpp->isChecked())
+        mSettings->setValue(SETTINGS_ENFORCED_LANGUAGE, Settings::CPP);
+    else if (mUI.mActionEnforceC->isChecked())
+        mSettings->setValue(SETTINGS_ENFORCED_LANGUAGE, Settings::C);
+    else
+        mSettings->setValue(SETTINGS_ENFORCED_LANGUAGE, Settings::None);
 
     mApplications->SaveSettings();
 
@@ -366,7 +393,8 @@ void MainWindow::DoCheckFiles(const QStringList &files)
     if (mProject)
         qDebug() << "Checking project file" << mProject->GetProjectFile()->GetFilename();
 
-    mThread->Check(checkSettings, false);
+    mThread->SetCheckFiles(true);
+    mThread->Check(checkSettings, true);
 }
 
 void MainWindow::CheckCode(const QString& code, const QString& filename)
@@ -413,9 +441,11 @@ QStringList MainWindow::SelectFilesToCheck(QFileDialog::FileMode mode)
     // QFileDialog::getExistingDirectory() because they show native Windows
     // selection dialog which is a lot more usable than Qt:s own dialog.
     if (mode == QFileDialog::ExistingFiles) {
+
         selected = QFileDialog::getOpenFileNames(this,
                    tr("Select files to check"),
-                   GetPath(SETTINGS_LAST_CHECK_PATH));
+                   GetPath(SETTINGS_LAST_CHECK_PATH),
+                   tr("C/C++ Source (%1)").arg(FileList::GetDefaultFilters().join(" ")));
         if (selected.isEmpty())
             mCurrentDirectory.clear();
         else {
@@ -506,7 +536,7 @@ void MainWindow::CheckDirectory()
 void MainWindow::AddIncludeDirs(const QStringList &includeDirs, Settings &result)
 {
     QString dir;
-    foreach(dir, includeDirs) {
+    foreach (dir, includeDirs) {
         QString incdir;
         if (!QDir::isAbsolutePath(dir))
             incdir = mCurrentDirectory + "/";
@@ -516,7 +546,7 @@ void MainWindow::AddIncludeDirs(const QStringList &includeDirs, Settings &result
         // include paths must end with '/'
         if (!incdir.endsWith("/"))
             incdir += "/";
-        result._includePaths.push_back(incdir.toStdString());
+        result.includePaths.push_back(incdir.toStdString());
     }
 }
 
@@ -589,6 +619,12 @@ bool MainWindow::TryLoadLibrary(Library *library, QString filename)
         case Library::ErrorCode::PLATFORM_TYPE_REDEFINED:
             errmsg = tr("Platform type redefined");
             break;
+        case Library::ErrorCode::UNKNOWN_ELEMENT:
+            errmsg = tr("Unknown element");
+            break;
+        default:
+            errmsg = tr("Unknown issue");
+            break;
         }
         if (!error.reason.empty())
             errmsg += " '" + QString::fromStdString(error.reason) + "'";
@@ -600,6 +636,8 @@ bool MainWindow::TryLoadLibrary(Library *library, QString filename)
 
 Settings MainWindow::GetCppcheckSettings()
 {
+    SaveSettings(); // Save settings
+
     Settings result;
 
     // If project file loaded, read settings from it
@@ -610,26 +648,26 @@ Settings MainWindow::GetCppcheckSettings()
 
         const QStringList defines = pfile->GetDefines();
         QString define;
-        foreach(define, defines) {
+        foreach (define, defines) {
             if (!result.userDefines.empty())
                 result.userDefines += ";";
             result.userDefines += define.toStdString();
         }
 
         const QStringList libraries = pfile->GetLibraries();
-        foreach(QString library, libraries) {
+        foreach (QString library, libraries) {
             const QString filename = library + ".cfg";
             TryLoadLibrary(&result.library, filename);
         }
 
         const QStringList suppressions = pfile->GetSuppressions();
-        foreach(QString suppression, suppressions) {
+        foreach (QString suppression, suppressions) {
             result.nomsg.addSuppressionLine(suppression.toStdString());
         }
 
         // Only check the given -D configuration
         if (!defines.isEmpty())
-            result._maxConfigs = 1;
+            result.maxConfigs = 1;
     }
 
     // Include directories (and files) are searched in listed order.
@@ -650,16 +688,17 @@ Settings MainWindow::GetCppcheckSettings()
     result.debug = false;
     result.debugwarnings = mSettings->value(SETTINGS_SHOW_DEBUG_WARNINGS, false).toBool();
     result.quiet = false;
-    result._verbose = true;
-    result._force = mSettings->value(SETTINGS_CHECK_FORCE, 1).toBool();
-    result._xml = false;
-    result._jobs = mSettings->value(SETTINGS_CHECK_THREADS, 1).toInt();
-    result._inlineSuppressions = mSettings->value(SETTINGS_INLINE_SUPPRESSIONS, false).toBool();
+    result.verbose = true;
+    result.force = mSettings->value(SETTINGS_CHECK_FORCE, 1).toBool();
+    result.xml = false;
+    result.jobs = mSettings->value(SETTINGS_CHECK_THREADS, 1).toInt();
+    result.inlineSuppressions = mSettings->value(SETTINGS_INLINE_SUPPRESSIONS, false).toBool();
     result.inconclusive = mSettings->value(SETTINGS_INCONCLUSIVE_ERRORS, false).toBool();
     result.platformType = (Settings::PlatformType) mSettings->value(SETTINGS_CHECKED_PLATFORM, 0).toInt();
     result.standards.cpp = mSettings->value(SETTINGS_STD_CPP11, true).toBool() ? Standards::CPP11 : Standards::CPP03;
     result.standards.c = mSettings->value(SETTINGS_STD_C99, true).toBool() ? Standards::C99 : (mSettings->value(SETTINGS_STD_C11, false).toBool() ? Standards::C11 : Standards::C89);
     result.standards.posix = mSettings->value(SETTINGS_STD_POSIX, false).toBool();
+    result.enforcedLang = (Settings::Language)mSettings->value(SETTINGS_ENFORCED_LANGUAGE, 0).toInt();
 
     const bool std = TryLoadLibrary(&result.library, "std.cfg");
     bool posix = true;
@@ -672,8 +711,8 @@ Settings MainWindow::GetCppcheckSettings()
     if (!std || !posix || !windows)
         QMessageBox::critical(this, tr("Error"), tr("Failed to load %1. Your Cppcheck installation is broken. You can use --data-dir=<directory> at the command line to specify where this file is located.").arg(!std ? "std.cfg" : !posix ? "posix.cfg" : "windows.cfg"));
 
-    if (result._jobs <= 1) {
-        result._jobs = 1;
+    if (result.jobs <= 1) {
+        result.jobs = 1;
     }
 
     return result;
@@ -695,6 +734,7 @@ void MainWindow::CheckDone()
     mPlatformActions->setEnabled(true);
     mCStandardActions->setEnabled(true);
     mCppStandardActions->setEnabled(true);
+    mSelectLanguageActions->setEnabled(true);
     mUI.mActionPosix->setEnabled(true);
     if (mScratchPad)
         mScratchPad->setEnabled(true);
@@ -726,6 +766,7 @@ void MainWindow::CheckLockDownUI()
     mPlatformActions->setEnabled(false);
     mCStandardActions->setEnabled(false);
     mCppStandardActions->setEnabled(false);
+    mSelectLanguageActions->setEnabled(false);
     mUI.mActionPosix->setEnabled(false);
     if (mScratchPad)
         mScratchPad->setEnabled(false);
@@ -745,20 +786,60 @@ void MainWindow::ProgramSettings()
                                      dialog.SaveFullPath(),
                                      dialog.SaveAllErrors(),
                                      dialog.ShowNoErrorsMessage(),
-                                     dialog.ShowErrorId());
+                                     dialog.ShowErrorId(),
+                                     dialog.ShowInconclusive());
         const QString newLang = mSettings->value(SETTINGS_LANGUAGE, "en").toString();
         SetLanguage(newLang);
     }
 }
 
-void MainWindow::ReCheck()
+void MainWindow::ReCheckModified()
 {
-    const QStringList files = mThread->GetReCheckFiles();
+    ReCheck(false);
+}
+
+void MainWindow::ReCheckAll()
+{
+    ReCheck(true);
+}
+
+void MainWindow::ReCheckSelected(QStringList files, bool all)
+{
     if (files.empty())
+        return;
+    if (mThread->IsChecking())
         return;
 
     // Clear details, statistics and progress
     mUI.mResults->Clear(false);
+    for (int i = 0; i < files.size(); ++i)
+        mUI.mResults->ClearRecheckFile(files[i]);
+
+    FileList pathList;
+    pathList.AddPathList(files);
+    if (mProject)
+        pathList.AddExcludeList(mProject->GetProjectFile()->GetExcludedPaths());
+    QStringList fileNames = pathList.GetFileList();
+    CheckLockDownUI(); // lock UI while checking
+    mUI.mResults->CheckingStarted(fileNames.size());
+    mThread->SetCheckFiles(fileNames);
+
+    // Saving last check start time, otherwise unchecked modified files will not be
+    // considered in "Modified Files Check"  performed after "Selected Files Check"
+    // TODO: Should we store per file CheckStartTime?
+    QDateTime saveCheckStartTime = mThread->GetCheckStartTime();
+    mThread->Check(GetCppcheckSettings(), all);
+    mThread->SetCheckStartTime(saveCheckStartTime);
+}
+
+void MainWindow::ReCheck(bool all)
+{
+    const QStringList files = mThread->GetReCheckFiles(all);
+    if (files.empty())
+        return;
+
+    // Clear details, statistics and progress
+    mUI.mResults->Clear(all);
 
     // Clear results for changed files
     for (int i = 0; i < files.size(); ++i)
@@ -770,7 +851,8 @@ void MainWindow::ReCheck()
     if (mProject)
         qDebug() << "Rechecking project file" << mProject->GetProjectFile()->GetFilename();
 
-    mThread->Check(GetCppcheckSettings(), true);
+    mThread->SetCheckFiles(all);
+    mThread->Check(GetCppcheckSettings(), all);
 }
 
 void MainWindow::ClearResults()
@@ -834,8 +916,10 @@ void MainWindow::EnableCheckButtons(bool enable)
     mUI.mActionStop->setEnabled(!enable);
     mUI.mActionCheckFiles->setEnabled(enable);
 
-    if (!enable || mThread->HasPreviousFiles())
-        mUI.mActionRecheck->setEnabled(enable);
+    if (!enable || mThread->HasPreviousFiles()) {
+        mUI.mActionRecheckModified->setEnabled(enable);
+        mUI.mActionRecheckAll->setEnabled(enable);
+    }
 
     mUI.mActionCheckDirectory->setEnabled(enable);
 }
@@ -943,6 +1027,11 @@ void MainWindow::ShowAuthors()
     FileViewDialog *dlg = new FileViewDialog(":AUTHORS", tr("Authors"), this);
     dlg->resize(350, 400);
     dlg->exec();
+}
+
+void MainWindow::PerformSelectedFilesCheck(QStringList selectedFilesList)
+{
+    ReCheckSelected(selectedFilesList, true);
 }
 
 void MainWindow::Save()

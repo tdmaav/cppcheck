@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -45,7 +45,7 @@ class ResultsView : public QWidget {
 public:
 
     explicit ResultsView(QWidget * parent = 0);
-    void Initialize(QSettings *settings, ApplicationList *list);
+    void Initialize(QSettings *settings, ApplicationList *list, ThreadHandler *checkThreadHandler);
     virtual ~ResultsView();
 
     /**
@@ -69,6 +69,11 @@ public:
     void Clear(const QString &filename);
 
     /**
+     * @brief Remove a recheck file from the results.
+     */
+    void ClearRecheckFile(const QString &filename);
+
+    /**
     * @brief Save results to a file
     *
     * @param filename Filename to save results to
@@ -84,12 +89,14 @@ public:
     * @param saveAllErrors Save all visible errors
     * @param showNoErrorsMessage Show "no errors"?
     * @param showErrorId Show error id?
+    * @param showInconclusive Show inconclusive?
     */
     void UpdateSettings(bool showFullPath,
                         bool saveFullPath,
                         bool saveAllErrors,
                         bool showNoErrorsMessage,
-                        bool showErrorId);
+                        bool showErrorId,
+                        bool showInconclusive);
 
     /**
     * @brief Set the directory we are checking
@@ -179,6 +186,13 @@ signals:
     */
     void ResultsHidden(bool hidden);
 
+    /**
+    * @brief Signal to perform recheck of selected files
+    *
+    * @param selectedFilesList list of selected files
+    */
+    void CheckSelected(QStringList selectedFilesList);
+
 public slots:
 
     /**
@@ -240,11 +254,6 @@ public slots:
     void PrintPreview();
 
 protected:
-    /**
-    * @brief Have any errors been found
-    */
-    bool mErrorsFound;
-
     /**
     * @brief Should we show a "No errors found dialog" every time no errors were found?
     */

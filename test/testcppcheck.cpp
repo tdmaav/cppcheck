@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -80,7 +80,7 @@ private:
         cppCheck.getErrorMessages();
         ASSERT(!errorLogger.id.empty());
 
-        // TODO: check if there are duplicate error ids in errorLogger.id
+        // Check if there are duplicate error ids in errorLogger.id
         std::string duplicate;
         for (std::list<std::string>::iterator it = errorLogger.id.begin();
              it != errorLogger.id.end();

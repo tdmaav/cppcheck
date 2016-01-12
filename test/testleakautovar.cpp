@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,8 +27,17 @@ public:
     }
 
 private:
+    Settings settings;
 
     void run() {
+        int id = 0;
+        while (!settings.library.ismemory(++id));
+        settings.library.setalloc("malloc", id);
+        settings.library.setdealloc("free", id);
+        while (!settings.library.isresource(++id));
+        settings.library.setalloc("fopen", id);
+        settings.library.setdealloc("fclose", id);
+
         // Assign
         TEST_CASE(assign1);
         TEST_CASE(assign2);
@@ -117,14 +126,6 @@ private:
         errout.str("");
 
         // Tokenize..
-        Settings settings;
-        int id = 0;
-        while (!settings.library.ismemory(++id));
-        settings.library.setalloc("malloc", id);
-        settings.library.setdealloc("free", id);
-        while (!settings.library.isresource(++id));
-        settings.library.setalloc("fopen", id);
-        settings.library.setdealloc("fclose", id);
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, cpp?"test.cpp":"test.c");
@@ -1262,4 +1263,5 @@ private:
                            "[test.c:1]: (error) Mismatching allocation and deallocation: MyHeap\n[test.c:1]: (error) Memory leak: b\n", errout.str());
     }
 };
-static TestLeakAutoVarWindows testLeakAutoVarWindows;
+
+REGISTER_TEST(TestLeakAutoVarWindows)

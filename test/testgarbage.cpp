@@ -1,7 +1,6 @@
-
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,8 +29,18 @@ public:
     }
 
 private:
+    Settings settings;
 
     void run() {
+        settings.debugwarnings = true;
+        settings.addEnabled("style");
+        settings.addEnabled("warning");
+        settings.addEnabled("portability");
+        settings.addEnabled("performance");
+        settings.addEnabled("information");
+        settings.inconclusive = true;
+        settings.experimental = true;
+
         // don't freak out when the syntax is wrong
         TEST_CASE(wrong_syntax1);
         TEST_CASE(wrong_syntax2);
@@ -165,7 +174,52 @@ private:
         TEST_CASE(garbageCode123);
         TEST_CASE(garbageCode124); // 6948
         TEST_CASE(garbageCode125); // 6782, 6834
-
+        TEST_CASE(garbageCode126); // #6997
+        TEST_CASE(garbageCode127); // #6667
+        TEST_CASE(garbageCode128); // #7018
+        TEST_CASE(garbageCode129); // #7020
+        TEST_CASE(garbageCode130); // #7021
+        TEST_CASE(garbageCode131); // #7023
+        TEST_CASE(garbageCode132); // #7022
+        TEST_CASE(garbageCode133);
+        TEST_CASE(garbageCode134);
+        TEST_CASE(garbageCode135); // #4994
+        TEST_CASE(garbageCode136); // #7033
+        TEST_CASE(garbageCode137); // #7034
+        TEST_CASE(garbageCode138); // #6660
+        TEST_CASE(garbageCode139); // #6659
+        TEST_CASE(garbageCode140); // #7035
+        TEST_CASE(garbageCode141); // #7043
+        TEST_CASE(garbageCode142); // #7050
+        TEST_CASE(garbageCode143); // #6922
+        TEST_CASE(garbageCode144); // #6865
+        TEST_CASE(garbageCode145); // #7074
+        TEST_CASE(garbageCode146); // #7081
+        TEST_CASE(garbageCode147); // #7082
+        TEST_CASE(garbageCode148); // #7090
+        TEST_CASE(garbageCode149); // #7085
+        TEST_CASE(garbageCode150); // #7089
+        TEST_CASE(garbageCode151); // #4175
+        TEST_CASE(garbageCode152); // travis after 9c7271a5
+        TEST_CASE(garbageCode153);
+        TEST_CASE(garbageCode154); // #7112
+        TEST_CASE(garbageCode155); // #7118
+        TEST_CASE(garbageCode156); // #7120
+        TEST_CASE(garbageCode157); // #7131
+        TEST_CASE(garbageCode158); // #3238
+        TEST_CASE(garbageCode159); // #7119
+        TEST_CASE(garbageCode160); // #7190
+        TEST_CASE(garbageCode161); // #7200
+        TEST_CASE(garbageCode162); // #7208
+        TEST_CASE(garbageCode163); // #7228
+        TEST_CASE(garbageCode164); // #7234
+        TEST_CASE(garbageCode165); // #7235
+        TEST_CASE(garbageCode166); // #7236
+        TEST_CASE(garbageCode167); // #7237
+        TEST_CASE(garbageCode168); // #7246
+        TEST_CASE(garbageCode169); // #6731
+        TEST_CASE(garbageCode170);
+        TEST_CASE(garbageCode171);
         TEST_CASE(garbageValueFlow);
         TEST_CASE(garbageSymbolDatabase);
         TEST_CASE(garbageAST);
@@ -188,15 +242,6 @@ private:
 
     std::string checkCodeInternal(const char code[], const char* filename) {
         errout.str("");
-
-        Settings settings;
-        settings.debugwarnings = true;
-        settings.addEnabled("style");
-        settings.addEnabled("warning");
-        settings.addEnabled("portability");
-        settings.addEnabled("performance");
-        settings.inconclusive = true;
-        settings.experimental = true;
 
         // tokenize..
         Tokenizer tokenizer(&settings, this);
@@ -256,7 +301,6 @@ private:
                             " )\n"
                             "}";
 
-        Settings settings;
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
         try {
@@ -289,9 +333,6 @@ private:
     void wrong_syntax_class_x_y() {
         // #3585
         const char code[] = "class x y { };";
-
-        Settings settings;
-        settings.addEnabled("information");
 
         {
             errout.str("");
@@ -352,8 +393,8 @@ private:
     }
 
     void garbageCode6() { // #5214
-        checkCode("int b = ( 0 ? ? ) 1 : 0 ;");
-        checkCode("int a = int b = ( 0 ? ? ) 1 : 0 ;");
+        ASSERT_THROW(checkCode("int b = ( 0 ? ? ) 1 : 0 ;"), InternalError);
+        ASSERT_THROW(checkCode("int a = int b = ( 0 ? ? ) 1 : 0 ;"), InternalError);
     }
 
     void garbageCode7() {
@@ -519,7 +560,7 @@ private:
     }
 
     void garbageCode33() { // #6613
-        ASSERT_THROW(checkCode("main(()B{});"), InternalError);
+        checkCode("main(()B{});");
 
         checkCode("f::y:y : <x::");
 
@@ -528,11 +569,11 @@ private:
 
     // Bug #6626 crash: Token::astOperand2() const ( do while )
     void garbageCode34() {
-        checkCode("void foo(void) {\n"
-                  " do\n"
-                  " while (0);\n"
-                  "}");
-        ASSERT_EQUALS("", errout.str());
+        const char code[] = "void foo(void) {\n"
+                            " do\n"
+                            " while (0);\n"
+                            "}";
+        ASSERT_THROW(checkCode(code), InternalError);
     }
 
     void garbageCode35() {
@@ -631,7 +672,7 @@ private:
     }
 
     void garbageCode56() { // #6713
-        checkCode("void foo() { int a = 0; int b = ???; }");
+        ASSERT_THROW(checkCode("void foo() { int a = 0; int b = ???; }"), InternalError);
     }
 
     void garbageCode57() { // #6731
@@ -639,8 +680,8 @@ private:
     }
 
     void garbageCode58() { // #6732, #6762
-        ASSERT_THROW(checkCode("{ }> {= ~A()^{} }P { }"), InternalError);
-        ASSERT_THROW(checkCode("{= ~A()^{} }P { } { }> is"), InternalError);
+        checkCode("{ }> {= ~A()^{} }P { }");
+        checkCode("{= ~A()^{} }P { } { }> is");
     }
 
     void garbageCode59() { // #6735
@@ -744,7 +785,7 @@ private:
     }
 
     void garbageCode84() { // #6780
-        checkCode("int main ( [ ] ) { " " [ ] ; int i = 0 ; do { } ; } ( [ ] ) { }"); // do not crash
+        ASSERT_THROW(checkCode("int main ( [ ] ) { " " [ ] ; int i = 0 ; do { } ; } ( [ ] ) { }"), InternalError); // do not crash
     }
 
     void garbageCode85() { // #6784
@@ -764,7 +805,7 @@ private:
     }
 
     void garbageCode89() { // #6772
-        ASSERT_THROW(checkCode("{ { ( ) } P ( ) ^ { } { } { } ( ) } 0"), InternalError); // do not crash
+        checkCode("{ { ( ) } P ( ) ^ { } { } { } ( ) } 0"); // do not crash
     }
 
     void garbageCode90() { // #6790
@@ -914,10 +955,9 @@ private:
     }
 
     void garbageCode121() { // #2585
-        checkCode("abcdef?""?<"
-                  "123456?""?>"
-                  "+?""?=");
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_THROW(checkCode("abcdef?""?<"
+                               "123456?""?>"
+                               "+?""?="), InternalError);
     }
 
     void garbageCode122() { // #6303
@@ -928,11 +968,11 @@ private:
     }
 
     void garbageCode123() {
-        checkCode("namespace pr16989 {\n"
-                  "    class C {\n"
-                  "        C tpl_mem(T *) { return }\n"
-                  "    };\n"
-                  "}");
+        ASSERT_THROW(checkCode("namespace pr16989 {\n"
+                               "    class C {\n"
+                               "        C tpl_mem(T *) { return }\n"
+                               "    };\n"
+                               "}"), InternalError);
     }
 
     void garbageCode124() {
@@ -945,6 +985,287 @@ private:
         ASSERT_THROW(checkCode("template < Types > struct S :{ ( S < ) S >} { ( ) { } } ( ) { return S < void > ( ) }"),
                      InternalError);
     }
+
+    void garbageCode126() {
+        ASSERT_THROW(checkCode("{ } float __ieee754_sinhf ( float x ) { float t , , do { gf_u ( jx ) { } ( 0 ) return ; ( ) { } t } ( 0x42b17180 ) { } }"),
+                     InternalError);
+    }
+
+    void garbageCode127() { // #6667
+        checkCode("extern \"C\" int printf(const char* fmt, ...);\n"
+                  "class A {\n"
+                  "public:\n"
+                  "  int Var;\n"
+                  "  A(int arg) { Var = arg; }\n"
+                  "  ~A() { printf(\"A d'tor\\n\"); }\n"
+                  "};\n"
+                  " const A& foo(const A& arg) { return arg; }\n"
+                  " foo(A(12)).Var\n");
+    }
+
+    void garbageCode128() {
+        ASSERT_THROW(checkCode("enum { FOO = ( , ) } {{ }} enum {{ FOO << = } ( ) } {{ }} ;"),
+                     InternalError);
+    }
+
+    void garbageCode129() {
+        ASSERT_THROW(checkCode("operator - ( { } typedef typename x ; ( ) ) { ( { { ( ( ) ) } ( { } ) } ) }"),
+                     InternalError);
+    }
+
+    void garbageCode130() {
+        ASSERT_THROW(checkCode("enum { FOO = ( , ){ } { { } } { { FOO} = } ( ) } { { } } enumL\" ( enumL\" { { FOO } ( ) } { { } } ;"),
+                     InternalError);
+    }
+
+    void garbageCode131() {
+        checkCode("( void ) { ( ) } ( ) / { ( ) }");
+        // actually the invalid code should trigger an syntax error...
+    }
+
+    void garbageCode132() { // #7022
+        checkCode("() () { } { () () ({}) i() } void i(void(*ptr) ()) { ptr(!) () }");
+    }
+
+    void garbageCode133() {
+        ASSERT_THROW(checkCode("void f() {{}"), InternalError);
+
+        ASSERT_THROW(checkCode("void f()) {}"), InternalError);
+
+        ASSERT_THROW(checkCode("void f()\n"
+                               "{\n"
+                               " foo(;\n"
+                               "}\n"), InternalError);
+
+        ASSERT_THROW(checkCode("void f()\n"
+                               "{\n"
+                               " for(;;){ foo();\n"
+                               "}\n"), InternalError);
+
+        ASSERT_THROW(checkCode("void f()\n"
+                               "{\n"
+                               " a[10;\n"
+                               "}\n"), InternalError);
+
+        {
+            errout.str("");
+            const char code[] = "{\n"
+                                "   a(\n"
+                                "}\n"
+                                "{\n"
+                                "   b());\n"
+                                "}\n";
+            Tokenizer tokenizer(&settings, this);
+            std::istringstream istr(code);
+            try {
+                tokenizer.tokenize(istr, "test.cpp");
+                assertThrowFail(__FILE__, __LINE__);
+            } catch (InternalError& e) {
+                ASSERT_EQUALS("Invalid number of character '(' when these macros are defined: ''.", e.errorMessage);
+                ASSERT_EQUALS("syntaxError", e.id);
+                ASSERT_EQUALS(2, e.token->linenr());
+            }
+        }
+    }
+
+    void garbageCode134() {
+        // Ticket #5605, #5759, #5762, #5774, #5823, #6059
+        checkCode("template<>\n");
+        checkCode("foo() template<typename T1 = T2 = typename = unused, T5 = = unused> struct tuple Args> tuple<Args...> { } main() { foo<int,int,int,int,int,int>(); }");
+        checkCode("( ) template < T1 = typename = unused> struct Args { } main ( ) { foo < int > ( ) ; }");
+        checkCode("() template < T = typename = x > struct a {} { f <int> () }");
+        checkCode("template < T = typename = > struct a { f <int> }");
+        checkCode("struct S { int i, j; }; "
+                  "template<int S::*p, typename U> struct X {}; "
+                  "X<&S::i, int> x = X<&S::i, int>(); "
+                  "X<&S::j, int> y = X<&S::j, int>(); ");
+        checkCode("template <typename T> struct A {}; "
+                  "template <> struct A<void> {}; "
+                  "void foo(const void* f = 0) {}");
+        checkCode("template<typename... T> struct A { "
+                  "  static const int s = 0; "
+                  "}; "
+                  "A<int> a;");
+        checkCode("template<class T, class U> class A {}; "
+                  "template<class T = A<int, int> > class B {}; "
+                  "template<class T = B<int> > class C { "
+                  "    C() : _a(0), _b(0) {} "
+                  "    int _a, _b; "
+                  "};");
+        checkCode("template<class... T> struct A { "
+                  "  static int i; "
+                  "}; "
+                  "void f() { A<int>::i = 0; }");
+    }
+
+    void garbageCode135() { // #4994
+        checkCode("long f () {\n"
+                  "  return a >> extern\n"
+                  "}\n"
+                  "long a = 1 ;\n"
+                  "long b = 2 ;");
+    }
+
+    void garbageCode136() { // #7033
+        checkCode("{ } () { void f() { node_t * n; for (; -n) {} } } { }");
+    }
+
+    void garbageCode137() { // #7034
+        checkCode("\" \" typedef signed char f; \" \"; void a() { f * s = () &[]; (; ) (; ) }");
+    }
+
+    void garbageCode138() { // #6660
+        checkCode("CS_PLUGIN_NAMESPACE_BEGIN(csparser)\n"
+                  "{\n"
+                  "    struct foo\n"
+                  "    {\n"
+                  "      union\n"
+                  "      {};\n"
+                  "    } halo;\n"
+                  "}\n"
+                  "CS_PLUGIN_NAMESPACE_END(csparser)");
+    }
+
+    void garbageCode139() { // #6659 heap user after free: kernel: sm750_accel.c
+        ASSERT_THROW(checkCode("void hw_copyarea() {\n"
+                               "   de_ctrl = (nDirection == RIGHT_TO_LEFT) ?\n"
+                               "    ( (0 & ~(((1 << (1 - (0 ? DE_CONTROL_DIRECTION))) - 1) << (0 ? DE_CONTROL_DIRECTION))) )\n"
+                               "    : 42;\n"
+                               "}"), InternalError);
+    }
+
+    void garbageCode140() { // #7035
+        ASSERT_THROW(checkCode("int foo(int align) { int off(= 0 % align;  return off) ? \\ align - off  :  0;  \\ }"), InternalError);
+    }
+
+    void garbageCode141() { // #7043
+        ASSERT_THROW(checkCode("enum { X = << { X } } enum { X = X } = X ;"), InternalError);
+    }
+
+    void garbageCode142() { // #7050
+        checkCode("{ } (  ) { void mapGraphs ( ) { node_t * n ; for (!oid n ) { } } } { }");
+    }
+
+    void garbageCode143() { // #6922
+        ASSERT_THROW(checkCode("void neoProgramShadowRegs() {\n"
+                               "    int i;\n"
+                               "    Bool noProgramShadowRegs;\n"
+                               "    if (noProgramShadowRegs) {\n"
+                               "    } else {\n"
+                               "        switch (nPtr->NeoPanelWidth) {\n"
+                               "        case 1280:\n"
+                               "            VGAwCR(0x64,0x?? );\n"
+                               "        }\n"
+                               "    }\n"
+                               "}"), InternalError);
+    }
+
+    void garbageCode144() { // #6865
+        //ASSERT_THROW(checkCode("template < typename > struct A { } ; template < typename > struct A < INVALID > : A < int[ > { }] ;"), InternalError);
+    }
+
+    void garbageCode145() { // #7074
+        checkCode("++4++ +  + E++++++++++ + ch " "tp.oed5[.]");
+    }
+
+    void garbageCode146() { // #7081
+        ASSERT_THROW(checkCode("void foo() {\n"
+                               "    ? std::cout << pow((, 1) << std::endl;\n"
+                               "    double <ip = NUO ip) << std::end;\n"
+                               "}"), InternalError);
+    }
+
+    void garbageCode147() { // #7082
+        checkCode("free(3();\n"
+                  "$  vWrongAllocp1) test1<int, -!>() ^ {\n"
+                  "    int *p<ynew int[n];\n"
+                  "    delete[]p;\n"
+                  "    int *p1 = (int*)malloc(n*sizeof(int));\n"
+                  "    free(p1);\n"
+                  "}\n"
+                  "void est2() {\n"
+                  "    for (int ui = 0; ui < 1z; ui++)\n"
+                  "        ;\n"
+                  "}");
+
+        checkCode("; void f ^ { return } int main ( ) { }"); // #4941
+    }
+
+    void garbageCode148() { // #7090
+        ASSERT_THROW(checkCode("void f_1() {\n"
+                               "    typedef S0 b[][1][1] != 0\n"
+                               "};\n"
+                               "b[K][0] S0 b[][1][1] != 4{ 0 };\n"
+                               "b[0][0]"), InternalError);
+    }
+
+    void garbageCode149() { // #7085
+        checkCode("int main() {\n"
+                  "    for (j = 0; j < 1; j)\n"
+                  "        j6;\n"
+                  "}");
+    }
+
+    void garbageCode150() { // #7089
+        ASSERT_THROW(checkCode("class A {\n"
+                               "    pl vFoo() {\n"
+                               "        A::\n"
+                               "    };\n"
+                               "    A::\n"
+                               "}\n"), InternalError);
+    }
+
+    void garbageCode151() { // #4175
+        checkCode(">{ x while (y) z int = }");
+        checkCode("void f() {\n" // #4911 - bad simplification => don't crash
+                  "    int a;\n"
+                  "    do { a=do_something() } while (a);\n"
+                  "}");
+    }
+
+    void garbageCode152() { // happened in travis, originaly from llvm clang code
+        const char* code = "template <bool foo = std::value &&>\n"
+                           "static std::string foo(char *Bla) {\n"
+                           "    while (Bla[1] && Bla[1] != ',') }\n";
+        checkCode(code);
+    }
+
+    void garbageCode153() {
+        ASSERT_THROW(checkCode("enum { X = << { X } } { X X } enum { X = << { ( X ) } } { } X */"), InternalError);
+    }
+
+    void garbageCode154() {
+        checkCode("\"abc\"[];");
+    }
+
+    void garbageCode155() { // #7118
+        checkCode("&p(!{}e x){({(0?:?){({})}()})}");
+    }
+
+    void garbageCode156() { // #7120
+        checkCode("struct {}a; d f() { c ? : } {}a.p");
+    }
+
+    void garbageCode157() { // #7131
+        ASSERT_THROW(checkCode("namespace std {\n"
+                               "  template < typename >\n"
+                               "  void swap(); \n"
+                               "}"
+                               "template std::swap\n"), InternalError);
+    }
+
+    void garbageCode158() { // #3238
+        checkCode("__FBSDID(\"...\");\n");
+    }
+
+    void garbageCode159() { // #7119
+        checkCode("({}typedef typename x;typename x!){({{}()})}"); // don't hang
+    }
+
+    void garbageCode160() { // #7190
+        ASSERT_THROW(checkCode("f(a,b,c,d)float [  a[],d;int ]  b[],c;{} "), InternalError); // don't hang
+    }
+
 
     void garbageValueFlow() {
         // #6089
@@ -1071,6 +1392,62 @@ private:
         // #4169
         checkCode("volatile true , test < test < #ifdef __ppc__ true ,");
     }
+    void garbageCode161() {
+        //7200
+        ASSERT_THROW(checkCode("{ }{ if () try { } catch (...)} B : : ~B { }"), InternalError);
+    }
+
+    void garbageCode162() {
+        //7208
+        ASSERT_THROW(checkCode("return <<  >>  x return <<  >>  x ", false), InternalError);
+    }
+
+    void garbageCode163() {
+        //7228
+        ASSERT_THROW(checkCode("typedef s f[](){typedef d h(;f)}", false), InternalError);
+    }
+
+    void garbageCode164() {
+        //7234
+        ASSERT_THROW(checkCode("class d{k p;}(){d::d():B<()}", false), InternalError);
+    }
+
+    void garbageCode165() {
+        //7235
+        checkCode("for(;..)", false);
+    }
+
+    void garbageCode166() {
+        //7236
+        checkCode("d a(){f s=0()8[]s?():0}*()?:0", false);
+    }
+
+    void garbageCode167() {
+        //7237
+        checkCode("class D00i000{:D00i000::}i", false);
+    }
+
+    void garbageCode168() {
+        // 7246
+        checkCode("long foo(void) { return *bar; }", false);
+    }
+
+    void garbageCode169() {
+        // 6713
+        ASSERT_THROW(checkCode("( ) { ( ) ; { return } switch ( ) i\n"
+                               "set case break ; default: ( ) }", false), InternalError);
+    }
+
+    void garbageCode170() {
+        // 7255
+        checkCode("d i(){{f*s=typeid(()0,)}}", false);
+    }
+
+    void garbageCode171() {
+        // 7270
+        ASSERT_THROW(checkCode("(){case()?():}:", false), InternalError);
+    }
+
 };
 
 REGISTER_TEST(TestGarbage)

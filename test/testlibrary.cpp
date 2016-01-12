@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,6 +40,7 @@ private:
         TEST_CASE(function_arg_valid);
         TEST_CASE(function_arg_minsize);
         TEST_CASE(function_namespace);
+        TEST_CASE(function_warn);
         TEST_CASE(memory);
         TEST_CASE(memory2); // define extra "free" allocation functions
         TEST_CASE(resource);
@@ -48,13 +49,17 @@ private:
         TEST_CASE(version);
     }
 
+    Library::Error readLibrary(Library& library, const char* xmldata) const {
+        tinyxml2::XMLDocument doc;
+        doc.Parse(xmldata);
+        return library.load(doc);
+    }
+
     void empty() const {
         const char xmldata[] = "<?xml version=\"1.0\"?>\n<def/>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
         ASSERT(library.use.empty());
         ASSERT(library.leakignore.empty());
         ASSERT(library.argumentChecks.empty());
@@ -67,8 +72,6 @@ private:
                                "    <noreturn>false</noreturn>\n"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         TokenList tokenList(nullptr);
         std::istringstream istr("foo();");
@@ -76,7 +79,7 @@ private:
         tokenList.front()->next()->astOperand1(tokenList.front());
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
         ASSERT(library.use.empty());
         ASSERT(library.leakignore.empty());
         ASSERT(library.argumentChecks.empty());
@@ -90,16 +93,15 @@ private:
                                "    <arg nr=\"1\"/>"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
+
+        Library library;
+        readLibrary(library, xmldata);
 
         {
             TokenList tokenList(nullptr);
             std::istringstream istr("fred.foo(123);"); // <- wrong scope, not library function
             tokenList.createTokens(istr);
 
-            Library library;
-            library.load(doc);
             ASSERT(library.isNotLibraryFunction(tokenList.front()->tokAt(2)));
         }
 
@@ -108,8 +110,6 @@ private:
             std::istringstream istr("Fred::foo(123);"); // <- wrong scope, not library function
             tokenList.createTokens(istr);
 
-            Library library;
-            library.load(doc);
             ASSERT(library.isNotLibraryFunction(tokenList.front()->tokAt(2)));
         }
     }
@@ -121,8 +121,6 @@ private:
                                "    <arg nr=\"1\"/>"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         TokenList tokenList(nullptr);
         std::istringstream istr("foo();"); // <- too few arguments, not library function
@@ -130,7 +128,7 @@ private:
         tokenList.front()->next()->astOperand1(tokenList.front());
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
         ASSERT(library.isNotLibraryFunction(tokenList.front()));
     }
 
@@ -141,8 +139,6 @@ private:
                                "    <arg nr=\"1\"/>"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         TokenList tokenList(nullptr);
         std::istringstream istr("Fred foo(123);"); // <- Variable declaration, not library function
@@ -151,7 +147,7 @@ private:
         tokenList.front()->next()->varId(1);
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
         ASSERT(library.isNotLibraryFunction(tokenList.front()->next()));
     }
 
@@ -166,11 +162,9 @@ private:
                                "    <arg nr=\"5\"><not-bool/></arg>\n"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
         ASSERT_EQUALS(true, library.argumentChecks["foo"][1].notuninit);
         ASSERT_EQUALS(true, library.argumentChecks["foo"][2].notnull);
         ASSERT_EQUALS(true, library.argumentChecks["foo"][3].formatstr);
@@ -185,11 +179,9 @@ private:
                                "   <arg nr=\"any\"><not-uninit/></arg>\n"
                                "</function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
         ASSERT_EQUALS(true, library.argumentChecks["foo"][-1].notuninit);
     }
 
@@ -204,11 +196,9 @@ private:
                                "    <arg nr=\"5\"><valid>:1,5</valid></arg>\n"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
 
         TokenList tokenList(nullptr);
         std::istringstream istr("foo(a,b,c,d,e);");
@@ -257,11 +247,9 @@ private:
                                "    <arg nr=\"3\"/>\n"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
 
         TokenList tokenList(nullptr);
         std::istringstream istr("foo(a,b,c);");
@@ -296,11 +284,9 @@ private:
                                "    <noreturn>false</noreturn>\n"
                                "  </function>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
         ASSERT(library.use.empty());
         ASSERT(library.leakignore.empty());
         ASSERT(library.argumentChecks.empty());
@@ -320,6 +306,42 @@ private:
         }
     }
 
+    void function_warn() const {
+        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                               "<def>\n"
+                               "  <function name=\"a\">\n"
+                               "    <warn severity=\"style\" cstd=\"c99\">Message</warn>\n"
+                               "  </function>\n"
+                               "  <function name=\"b\">\n"
+                               "    <warn severity=\"performance\" cppstd=\"c++11\" reason=\"Obsolescent\" alternatives=\"c,d,e\"/>\n"
+                               "  </function>\n"
+                               "</def>";
+
+        Library library;
+        readLibrary(library, xmldata);
+
+        TokenList tokenList(nullptr);
+        std::istringstream istr("a(); b();");
+        tokenList.createTokens(istr);
+
+        const Library::WarnInfo* a = library.getWarnInfo(tokenList.front());
+        const Library::WarnInfo* b = library.getWarnInfo(tokenList.front()->tokAt(4));
+
+        ASSERT_EQUALS(2, library.functionwarn.size());
+        ASSERT(a && b);
+        if (a && b) {
+            ASSERT_EQUALS("Message", a->message);
+            ASSERT_EQUALS(Severity::style, a->severity);
+            ASSERT_EQUALS(Standards::C99, a->standards.c);
+            ASSERT_EQUALS(Standards::CPP03, a->standards.cpp);
+
+            ASSERT_EQUALS("Obsolescent function 'b' called. It is recommended to use 'c', 'd' or 'e' instead.", b->message);
+            ASSERT_EQUALS(Severity::performance, b->severity);
+            ASSERT_EQUALS(Standards::C89, b->standards.c);
+            ASSERT_EQUALS(Standards::CPP11, b->standards.cpp);
+        }
+    }
+
     void memory() const {
         const char xmldata[] = "<?xml version=\"1.0\"?>\n"
                                "<def>\n"
@@ -328,11 +350,9 @@ private:
                                "    <dealloc>DeleteX</dealloc>\n"
                                "  </memory>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
         ASSERT(library.use.empty());
         ASSERT(library.leakignore.empty());
         ASSERT(library.argumentChecks.empty());
@@ -372,11 +392,9 @@ private:
                                "    <dealloc>DeleteX</dealloc>\n"
                                "  </resource>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
         ASSERT(library.use.empty());
         ASSERT(library.leakignore.empty());
         ASSERT(library.argumentChecks.empty());
@@ -390,11 +408,8 @@ private:
                                "<def>\n"
                                "  <podtype name=\"s16\" size=\"2\"/>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
-
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
 
         const struct Library::PodType *type = library.podtype("s16");
         ASSERT_EQUALS(2U,   type ? type->size : 0U);
@@ -404,7 +419,7 @@ private:
     void container() const {
         const char xmldata[] = "<?xml version=\"1.0\"?>\n"
                                "<def>\n"
-                               "  <container id=\"A\" startPattern=\"std :: A &lt;\" endPattern=\"&gt; !!::\">\n"
+                               "  <container id=\"A\" startPattern=\"std :: A &lt;\" endPattern=\"&gt; !!::\" itEndPattern=\"&gt; :: iterator\">\n"
                                "    <type templateParameter=\"1\"/>\n"
                                "    <size templateParameter=\"4\">\n"
                                "      <function name=\"resize\" action=\"resize\"/>\n"
@@ -424,7 +439,7 @@ private:
                                "      <function name=\"find\" action=\"find\"/>\n"
                                "    </access>\n"
                                "  </container>\n"
-                               "  <container id=\"B\" startPattern=\"std :: B &lt;\" inherits=\"A\">\n"
+                               "  <container id=\"B\" startPattern=\"std :: B &lt;\" inherits=\"A\" opLessAllowed=\"false\">\n"
                                "    <size templateParameter=\"3\"/>\n" // Inherits all but templateParameter
                                "  </container>\n"
                                "  <container id=\"C\">\n"
@@ -432,11 +447,9 @@ private:
                                "    <access indexOperator=\"array-like\"/>\n"
                                "  </container>\n"
                                "</def>";
-        tinyxml2::XMLDocument doc;
-        doc.Parse(xmldata, sizeof(xmldata));
 
         Library library;
-        library.load(doc);
+        readLibrary(library, xmldata);
 
         Library::Container& A = library.containers["A"];
         Library::Container& B = library.containers["B"];
@@ -446,8 +459,10 @@ private:
         ASSERT_EQUALS(A.size_templateArgNo, 4);
         ASSERT_EQUALS(A.startPattern, "std :: A <");
         ASSERT_EQUALS(A.endPattern, "> !!::");
+        ASSERT_EQUALS(A.itEndPattern, "> :: iterator");
         ASSERT_EQUALS(A.stdStringLike, false);
         ASSERT_EQUALS(A.arrayLike_indexOp, false);
+        ASSERT_EQUALS(A.opLessAllowed, true);
         ASSERT_EQUALS(Library::Container::SIZE, A.getYield("size"));
         ASSERT_EQUALS(Library::Container::EMPTY, A.getYield("empty"));
         ASSERT_EQUALS(Library::Container::AT_INDEX, A.getYield("at"));
@@ -468,7 +483,9 @@ private:
         ASSERT_EQUALS(B.size_templateArgNo, 3);
         ASSERT_EQUALS(B.startPattern, "std :: B <");
         ASSERT_EQUALS(B.endPattern, "> !!::");
+        ASSERT_EQUALS(B.itEndPattern, "> :: iterator");
         ASSERT_EQUALS(B.functions.size(), A.functions.size());
+        ASSERT_EQUALS(B.opLessAllowed, false);
 
         ASSERT(C.functions.empty());
         ASSERT_EQUALS(C.type_templateArgNo, -1);
@@ -482,33 +499,24 @@ private:
             const char xmldata [] = "<?xml version=\"1.0\"?>\n"
                                     "<def>\n"
                                     "</def>";
-            tinyxml2::XMLDocument doc;
-            doc.Parse(xmldata, sizeof(xmldata));
-
             Library library;
-            Library::Error err = library.load(doc);
+            Library::Error err = readLibrary(library, xmldata);
             ASSERT_EQUALS(err.errorcode, Library::OK);
         }
         {
             const char xmldata [] = "<?xml version=\"1.0\"?>\n"
                                     "<def format=\"1\">\n"
                                     "</def>";
-            tinyxml2::XMLDocument doc;
-            doc.Parse(xmldata, sizeof(xmldata));
-
             Library library;
-            Library::Error err = library.load(doc);
+            Library::Error err = readLibrary(library, xmldata);
             ASSERT_EQUALS(err.errorcode, Library::OK);
         }
         {
             const char xmldata [] = "<?xml version=\"1.0\"?>\n"
                                     "<def format=\"42\">\n"
                                     "</def>";
-            tinyxml2::XMLDocument doc;
-            doc.Parse(xmldata, sizeof(xmldata));
-
             Library library;
-            Library::Error err = library.load(doc);
+            Library::Error err = readLibrary(library, xmldata);
             ASSERT_EQUALS(err.errorcode, Library::UNSUPPORTED_FORMAT);
         }
     }
