@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -60,6 +60,7 @@ public:
         checkBufferOverrun.bufferOverrun();
         checkBufferOverrun.bufferOverrun2();
         checkBufferOverrun.arrayIndexThenCheck();
+        checkBufferOverrun.negativeArraySize();
     }
 
     /** @brief %Check for buffer overruns */
@@ -71,8 +72,8 @@ public:
     /** @brief Using array index before bounds check */
     void arrayIndexThenCheck();
 
-    /** @brief %Check for buffer overruns by inspecting execution paths */
-    void executionPaths();
+    /** @brief negative size for array */
+    void negativeArraySize();
 
     /**
      * @brief Get minimum length of format string result
@@ -160,6 +161,9 @@ public:
         void varname(const std::string &name) {
             _varname = name;
         }
+
+        MathLib::bigint numberOfElements() const;
+        MathLib::bigint totalIndex(const std::vector<ValueFlow::Value> &indexes) const;
     };
 
     /** Check for buffer overruns (based on ArrayInfo) */
@@ -198,7 +202,7 @@ public:
         };
 
         /* key:arrayName */
-        std::map<std::string, struct ArrayUsage> arrayUsage;
+        std::map<std::string, ArrayUsage> arrayUsage;
 
         /* key:arrayName, data:arraySize */
         std::map<std::string, MathLib::bigint>  arraySize;
@@ -208,7 +212,7 @@ public:
     Check::FileInfo *getFileInfo(const Tokenizer *tokenizer, const Settings *settings) const;
 
     /** @brief Analyse all file infos for all TU */
-    void analyseWholeProgram(const std::list<Check::FileInfo*> &fileInfo, ErrorLogger &errorLogger);
+    void analyseWholeProgram(const std::list<Check::FileInfo*> &fileInfo, const Settings& settings, ErrorLogger &errorLogger);
 
 private:
 
@@ -218,6 +222,7 @@ private:
     void bufferOverrunError(const std::list<const Token *> &callstack, const std::string &varnames = emptyString);
     void strncatUsageError(const Token *tok);
     void negativeMemoryAllocationSizeError(const Token *tok); // provide a negative value to memory allocation function
+    void negativeArraySizeError(const Token *tok);
     void outOfBoundsError(const Token *tok, const std::string &what, const bool show_size_info, const MathLib::bigint &supplied_size, const MathLib::bigint &actual_size);
     void sizeArgumentAsCharError(const Token *tok);
     void terminateStrncpyError(const Token *tok, const std::string &varname);
@@ -235,8 +240,7 @@ private:
 public:
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const {
         CheckBufferOverrun c(0, settings, errorLogger);
-        std::vector<MathLib::bigint> indexes;
-        indexes.push_back(2);
+        const std::vector<MathLib::bigint> indexes(2, 1);
         c.arrayIndexOutOfBoundsError(0, ArrayInfo(0, "array", 1, 2), indexes);
         c.bufferOverrunError(0, std::string("buffer"));
         c.strncatUsageError(0);
@@ -251,6 +255,7 @@ public:
         c.possibleBufferOverrunError(0, "source", "destination", false);
         c.argumentSizeError(0, "function", "array");
         c.negativeMemoryAllocationSizeError(0);
+        c.negativeArraySizeError(0);
         c.reportError(nullptr, Severity::warning, "arrayIndexOutOfBoundsCond", "Array 'x[10]' accessed at index 20, which is out of bounds. Otherwise condition 'y==20' is redundant.");
     }
 private:

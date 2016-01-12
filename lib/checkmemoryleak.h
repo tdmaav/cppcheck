@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -96,14 +96,6 @@ public:
     enum AllocType { No, Malloc, New, NewArray, File, Fd, Pipe, OtherMem, OtherRes, Many };
 
     void memoryLeak(const Token *tok, const std::string &varname, AllocType alloctype);
-
-    /**
-     * @brief Get type of deallocation at given position
-     * @param tok position
-     * @param varname variable name
-     * @return type of deallocation
-     */
-    AllocType getDeallocationType(const Token *tok, const std::string &varname) const;
 
     /**
      * @brief Get type of deallocation at given position
@@ -214,15 +206,6 @@ public:
      * Checking for a memory leak caused by improper realloc usage.
      */
     void checkReallocUsage();
-
-    /**
-     * @brief %Check if there is a "!var" match inside a condition
-     * @param tok      first token to match
-     * @param varid    variable id
-     * @param endpar   if this is true the "!var" must be followed by ")"
-     * @return true if match
-     */
-    static bool notvar(const Token *tok, unsigned int varid, bool endpar = false);
 
     /**
      * Inspect a function call. the call_func and getcode are recursive

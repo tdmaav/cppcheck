@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -227,7 +227,7 @@ void CheckBool::checkComparisonOfFuncReturningBool()
     for (std::size_t i = 0; i < functionsCount; ++i) {
         const Scope * scope = symbolDatabase->functionScopes[i];
         for (const Token* tok = scope->classStart->next(); tok != scope->classEnd; tok = tok->next()) {
-            if (tok->type() != Token::eComparisonOp || tok->str() == "==" || tok->str() == "!=")
+            if (tok->tokType() != Token::eComparisonOp || tok->str() == "==" || tok->str() == "!=")
                 continue;
             const Token *firstToken = tok->previous();
             if (tok->strAt(-1) == ")") {
@@ -291,7 +291,7 @@ void CheckBool::checkComparisonOfBoolWithBool()
     for (std::size_t i = 0; i < functions; ++i) {
         const Scope * scope = symbolDatabase->functionScopes[i];
         for (const Token* tok = scope->classStart->next(); tok != scope->classEnd; tok = tok->next()) {
-            if (tok->type() != Token::eComparisonOp || tok->str() == "==" || tok->str() == "!=")
+            if (tok->tokType() != Token::eComparisonOp || tok->str() == "==" || tok->str() == "!=")
                 continue;
             bool firstTokenBool = false;
 
@@ -459,6 +459,7 @@ void CheckBool::pointerArithBoolCond(const Token *tok)
         return;
 
     if (tok->astOperand1() &&
+        tok->astOperand2() &&
         tok->astOperand1()->isName() &&
         tok->astOperand1()->variable() &&
         tok->astOperand1()->variable()->isPointer() &&

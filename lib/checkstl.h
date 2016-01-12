@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -92,6 +92,7 @@ public:
      * it is bad to dereference it after the erase.
      */
     void erase();
+    void eraseCheckLoopVar(const Scope &scope, const Variable *var);
 
 
     /**
@@ -150,13 +151,7 @@ public:
     void readingEmptyStlContainer();
 
 private:
-
-    /**
-     * Helper function used by the 'erase' function
-     * This function parses a loop
-     * @param it iterator token
-     */
-    void eraseCheckLoop(const Token *it);
+    void readingEmptyStlContainer_parseUsage(const Token* tok, const Library::Container* container, std::map<unsigned int, const Library::Container*>& empty, bool noerror);
 
     void missingComparisonError(const Token *incrementToken1, const Token *incrementToken2);
     void string_c_strThrowError(const Token *tok);
@@ -170,7 +165,7 @@ private:
     void mismatchingContainersError(const Token *tok);
     void invalidIteratorError(const Token *tok, const std::string &func, const std::string &iterator_name);
     void invalidPointerError(const Token *tok, const std::string &func, const std::string &pointer_name);
-    void stlBoundariesError(const Token *tok, const std::string &container_name);
+    void stlBoundariesError(const Token *tok);
     void if_findError(const Token *tok, bool str);
     void sizeError(const Token *tok);
     void redundantIfRemoveError(const Token *tok);
@@ -199,7 +194,7 @@ private:
         c.stlOutOfBoundsError(0, "i", "foo", false);
         c.invalidIteratorError(0, "push_back|push_front|insert", "iterator");
         c.invalidPointerError(0, "push_back", "pointer");
-        c.stlBoundariesError(0, "container");
+        c.stlBoundariesError(0);
         c.if_findError(0, false);
         c.if_findError(0, true);
         c.string_c_strError(0);

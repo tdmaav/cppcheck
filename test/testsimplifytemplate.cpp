@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,8 +29,11 @@ public:
     }
 
 private:
+    Settings settings;
 
     void run() {
+        settings.addEnabled("portability");
+
         TEST_CASE(template1);
         TEST_CASE(template2);
         TEST_CASE(template3);
@@ -59,7 +62,6 @@ private:
         TEST_CASE(template26);  // #2721 - passing 'char[2]' as template parameter
         TEST_CASE(template27);  // #3350 - removing unused template in macro call
         TEST_CASE(template28);
-        TEST_CASE(template29);  // #3449 - don't crash for garbage code
         TEST_CASE(template30);  // #3529 - template < template < ..
         TEST_CASE(template31);  // #4010 - reference type
         TEST_CASE(template32);  // #3818 - mismatching template not handled well
@@ -86,24 +88,26 @@ private:
         TEST_CASE(template53);  // #4335 - bail out for valid code
         TEST_CASE(template54);  // #6587 - memory corruption upon valid code
         TEST_CASE(template55);  // #6604 - simplify "const const" to "const" in template instantiations
+        TEST_CASE(template_enum);  // #6299 Syntax error in complex enum declaration (including template)
         TEST_CASE(template_unhandled);
         TEST_CASE(template_default_parameter);
         TEST_CASE(template_default_type);
         TEST_CASE(template_typename);
         TEST_CASE(template_constructor);    // #3152 - template constructor is removed
+        TEST_CASE(syntax_error_templates_1);
+        TEST_CASE(template_member_ptr); // Ticket #5786 - crash upon valid code
 
         // Test TemplateSimplifier::templateParameters
         TEST_CASE(templateParameters);
-        TEST_CASE(templateParameters1);  // #4169 - segmentation fault
 
         TEST_CASE(templateNamePosition);
+
+        TEST_CASE(expandSpecialized);
     }
 
-    std::string tok(const char code[], bool simplify = true, bool debugwarnings = false, Settings::PlatformType type = Settings::Unspecified) {
+    std::string tok(const char code[], bool simplify = true, bool debugwarnings = false, Settings::PlatformType type = Settings::Native) {
         errout.str("");
 
-        Settings settings;
-        settings.addEnabled("portability");
         settings.debugwarnings = debugwarnings;
         settings.platform(type);
         Tokenizer tokenizer(&settings, this);
@@ -120,7 +124,7 @@ private:
     std::string tok(const char code[], const char filename[]) {
         errout.str("");
 
-        Settings settings;
+        settings.debugwarnings = false;
         Tokenizer tokenizer(&settings, this);
 
         std::istringstream istr(code);
@@ -658,14 +662,6 @@ private:
         ASSERT_EQUALS("Fred<int,Fred<int,int>> x ; class Fred<int,int> { } ; class Fred<int,Fred<int,int>> { } ;", tok(code));
     }
 
-    void template29() {
-        // #3449 - garbage code (don't segfault)
-        const char code[] = "template<typename T> struct A;\n"
-                            "struct B { template<typename T> struct C };\n"
-                            "{};";
-        ASSERT_EQUALS("template < typename T > struct A ; struct B { template < typename T > struct C } ; { } ;", tok(code));
-    }
-
     void template30() {
         // #3529 - template < template < ..
         const char code[] = "template<template<class> class A, class B> void f(){}";
@@ -816,7 +812,7 @@ private:
                             "    return sizeof...(args);\n"
                             "  }();\n"
                             "}";
-        ASSERT_THROW(tok(code), InternalError);
+        tok(code);
     }
 
     void template43() { // #5097 - Assert due to '>>' in 'B<A<C>>' not being treated as end of template instantation
@@ -996,6 +992,40 @@ private:
                 "A<int> a(0);"));
     }
 
+    void template_enum() {
+        const char code1[] = "template <class T>\n"
+                             "struct Unconst {\n"
+                             "    typedef T type;\n"
+                             "};\n"
+                             "template <class T>\n"
+                             "struct Unconst<const T> {\n"
+                             "    typedef T type;\n"
+                             "};\n"
+                             "template <class T>\n"
+                             "struct Unconst<const T&> {\n"
+                             "    typedef T& type;\n"
+                             "};\n"
+                             "template <class T>\n"
+                             "struct Unconst<T* const> {\n"
+                             "    typedef T* type;\n"
+                             "};\n"
+                             "template <class T1, class T2>\n"
+                             "struct type_equal {\n"
+                             "    enum {  value = 0   };\n"
+                             "};\n"
+                             "template <class T>\n"
+                             "struct type_equal<T, T> {\n"
+                             "    enum {  value = 1   };\n"
+                             "};\n"
+                             "template<class T>\n"
+                             "struct template_is_const\n"
+                             "{\n"
+                             "    enum {value = !type_equal<T, typename Unconst<T>::type>::value  };\n"
+                             "};";
+        const char expected1[]="template < class T > struct Unconst { } ; template < class T > struct type_equal<T,T> { } ; template < class T > struct template_is_const { } ; struct type_equal<T,T> { } ; struct Unconst<constT*const> { } ; struct Unconst<constT&*const> { } ; struct Unconst<T*const*const> { } ; struct Unconst<T*const> { } ; struct Unconst<T*const> { } ; struct Unconst<T*const> { } ; struct Unconst<constT&><};template<T> { } ; struct Unconst<constT><};template<T> { } ;";
+        ASSERT_EQUALS(expected1, tok(code1));
+    }
+
     void template_default_parameter() {
         {
             const char code[] = "template <class T, int n=3>\n"
@@ -1151,8 +1181,82 @@ private:
         ASSERT_EQUALS("class Fred { template < class T > Fred ( T t ) { } }", tok(code2));
     }
 
+    void syntax_error_templates_1() {
+        // ok code.. using ">" for a comparison
+        tok("x<y>z> xyz;\n");
+        ASSERT_EQUALS("", errout.str());
+
+        // ok code
+        tok("template<class T> operator<(T a, T b) { }\n");
+        ASSERT_EQUALS("", errout.str());
+
+        // ok code (ticket #1984)
+        tok("void f(a) int a;\n"
+            "{ ;x<y; }");
+        ASSERT_EQUALS("", errout.str());
+
+        // ok code (ticket #1985)
+        tok("void f()\n"
+            "try { ;x<y; }");
+        ASSERT_EQUALS("", errout.str());
+
+        // ok code (ticket #3183)
+        tok("MACRO(({ i < x }))");
+        ASSERT_EQUALS("", errout.str());
+
+        // bad code.. missing ">"
+        ASSERT_THROW(tok("x<y<int> xyz;\n"), InternalError);
+
+        // bad code
+        ASSERT_THROW(tok("typedef\n"
+                         "    typename boost::mpl::if_c<\n"
+                         "          _visitableIndex < boost::mpl::size< typename _Visitables::ConcreteVisitables >::value\n"
+                         "          , ConcreteVisitable\n"
+                         "          , Dummy< _visitableIndex >\n"
+                         "    >::type ConcreteVisitableOrDummy;\n"), InternalError);
+
+        // code is ok, don't show syntax error
+        tok("struct A {int a;int b};\n"
+            "class Fred {"
+            "public:\n"
+            "    Fred() : a({1,2}) {\n"
+            "        for (int i=0;i<6;i++);\n" // <- no syntax error
+            "    }\n"
+            "private:\n"
+            "    A a;\n"
+            "};\n");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void template_member_ptr() { // Ticket #5786
+        tok("struct A {}; "
+            "struct B { "
+            "template <void (A::*)() const> struct BB {}; "
+            "template <bool BT> static bool foo(int) { return true; } "
+            "void bar() { bool b = foo<true>(0); }"
+            "};");
+        tok("struct A {}; "
+            "struct B { "
+            "template <void (A::*)() volatile> struct BB {}; "
+            "template <bool BT> static bool foo(int) { return true; } "
+            "void bar() { bool b = foo<true>(0); }"
+            "};");
+        tok("struct A {}; "
+            "struct B { "
+            "template <void (A::*)() const volatile> struct BB {}; "
+            "template <bool BT> static bool foo(int) { return true; } "
+            "void bar() { bool b = foo<true>(0); }"
+            "};");
+        tok("struct A {}; "
+            "struct B { "
+            "template <void (A::*)() volatile const> struct BB {}; "
+            "template <bool BT> static bool foo(int) { return true; } "
+            "void bar() { bool b = foo<true>(0); }"
+            "};");
+    }
+
+
     unsigned int templateParameters(const char code[]) {
-        Settings settings;
         Tokenizer tokenizer(&settings, this);
 
         std::istringstream istr(code);
@@ -1169,22 +1273,24 @@ private:
         ASSERT_EQUALS(1U, templateParameters("<int const *> x;"));
         ASSERT_EQUALS(1U, templateParameters("<const struct C> x;"));
         ASSERT_EQUALS(0U, templateParameters("<len>>x;"));
-    }
-
-    void templateParameters1() {
-        // #4169 - segmentation fault (invalid code)
-        const char code[] = "volatile true , test < test < #ifdef __ppc__ true ,";
-        // do not crash on invalid code
-        ASSERT_EQUALS(0, templateParameters(code));
+        ASSERT_EQUALS(1U, templateParameters("<typename> x;"));
+        ASSERT_EQUALS(0U, templateParameters("<...> x;"));
+        ASSERT_EQUALS(0U, templateParameters("<class T...> x;")); // Invalid syntax
+        ASSERT_EQUALS(1U, templateParameters("<class... T> x;"));
+        ASSERT_EQUALS(0U, templateParameters("<class, typename T...> x;")); // Invalid syntax
+        ASSERT_EQUALS(2U, templateParameters("<class, typename... T> x;"));
+        ASSERT_EQUALS(2U, templateParameters("<int(&)(), class> x;"));
+        ASSERT_EQUALS(3U, templateParameters("<char, int(*)(), bool> x;"));
+        TODO_ASSERT_EQUALS(1U, 0U, templateParameters("<int...> x;")); // Mishandled valid syntax
+        TODO_ASSERT_EQUALS(2U, 0U, templateParameters("<class, typename...> x;")); // Mishandled valid syntax
     }
 
     // Helper function to unit test TemplateSimplifier::getTemplateNamePosition
     int templateNamePositionHelper(const char code[], unsigned offset = 0) {
-        Settings settings;
         Tokenizer tokenizer(&settings, this);
 
         std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp", "", true);
+        tokenizer.tokenize(istr, "test.cpp", emptyString, true);
 
         const Token *_tok = tokenizer.tokens();
         for (unsigned i = 0 ; i < offset ; ++i)
@@ -1213,6 +1319,11 @@ private:
         // Template class member
         TODO_ASSERT_EQUALS(7, -1, templateNamePositionHelper("template<class T> class A { unsigned foo(); }; "
                            "template<class T> unsigned A<T>::foo() { return 0; }", 19));
+    }
+
+    void expandSpecialized() {
+        ASSERT_EQUALS("class A<int> { } ;", tok("template<> class A<int> {};"));
+        ASSERT_EQUALS("class A<int> : public B { } ;", tok("template<> class A<int> : public B {};"));
     }
 };
 

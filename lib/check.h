@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -97,8 +97,9 @@ public:
         return nullptr;
     }
 
-    virtual void analyseWholeProgram(const std::list<FileInfo*> &fileInfo, ErrorLogger &errorLogger) {
+    virtual void analyseWholeProgram(const std::list<FileInfo*> &fileInfo, const Settings& settings, ErrorLogger &errorLogger) {
         (void)fileInfo;
+        (void)settings;
         (void)errorLogger;
     }
 

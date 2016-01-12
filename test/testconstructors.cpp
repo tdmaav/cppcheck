@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,16 +27,13 @@ public:
     }
 
 private:
-
+    Settings settings;
 
     void check(const char code[], bool showAll = false) {
         // Clear the error buffer..
         errout.str("");
 
-        Settings settings;
         settings.inconclusive = showAll;
-        settings.addEnabled("style");
-        settings.addEnabled("warning");
 
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
@@ -50,6 +47,9 @@ private:
     }
 
     void run() {
+        settings.addEnabled("style");
+        settings.addEnabled("warning");
+
         TEST_CASE(simple1);
         TEST_CASE(simple2);
         TEST_CASE(simple3);
@@ -104,6 +104,8 @@ private:
         TEST_CASE(initvar_destructor);      // No variables need to be initialized in a destructor
         TEST_CASE(initvar_func_ret_func_ptr); // ticket #4449
 
+        TEST_CASE(initvar_alias); // #6921
+
         TEST_CASE(operatorEqSTL);
 
         TEST_CASE(uninitVar1);
@@ -148,6 +150,7 @@ private:
         TEST_CASE(uninitVarArray6);
         TEST_CASE(uninitVarArray7);
         TEST_CASE(uninitVarArray8);
+        TEST_CASE(uninitVarArray9); // ticket #6957, #6959
         TEST_CASE(uninitVarArray2D);
         TEST_CASE(uninitVarArray3D);
         TEST_CASE(uninitVarCpp11Init1);
@@ -176,6 +179,7 @@ private:
         TEST_CASE(uninitVarPointer);       // ticket #3801
         TEST_CASE(uninitConstVar);
         TEST_CASE(constructors_crash1);    // ticket #5641
+        TEST_CASE(classWithOperatorInName);// ticket #2827
     }
 
 
@@ -1044,6 +1048,16 @@ private:
               "    A() { number = 42; }\n"
               "};");
         ASSERT_EQUALS("", errout.str());
+
+        // Ticket #6675
+        check("struct Foo {\n"
+              "  Foo();\n"
+              "  Foo(int foo);\n"
+              "  int foo_;\n"
+              "};\n"
+              "Foo::Foo() : Foo(0) {}\n"
+              "Foo::Foo(int foo) : foo_(foo) {}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
 
@@ -1375,6 +1389,54 @@ private:
               "    something() { process(); }\n"
               "};");
         ASSERT_EQUALS("", errout.str());
+    }
+
+    void initvar_alias() { // #6921
+        check("struct S {\n"
+              "    int a;\n"
+              "    S() {\n"
+              "        int& pa = a;\n"
+              "        pa = 4;\n"
+              "    }\n"
+              "};");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S {\n"
+              "    int a;\n"
+              "    S() {\n"
+              "        int* pa = &a;\n"
+              "        *pa = 4;\n"
+              "    }\n"
+              "};");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S {\n"
+              "    int a[2];\n"
+              "    S() {\n"
+              "        int* pa = a;\n"
+              "        for (int i = 0; i < 2; i++)\n"
+              "            *pa++ = i;\n"
+              "    }\n"
+              "};");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct S {\n"
+              "    int* a[2];\n"
+              "    S() {\n"
+              "        int* pa = a[1];\n"
+              "        *pa = 0;\n"
+              "    }\n"
+              "};");
+        ASSERT_EQUALS("[test.cpp:3]: (warning) Member variable 'S::a' is not initialized in the constructor.\n", errout.str());
+
+        check("struct S {\n"
+              "    int a;\n"
+              "    S() {\n"
+              "        int pa = a;\n"
+              "        pa = 4;\n"
+              "    }\n"
+              "};");
+        ASSERT_EQUALS("[test.cpp:3]: (warning) Member variable 'S::a' is not initialized in the constructor.\n", errout.str());
     }
 
     void operatorEqSTL() {
@@ -2272,7 +2334,7 @@ private:
               "{\n"
               "public:\n"
               "    John() { }\n"
-              "    A *a[5];\n"
+              "    A (*a)[5];\n"
               "};");
         ASSERT_EQUALS("[test.cpp:5]: (warning) Member variable 'John::a' is not initialized in the constructor.\n", errout.str());
     }
@@ -2393,6 +2455,26 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void uninitVarArray9() { // #6957
+        check("class BaseGDL;\n"
+              "struct IxExprListT {\n"
+              "private:\n"
+              "    BaseGDL* eArr[3];\n"
+              "public:\n"
+              "    IxExprListT() {}\n"
+              "};");
+        ASSERT_EQUALS("[test.cpp:6]: (warning) Member variable 'IxExprListT::eArr' is not initialized in the constructor.\n", errout.str());
+        check("struct sRAIUnitDefBL {\n"
+              "  sRAIUnitDefBL();\n"
+              "  ~sRAIUnitDefBL();\n"
+              "};\n"
+              "struct sRAIUnitDef {\n"
+              "  sRAIUnitDef() {}\n"
+              "  sRAIUnitDefBL *List[35];\n"
+              "};");
+        ASSERT_EQUALS("[test.cpp:6]: (warning) Member variable 'sRAIUnitDef::List' is not initialized in the constructor.\n", errout.str());
+    }
+
     void uninitVarArray2D() {
         check("class John\n"
               "{\n"
@@ -2437,7 +2519,7 @@ private:
               "    float g;\n"
               "public:\n"
               "    Fred() : f{0, true} { }\n"
-              "    float get() const\n"
+              "    float get() const;\n"
               "};\n"
               "float Fred::get() const { return g; }");
         ASSERT_EQUALS("[test.cpp:9]: (warning) Member variable 'Fred::g' is not initialized in the constructor.\n", errout.str());
@@ -3178,6 +3260,15 @@ private:
               "  C() _STLP_NOTHROW {}\n"
               "  C(const C&) _STLP_NOTHROW {}\n"
               "};\n");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void classWithOperatorInName() { // ticket #2827
+        check("class operatorX {\n"
+              "  int mValue;\n"
+              "public:\n"
+              "  operatorX() : mValue(0) {}\n"
+              "};");
         ASSERT_EQUALS("", errout.str());
     }
 };

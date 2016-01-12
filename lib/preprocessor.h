@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -54,7 +54,7 @@ public:
     /** character that is inserted in expanded macros */
     static char macroChar;
 
-    Preprocessor(Settings *settings = nullptr, ErrorLogger *errorLogger = nullptr);
+    Preprocessor(Settings& settings, ErrorLogger *errorLogger = nullptr);
 
     static bool missingIncludeFlag;
     static bool missingSystemIncludeFlag;
@@ -147,9 +147,8 @@ public:
      * Replace "#if defined" with "#ifdef" where possible
      *
      * @param str The string to be converted
-     * @return The replaced string
      */
-    std::string replaceIfDefined(const std::string &str) const;
+    void replaceIfDefined(std::string &str) const;
 
     /**
      * expand macros in code. ifdefs etc are ignored so the code must be a single configuration
@@ -269,7 +268,7 @@ private:
      */
     void handleIncludes(std::string &code, const std::string &filePath, const std::list<std::string> &includePaths);
 
-    Settings *_settings;
+    Settings& _settings;
     ErrorLogger *_errorLogger;
 
     /** filename for cpp/c file - useful when reporting errors */

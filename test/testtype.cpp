@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,6 +37,8 @@ private:
         TEST_CASE(checkTooBigShift);
         TEST_CASE(checkIntegerOverflow);
         TEST_CASE(signConversion);
+        TEST_CASE(longCastAssign);
+        TEST_CASE(longCastReturn);
     }
 
     void check(const char code[], Settings* settings = 0) {
@@ -83,25 +85,41 @@ private:
               "  someList << 300;\n"
               "}", &settings);
         ASSERT_EQUALS("", errout.str());
+
+        // Ticket #6793
+        check("template<int I> int foo(int x) { return x << I; }\n"
+              "const int f = foo<31>(1);\n"
+              "const int g = foo<100>(1);\n"
+              "template<int I> int hoo(int x) { return x << 32; }\n"
+              "const int h = hoo<100>(1);", &settings);
+        ASSERT_EQUALS("[test.cpp:4]: (error) Shifting 32-bit value by 32 bits is undefined behaviour\n"
+                      "[test.cpp:1]: (error) Shifting 32-bit value by 100 bits is undefined behaviour\n", errout.str());
+
+        // #7266: C++, shift in macro
+        check("void f(int x) {\n"
+              "    UINFO(x << 1234);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void checkIntegerOverflow() {
         Settings settings;
         settings.platform(Settings::Unix32);
+        settings.addEnabled("warning");
 
-        check("int foo(int x) {\n"
+        check("int foo(signed int x) {\n"
               "   if (x==123456) {}\n"
               "   return x * x;\n"
               "}",&settings);
-        ASSERT_EQUALS("[test.cpp:3]: (warning) Signed integer overflow for expression 'x*x'. See condition at line 2.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (warning) Either the condition 'x==123456' is redundant or there is signed integer overflow for expression 'x*x'.\n", errout.str());
 
-        check("int foo(int x) {\n"
+        check("int foo(signed int x) {\n"
               "   if (x==123456) {}\n"
               "   return -123456 * x;\n"
               "}",&settings);
-        ASSERT_EQUALS("[test.cpp:3]: (warning) Signed integer overflow for expression '-123456*x'. See condition at line 2.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (warning) Either the condition 'x==123456' is redundant or there is signed integer overflow for expression '-123456*x'.\n", errout.str());
 
-        check("int foo(int x) {\n"
+        check("int foo(signed int x) {\n"
               "   if (x==123456) {}\n"
               "   return 123456U * x;\n"
               "}",&settings);
@@ -132,6 +150,53 @@ private:
               "  a = x + 5U;\n"
               "}\n"
               "void f2() { f1(-4); }");
+        ASSERT_EQUALS("", errout.str());
+
+        check("size_t foo(size_t x) {\n"
+              " return -2 * x;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (warning) Suspicious code: sign conversion of -2 in calculation because '-2' has a negative value\n", errout.str());
+    }
+
+    void longCastAssign() {
+        Settings settings;
+        settings.addEnabled("style");
+        settings.platform(Settings::Unix64);
+
+        check("long f(int x, int y) {\n"
+              "  const long ret = x * y;\n"
+              "  return ret;\n"
+              "}\n", &settings);
+        ASSERT_EQUALS("[test.cpp:2]: (style) int result is assigned to long variable. If the variable is long to avoid loss of information, then you have loss of information.\n", errout.str());
+
+        // typedef
+        check("long f(int x, int y) {\n"
+              "  const size_t ret = x * y;\n"
+              "  return ret;\n"
+              "}\n", &settings);
+        ASSERT_EQUALS("", errout.str());
+
+        // astIsIntResult
+        check("long f(int x, int y) {\n"
+              "  const long ret = (long)x * y;\n"
+              "  return ret;\n"
+              "}\n", &settings);
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void longCastReturn() {
+        Settings settings;
+        settings.addEnabled("style");
+
+        check("long f(int x, int y) {\n"
+              "  return x * y;\n"
+              "}\n", &settings);
+        ASSERT_EQUALS("[test.cpp:2]: (style) int result is returned as long value. If the return value is long to avoid loss of information, then you have loss of information.\n", errout.str());
+
+        // typedef
+        check("size_t f(int x, int y) {\n"
+              "  return x * y;\n"
+              "}\n", &settings);
         ASSERT_EQUALS("", errout.str());
     }
 };

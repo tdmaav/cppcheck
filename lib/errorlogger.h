@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,11 +21,11 @@
 #define errorloggerH
 //---------------------------------------------------------------------------
 
-#include <list>
-#include <string>
-
 #include "config.h"
 #include "suppressions.h"
+
+#include <list>
+#include <string>
 
 class Token;
 class TokenList;
@@ -256,6 +256,8 @@ public:
          */
         static void findAndReplace(std::string &source, const std::string &searchFor, const std::string &replaceWith);
 
+        static std::string fixInvalidChars(const std::string& raw);
+
         /** Short message */
         std::string _shortMessage;
 
@@ -309,6 +311,13 @@ public:
     void reportUnmatchedSuppressions(const std::list<Suppressions::SuppressionEntry> &unmatched);
 
     static std::string callStackToString(const std::list<ErrorLogger::ErrorMessage::FileLocation> &callStack);
+
+    /**
+     * Convert XML-sensitive characters into XML entities
+     * @param str The input string containing XML-sensitive characters
+     * @return The ouput string containing XML entities
+     */
+    static std::string toxml(const std::string &str);
 };
 
 /// @}

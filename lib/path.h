@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -145,7 +145,6 @@ public:
      */
     static bool isCPP(const std::string &extensionInLowerCase);
 
-private:
     /**
      * @brief Is filename a header based on file extension
      * @param path filename to check. path info is optional

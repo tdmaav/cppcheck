@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,10 +51,10 @@ public:
     static void cleanupAfterSimplify(Token *tokens);
 
     /**
-     * @return 0 if there are no syntax errors or return token which identifies
-     * the location of syntax error.
+     * \param[in] tokens token list
+     * @return false if there are no syntax errors or true
      */
-    static const Token* hasComplicatedSyntaxErrorsInTemplates(Token *tokens);
+    static void checkComplicatedSyntaxErrorsInTemplates(const Token *tokens);
 
     /**
      * is the token pointing at a template parameters block
@@ -185,6 +185,9 @@ private:
      * Remove a specific "template < ..." template class/function
      */
     static bool removeTemplate(Token *tok);
+
+    /** Syntax error */
+    static void syntaxError(const Token *tok);
 
 };
 

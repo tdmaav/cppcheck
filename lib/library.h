@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,16 +23,18 @@
 
 #include "config.h"
 #include "mathlib.h"
-#include "token.h"
+#include "standards.h"
+#include "errorlogger.h"
 
 #include <map>
 #include <set>
 #include <string>
 #include <list>
+#include <vector>
 
-class TokenList;
 namespace tinyxml2 {
     class XMLDocument;
+    class XMLElement;
 }
 
 /// @addtogroup Core
@@ -62,22 +64,18 @@ public:
     /** this is primarily meant for unit tests. it only returns true/false */
     bool loadxmldata(const char xmldata[], std::size_t len);
 
-    /** get allocation id for function by name */
+    /** get allocation id for function by name (deprecated, use other alloc) */
     int alloc(const char name[]) const {
         return getid(_alloc, name);
     }
 
     /** get allocation id for function */
-    int alloc(const Token *tok) const {
-        return isNotLibraryFunction(tok) && argumentChecks.find(tok->str()) != argumentChecks.end() ? 0 : getid(_alloc, tok->str());
-    }
+    int alloc(const Token *tok) const;
 
     /** get deallocation id for function */
-    int dealloc(const Token *tok) const {
-        return isNotLibraryFunction(tok) && argumentChecks.find(tok->str()) != argumentChecks.end() ? 0 : getid(_dealloc, tok->str());
-    }
+    int dealloc(const Token *tok) const;
 
-    /** get deallocation id for function by name */
+    /** get deallocation id for function by name (deprecated, use other alloc) */
     int dealloc(const char name[]) const {
         return getid(_dealloc, name);
     }
@@ -122,10 +120,21 @@ public:
     std::set<std::string> leakignore;
     std::set<std::string> functionconst;
     std::set<std::string> functionpure;
-    std::set<std::string> useretval;
+
+    struct WarnInfo {
+        std::string message;
+        Standards standards;
+        Severity::SeverityType severity;
+    };
+    std::map<std::string, WarnInfo> functionwarn;
+
+    const WarnInfo* getWarnInfo(const Token* ftok) const;
 
     // returns true if ftok is not a library function
     bool isNotLibraryFunction(const Token *ftok) const;
+
+
+    bool isUseRetVal(const Token* ftok) const;
 
     bool isnoreturn(const Token *ftok) const;
     bool isnotnoreturn(const Token *ftok) const;
@@ -138,27 +147,29 @@ public:
             type_templateArgNo(-1),
             size_templateArgNo(-1),
             arrayLike_indexOp(false),
-            stdStringLike(false) {
+            stdStringLike(false),
+            opLessAllowed(true) {
         }
 
         enum Action {
-            RESIZE, CLEAR, PUSH, POP, FIND,
+            RESIZE, CLEAR, PUSH, POP, FIND, INSERT, ERASE, CHANGE_CONTENT, CHANGE, CHANGE_INTERNAL,
             NO_ACTION
         };
         enum Yield {
-            AT_INDEX, ITEM, BUFFER, BUFFER_NT, START_ITERATOR, END_ITERATOR, SIZE, EMPTY,
+            AT_INDEX, ITEM, BUFFER, BUFFER_NT, START_ITERATOR, END_ITERATOR, ITERATOR, SIZE, EMPTY,
             NO_YIELD
         };
         struct Function {
             Action action;
             Yield yield;
         };
-        std::string startPattern, endPattern;
+        std::string startPattern, endPattern, itEndPattern;
         std::map<std::string, Function> functions;
         int type_templateArgNo;
         int size_templateArgNo;
         bool arrayLike_indexOp;
         bool stdStringLike;
+        bool opLessAllowed;
 
         Action getAction(const std::string& function) const {
             std::map<std::string, Function>::const_iterator i = functions.find(function);
@@ -175,7 +186,7 @@ public:
         }
     };
     std::map<std::string, Container> containers;
-    const Container* detectContainer(const Token* typeStart) const;
+    const Container* detectContainer(const Token* typeStart, bool iterator = false) const;
 
     class ArgumentChecks {
     public:
@@ -213,15 +224,8 @@ public:
         return arg && arg->notbool;
     }
 
-    bool isnullargbad(const Token *ftok, int argnr) const {
-        const ArgumentChecks *arg = getarg(ftok, argnr);
-        return arg && arg->notnull;
-    }
-
-    bool isuninitargbad(const Token *ftok, int argnr) const {
-        const ArgumentChecks *arg = getarg(ftok, argnr);
-        return arg && arg->notuninit;
-    }
+    bool isnullargbad(const Token *ftok, int argnr) const;
+    bool isuninitargbad(const Token *ftok, int argnr) const;
 
     bool isargformatstr(const Token *ftok, int argnr) const {
         const ArgumentChecks *arg = getarg(ftok, argnr);
@@ -379,6 +383,9 @@ public:
     }
 
 private:
+    // load a <function> xml node
+    Error loadFunction(const tinyxml2::XMLElement * const node, const std::string &name, std::set<std::string> &unknown_elements);
+
     class ExportedFunctions {
     public:
         void addPrefix(const std::string& prefix) {
@@ -435,6 +442,7 @@ private:
     };
     int allocid;
     std::set<std::string> _files;
+    std::set<std::string> _useretval;
     std::map<std::string, int> _alloc; // allocation functions
     std::map<std::string, int> _dealloc; // deallocation functions
     std::map<std::string, bool> _noreturn; // is function noreturn?

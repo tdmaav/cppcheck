@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,9 +27,7 @@
 #include <cassert>
 #include <iomanip>
 #include <sstream>
-#include <vector>
-
-static std::string fixInvalidChars(const std::string& raw);
+#include <array>
 
 InternalError::InternalError(const Token *tok, const std::string &errorMsg, Type type) :
     token(tok), errorMessage(errorMsg)
@@ -85,12 +83,12 @@ void ErrorLogger::ErrorMessage::setmsg(const std::string &msg)
     // as an empty message to the user if --verbose is used.
     // Even this doesn't cause problems with messages that have multiple
     // lines, none of the the error messages should end into it.
-    assert(!(msg[msg.size()-1]=='\n'));
+    assert(!(msg.back() =='\n'));
 
     // The summary and verbose message are separated by a newline
     // If there is no newline then both the summary and verbose messages
     // are the given message
-    const std::string::size_type pos = msg.find("\n");
+    const std::string::size_type pos = msg.find('\n');
     if (pos == std::string::npos) {
         _shortMessage = msg;
         _verboseMessage = msg;
@@ -133,7 +131,8 @@ bool ErrorLogger::ErrorMessage::deserialize(const std::string &data)
     _inconclusive = false;
     _callStack.clear();
     std::istringstream iss(data);
-    std::vector<std::string> results;
+    std::array<std::string, 5> results;
+    std::size_t elem = 0;
     while (iss.good()) {
         unsigned int len = 0;
         if (!(iss >> len))
@@ -151,17 +150,18 @@ bool ErrorLogger::ErrorMessage::deserialize(const std::string &data)
             continue;
         }
 
-        results.push_back(temp);
-        if (results.size() == 5)
+        results[elem++] = temp;
+        if (elem == 5)
             break;
     }
 
-    if (results.size() != 5)
+    if (elem != 5)
         throw InternalError(0, "Internal Error: Deserialization of error message failed");
 
     _id = results[0];
     _severity = Severity::fromString(results[1]);
-    _cwe = MathLib::toULongNumber(results[2]);
+    std::istringstream scwe(results[2]);
+    scwe >> _cwe;
     _shortMessage = results[3];
     _verboseMessage = results[4];
 
@@ -225,8 +225,8 @@ std::string ErrorLogger::ErrorMessage::getXMLFooter(int xml_version)
 }
 
 // There is no utf-8 support around but the strings should at least be safe for to tinyxml2.
-// See #5300 "Invalid encoding in XML output"
-static std::string fixInvalidChars(const std::string& raw)
+// See #5300 "Invalid encoding in XML output" and  #6431 "Invalid XML created - Invalid encoding of string literal "
+std::string ErrorLogger::ErrorMessage::fixInvalidChars(const std::string& raw)
 {
     std::string result;
     result.reserve(raw.length());
@@ -237,7 +237,13 @@ static std::string fixInvalidChars(const std::string& raw)
         } else {
             std::ostringstream es;
             // straight cast to (unsigned) doesn't work out.
-            es << '\\' << std::setbase(8) << std::setw(3) << std::setfill('0') << (unsigned)(unsigned char)*from;
+            const unsigned uFrom = (unsigned char)*from;
+#if 0
+            if (uFrom<0x20)
+                es << "\\XXX";
+            else
+#endif
+                es << '\\' << std::setbase(8) << std::setw(3) << std::setfill('0') << uFrom;
             result += es.str();
         }
         ++from;
@@ -272,7 +278,7 @@ std::string ErrorLogger::ErrorMessage::toXML(bool verbose, int version) const
         printer.OpenElement("error", false);
         printer.PushAttribute("id", _id.c_str());
         printer.PushAttribute("severity", Severity::toString(_severity).c_str());
-        printer.PushAttribute("msg", _shortMessage.c_str());
+        printer.PushAttribute("msg", fixInvalidChars(_shortMessage).c_str());
         printer.PushAttribute("verbose", fixInvalidChars(_verboseMessage).c_str());
         if (_cwe)
             printer.PushAttribute("cwe", _cwe);
@@ -297,7 +303,7 @@ void ErrorLogger::ErrorMessage::findAndReplace(std::string &source, const std::s
     std::string::size_type index = 0;
     while ((index = source.find(searchFor, index)) != std::string::npos) {
         source.replace(index, searchFor.length(), replaceWith);
-        index = (std::string::difference_type)index + (std::string::difference_type)replaceWith.length() - (std::string::difference_type)searchFor.length() + 1;
+        index += replaceWith.length();
     }
 }
 
@@ -361,8 +367,10 @@ void ErrorLogger::reportUnmatchedSuppressions(const std::list<Suppressions::Supp
         for (std::list<Suppressions::SuppressionEntry>::const_iterator i2 = unmatched.begin(); i2 != unmatched.end(); ++i2) {
             if (i2->id == "unmatchedSuppression") {
                 if ((i2->file == "*" || i2->file == i->file) &&
-                    (i2->line == 0 || i2->line == i->line))
+                    (i2->line == 0 || i2->line == i->line)) {
                     suppressed = true;
+                    break;
+                }
             }
         }
 
@@ -412,4 +420,37 @@ std::string ErrorLogger::ErrorMessage::FileLocation::stringify() const
         oss << ':' << line;
     oss << ']';
     return oss.str();
+}
+
+std::string ErrorLogger::toxml(const std::string &str)
+{
+    std::ostringstream xml;
+    const bool isstring(str[0] == '\"');
+    for (std::size_t i = 0U; i < str.length(); i++) {
+        char c = str[i];
+        switch (c) {
+        case '<':
+            xml << "&lt;";
+            break;
+        case '>':
+            xml << "&gt;";
+            break;
+        case '&':
+            xml << "&amp;";
+            break;
+        case '\"':
+            xml << "&quot;";
+            break;
+        case '\0':
+            xml << "\\0";
+            break;
+        default:
+            if (!isstring || (c >= ' ' && c <= 'z'))
+                xml << c;
+            else
+                xml << 'x';
+            break;
+        }
+    }
+    return xml.str();
 }

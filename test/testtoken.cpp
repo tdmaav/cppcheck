@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -237,8 +237,8 @@ private:
     void multiCompare4() const {
         givenACodeSampleToTokenize var("std :: queue < int > foo ;");
 
-        ASSERT_EQUALS(Token::eBracket, var.tokens()->tokAt(3)->type());
-        ASSERT_EQUALS(Token::eBracket, var.tokens()->tokAt(5)->type());
+        ASSERT_EQUALS(Token::eBracket, var.tokens()->tokAt(3)->tokType());
+        ASSERT_EQUALS(Token::eBracket, var.tokens()->tokAt(5)->tokType());
 
         ASSERT_EQUALS(false, Token::Match(var.tokens(), "std :: queue %op%"));
         ASSERT_EQUALS(false, Token::Match(var.tokens(), "std :: queue x|%op%"));
@@ -282,11 +282,28 @@ private:
 
     void strValue() const {
         Token tok(0);
+
         tok.str("\"\"");
         ASSERT_EQUALS("", tok.strValue());
 
         tok.str("\"0\"");
         ASSERT_EQUALS("0", tok.strValue());
+
+        tok.str("\"a\\n\"");
+        ASSERT_EQUALS("a\n", tok.strValue());
+
+        tok.str("\"a\\r\"");
+        ASSERT_EQUALS("a\r", tok.strValue());
+
+        tok.str("\"a\\t\"");
+        ASSERT_EQUALS("a\t", tok.strValue());
+
+        tok.str("\"\\\\\"");
+        ASSERT_EQUALS("\\", tok.strValue());
+
+        tok.str("\"a\\0\"");
+        ASSERT_EQUALS("a", tok.strValue());
+
     }
 
 
@@ -745,47 +762,47 @@ private:
         for (test_op = extendedOps.begin(); test_op != extendedOps.end(); ++test_op) {
             Token tok(nullptr);
             tok.str(*test_op);
-            ASSERT_EQUALS(Token::eExtendedOp, tok.type());
+            ASSERT_EQUALS(Token::eExtendedOp, tok.tokType());
         }
         for (test_op = logicalOps.begin(); test_op != logicalOps.end(); ++test_op) {
             Token tok(nullptr);
             tok.str(*test_op);
-            ASSERT_EQUALS(Token::eLogicalOp, tok.type());
+            ASSERT_EQUALS(Token::eLogicalOp, tok.tokType());
         }
         for (test_op = bitOps.begin(); test_op != bitOps.end(); ++test_op) {
             Token tok(nullptr);
             tok.str(*test_op);
-            ASSERT_EQUALS(Token::eBitOp, tok.type());
+            ASSERT_EQUALS(Token::eBitOp, tok.tokType());
         }
         for (test_op = comparisonOps.begin(); test_op != comparisonOps.end(); ++test_op) {
             Token tok(nullptr);
             tok.str(*test_op);
-            ASSERT_EQUALS(Token::eComparisonOp, tok.type());
+            ASSERT_EQUALS(Token::eComparisonOp, tok.tokType());
         }
         Token tok(nullptr);
         tok.str("++");
-        ASSERT_EQUALS(Token::eIncDecOp, tok.type());
+        ASSERT_EQUALS(Token::eIncDecOp, tok.tokType());
         tok.str("--");
-        ASSERT_EQUALS(Token::eIncDecOp, tok.type());
+        ASSERT_EQUALS(Token::eIncDecOp, tok.tokType());
     }
 
     void literals() const {
         Token tok(nullptr);
 
         tok.str("\"foo\"");
-        ASSERT(tok.type() == Token::eString);
+        ASSERT(tok.tokType() == Token::eString);
         tok.str("\"\"");
-        ASSERT(tok.type() == Token::eString);
+        ASSERT(tok.tokType() == Token::eString);
         tok.str("'f'");
-        ASSERT(tok.type() == Token::eChar);
+        ASSERT(tok.tokType() == Token::eChar);
         tok.str("12345");
-        ASSERT(tok.type() == Token::eNumber);
+        ASSERT(tok.tokType() == Token::eNumber);
         tok.str("-55");
-        ASSERT(tok.type() == Token::eNumber);
+        ASSERT(tok.tokType() == Token::eNumber);
         tok.str("true");
-        ASSERT(tok.type() == Token::eBoolean);
+        ASSERT(tok.tokType() == Token::eBoolean);
         tok.str("false");
-        ASSERT(tok.type() == Token::eBoolean);
+        ASSERT(tok.tokType() == Token::eBoolean);
     }
 
     void isStandardType() const {

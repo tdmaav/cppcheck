@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -24,8 +24,10 @@
 #include "checkmemoryleak.h"  // <- CheckMemoryLeak::memoryLeak
 #include "tokenize.h"
 #include "symboldatabase.h"
+#include "astutils.h"
 
 #include <iostream>
+#include <stack>
 //---------------------------------------------------------------------------
 
 // Register this check class (by creating a static instance of it)
@@ -150,14 +152,17 @@ void CheckLeakAutoVar::checkScope(const Token * const startToken,
     // Parse all tokens
     const Token * const endToken = startToken->link();
     for (const Token *tok = startToken; tok && tok != endToken; tok = tok->next()) {
-        if (!tok->scope()->isExecutable())
+        if (!tok->scope()->isExecutable()) {
             tok = tok->scope()->classEnd;
+            if (!tok) // Ticket #6666 (crash upon invalid code)
+                break;
+        }
 
         // Deallocation and then dereferencing pointer..
         if (tok->varId() > 0) {
-            const std::map<unsigned int, VarInfo::AllocInfo>::iterator var = alloctype.find(tok->varId());
+            const std::map<unsigned int, VarInfo::AllocInfo>::const_iterator var = alloctype.find(tok->varId());
             if (var != alloctype.end()) {
-                if (var->second.status == VarInfo::DEALLOC && (!Token::Match(tok, "%name% =") || tok->strAt(-1) == "*")) {
+                if (var->second.status == VarInfo::DEALLOC && tok->strAt(-1) != "&" && (!Token::Match(tok, "%name% =") || tok->strAt(-1) == "*")) {
                     deallocUseError(tok, tok->str());
                 } else if (Token::simpleMatch(tok->tokAt(-2), "= &")) {
                     varInfo->erase(tok->varId());
@@ -230,21 +235,25 @@ void CheckLeakAutoVar::checkScope(const Token * const startToken,
 
             // not a local variable nor argument?
             const Variable *var = tok->variable();
-            if (var && !var->isArgument() && (!var->isLocal() || var->isStatic())) {
-                continue;
-            }
-
-            // non-pod variable
-            if (_tokenizer->isCPP() && (!var || !var->typeStartToken()->isStandardType()))
+            if (var && !var->isArgument() && (!var->isLocal() || var->isStatic()))
                 continue;
 
             // Don't check reference variables
             if (var && var->isReference())
                 continue;
 
+            // non-pod variable
+            if (_tokenizer->isCPP()) {
+                if (!var)
+                    continue;
+                // Possibly automatically deallocated memory
+                if (!var->typeStartToken()->isStandardType() && Token::Match(tok, "%var% = new"))
+                    continue;
+            }
+
             // allocation?
-            if (Token::Match(tok->tokAt(2), "%type% (")) {
-                int i = _settings->library.alloc(tok->tokAt(2));
+            if (tok->next()->astOperand2() && Token::Match(tok->next()->astOperand2()->previous(), "%type% (")) {
+                int i = _settings->library.alloc(tok->next()->astOperand2()->previous());
                 if (i > 0) {
                     alloctype[tok->varId()].type = i;
                     alloctype[tok->varId()].status = VarInfo::ALLOC;
@@ -284,26 +293,38 @@ void CheckLeakAutoVar::checkScope(const Token * const startToken,
                 VarInfo varInfo1(*varInfo);  // VarInfo for if code
                 VarInfo varInfo2(*varInfo);  // VarInfo for else code
 
-                if (Token::Match(tok->next(), "( %var% )")) {
-                    varInfo2.erase(tok->tokAt(2)->varId());
-                    if (notzero.find(tok->tokAt(2)->varId()) != notzero.end())
-                        varInfo2.clear();
-                } else if (Token::Match(tok->next(), "( ! %var% )|&&")) {
-                    varInfo1.erase(tok->tokAt(3)->varId());
-                } else if (Token::Match(tok->next(), "( %name% ( ! %var% ) )|&&")) {
-                    varInfo1.erase(tok->tokAt(5)->varId());
-                } else if (Token::Match(tok->next(), "( %var% < 0 )|&&")) {
-                    varInfo1.erase(tok->tokAt(2)->varId());
-                } else if (Token::Match(tok->next(), "( 0 > %var% )|&&")) {
-                    varInfo1.erase(tok->tokAt(4)->varId());
-                } else if (Token::Match(tok->next(), "( %var% > 0 )|&&")) {
-                    varInfo2.erase(tok->tokAt(2)->varId());
-                } else if (Token::Match(tok->next(), "( 0 < %var% )|&&")) {
-                    varInfo2.erase(tok->tokAt(4)->varId());
-                } else if (Token::Match(tok->next(), "( %var% == -1 )|&&")) {
-                    varInfo1.erase(tok->tokAt(2)->varId());
-                } else if (Token::Match(tok->next(), "( -1 == %var% )|&&")) {
-                    varInfo1.erase(tok->tokAt(4)->varId());
+                // Recursively scan variable comparisons in condition
+                std::stack<const Token *> tokens;
+                tokens.push(tok->next()->astOperand2());
+                while (!tokens.empty()) {
+                    const Token *tok3 = tokens.top();
+                    tokens.pop();
+                    if (!tok3)
+                        continue;
+                    if (tok3->str() == "&&") {
+                        tokens.push(tok3->astOperand1());
+                        tokens.push(tok3->astOperand2());
+                        continue;
+                    }
+                    if (tok3->str() == "(" && Token::Match(tok3->astOperand1(), "UNLIKELY|LIKELY")) {
+                        tokens.push(tok3->astOperand2());
+                        continue;
+                    }
+
+                    const Token *vartok = nullptr;
+                    if (astIsVariableComparison(tok3, "!=", "0", &vartok)) {
+                        varInfo2.erase(vartok->varId());
+                        if (notzero.find(vartok->varId()) != notzero.end())
+                            varInfo2.clear();
+                    } else if (astIsVariableComparison(tok3, "==", "0", &vartok)) {
+                        varInfo1.erase(vartok->varId());
+                    } else if (astIsVariableComparison(tok3, "<", "0", &vartok)) {
+                        varInfo1.erase(vartok->varId());
+                    } else if (astIsVariableComparison(tok3, ">", "0", &vartok)) {
+                        varInfo2.erase(vartok->varId());
+                    } else if (astIsVariableComparison(tok3, "==", "-1", &vartok)) {
+                        varInfo1.erase(vartok->varId());
+                    }
                 }
 
                 checkScope(tok2->next(), &varInfo1, notzero);
@@ -370,7 +391,7 @@ void CheckLeakAutoVar::checkScope(const Token * const startToken,
         }
 
         // throw
-        else if (tok->str() == "throw") {
+        else if (_tokenizer->isCPP() && tok->str() == "throw") {
             bool tryFound = false;
             const Scope* scope = tok->scope();
             while (scope && scope->isExecutable()) {
@@ -470,7 +491,7 @@ void CheckLeakAutoVar::functionCall(const Token *tok, VarInfo *varInfo, const Va
         return;
 
     for (const Token *arg = tok->tokAt(2); arg; arg = arg->nextArgument()) {
-        if (arg->str() == "new")
+        if (_tokenizer->isCPP() && arg->str() == "new")
             arg = arg->next();
 
         if (Token::Match(arg, "%var% [-,)]") || Token::Match(arg, "& %var%")) {

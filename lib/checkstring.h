@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -59,7 +59,11 @@ public:
         checkString.checkIncorrectStringCompare();
         checkString.checkAlwaysTrueOrFalseStringCompare();
         checkString.sprintfOverlappingData();
+        checkString.stringLiteralWrite();
     }
+
+    /** @brief undefined behaviour, writing string literal */
+    void stringLiteralWrite();
 
     /** @brief str plus char (unusual pointer arithmetic) */
     void strPlusChar();
@@ -77,6 +81,7 @@ public:
     void sprintfOverlappingData();
 
 private:
+    void stringLiteralWriteError(const Token *tok, const Token *strValue);
     void sprintfOverlappingDataError(const Token *tok, const std::string &varname);
     void strPlusCharError(const Token *tok);
     void incorrectStringCompareError(const Token *tok, const std::string& func, const std::string &string);
@@ -89,6 +94,7 @@ private:
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const {
         CheckString c(0, settings, errorLogger);
 
+        c.stringLiteralWriteError(0,0);
         c.sprintfOverlappingDataError(0, "varname");
         c.strPlusCharError(0);
         c.incorrectStringCompareError(0, "substr", "\"Hello World\"");

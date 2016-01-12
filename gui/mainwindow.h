@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -79,10 +79,22 @@ public slots:
     void CheckFiles();
 
     /**
-    * @brief Slot to recheck files
+    * @brief Slot to recheck all files
     *
     */
-    void ReCheck();
+    void ReCheckAll();
+
+    /**
+    * @brief Slot to recheck selected files
+    * @param selectedFilesList list of selected files
+    */
+    void PerformSelectedFilesCheck(QStringList selectedFilesList);
+
+    /**
+    * @brief Slot to recheck modified files
+    *
+    */
+    void ReCheckModified();
 
     /**
     * @brief Slot to clear all search results
@@ -220,6 +232,12 @@ public slots:
     */
     void ShowStatistics();
 
+    /**
+    * @brief Slot for showing the library editor
+    *
+    */
+    void ShowLibraryEditor();
+
 protected slots:
 
     /**
@@ -300,6 +318,19 @@ protected slots:
     void SelectPlatform();
 
 private:
+
+    /**
+    * @brief Rechecks files
+    *
+    */
+    void ReCheck(bool all);
+
+    /**
+    * @brief Recheck selected files
+    * @param files list of selected files
+    * @param all true if all files of list, false if modified files of list
+    */
+    void ReCheckSelected(QStringList files, bool all);
 
     /**
       * @brief Check the project.
@@ -526,6 +557,11 @@ private:
     * @brief GUI actions for selecting the coding standard.
     */
     QActionGroup *mCStandardActions, *mCppStandardActions;
+
+    /**
+    * @brief GUI actions for selecting language.
+    */
+    QActionGroup *mSelectLanguageActions;
 
     /**
     * @brief Are we exiting the cppcheck?

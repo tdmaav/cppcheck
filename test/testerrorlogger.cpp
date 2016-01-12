@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -32,6 +32,7 @@ private:
     const ErrorLogger::ErrorMessage::FileLocation barCpp8;
 
     void run() {
+        TEST_CASE(PatternSearchReplace);
         TEST_CASE(FileLocationDefaults);
         TEST_CASE(FileLocationSetFile);
         TEST_CASE(ErrorMessageConstruct);
@@ -58,6 +59,41 @@ private:
         TEST_CASE(SerializeSanitize);
 
         TEST_CASE(suppressUnmatchedSuppressions);
+    }
+
+    void TestPatternSearchReplace(const std::string& idPlaceholder, const std::string& id) const {
+        const std::string plainText = "text";
+
+        ErrorLogger::ErrorMessage message;
+        message._id = id;
+
+        std::string serialized = message.toString(true, idPlaceholder + plainText + idPlaceholder);
+        ASSERT_EQUALS(id + plainText + id, serialized);
+
+        serialized = message.toString(true, idPlaceholder + idPlaceholder);
+        ASSERT_EQUALS(id + id, serialized);
+
+        serialized = message.toString(true, plainText + idPlaceholder + plainText);
+        ASSERT_EQUALS(plainText + id + plainText, serialized);
+    }
+
+    void PatternSearchReplace() const {
+        const std::string idPlaceholder = "{id}";
+
+        const std::string empty;
+        TestPatternSearchReplace(idPlaceholder, empty);
+
+        const std::string shortIdValue = "ID";
+        ASSERT_EQUALS(true, shortIdValue.length() < idPlaceholder.length());
+        TestPatternSearchReplace(idPlaceholder, shortIdValue);
+
+        const std::string mediumIdValue = "_ID_";
+        ASSERT_EQUALS(mediumIdValue.length(), idPlaceholder.length());
+        TestPatternSearchReplace(idPlaceholder, mediumIdValue);
+
+        const std::string longIdValue = "longId";
+        ASSERT_EQUALS(true, longIdValue.length() > idPlaceholder.length());
+        TestPatternSearchReplace(idPlaceholder, longIdValue);
     }
 
     void FileLocationDefaults() const {
@@ -220,10 +256,21 @@ private:
     }
 
     void ToXmlV2Encoding() const {
-        std::list<ErrorLogger::ErrorMessage::FileLocation> locs;
-        ErrorMessage msg(locs, Severity::error, "Programming error.\nComparing \"\203\" with \"\003\"", "errorId", false);
-        const std::string message("        <error id=\"errorId\" severity=\"error\" msg=\"Programming error.\" verbose=\"Comparing &quot;\\203&quot; with &quot;\\003&quot;\"/>");
-        ASSERT_EQUALS(message, msg.toXML(false, 2));
+        {
+            std::list<ErrorLogger::ErrorMessage::FileLocation> locs;
+            ErrorMessage msg(locs, Severity::error, "Programming error.\nComparing \"\203\" with \"\003\"", "errorId", false);
+            const std::string message("        <error id=\"errorId\" severity=\"error\" msg=\"Programming error.\" verbose=\"Comparing &quot;\\203&quot; with &quot;\\003&quot;\"/>");
+            ASSERT_EQUALS(message, msg.toXML(false, 2));
+        }
+        {
+            const char code1[]="äöü";
+            const char code2[]="\x12\x00\x00\x01";
+            std::list<ErrorLogger::ErrorMessage::FileLocation> locs;
+            ErrorMessage msg1(locs, Severity::error, std::string("Programming error.\nReading \"")+code1+"\"", "errorId", false);
+            ASSERT_EQUALS("        <error id=\"errorId\" severity=\"error\" msg=\"Programming error.\" verbose=\"Reading &quot;\\303\\244\\303\\266\\303\\274&quot;\"/>", msg1.toXML(false, 2));
+            ErrorMessage msg2(locs, Severity::error, std::string("Programming error.\nReading \"")+code2+"\"", "errorId", false);
+            ASSERT_EQUALS("        <error id=\"errorId\" severity=\"error\" msg=\"Programming error.\" verbose=\"Reading &quot;\\022&quot;\"/>", msg2.toXML(false, 2));
+        }
     }
 
     void InconclusiveXml() const {
@@ -337,6 +384,6 @@ private:
         reportUnmatchedSuppressions(suppressions);
         ASSERT_EQUALS("[a.c:10]: (information) Unmatched suppression: abc\n", errout.str());
     }
-
 };
+
 REGISTER_TEST(TestErrorLogger)

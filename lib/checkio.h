@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -70,7 +70,7 @@ public:
 private:
     class ArgumentInfo {
     public:
-        ArgumentInfo(const Token *arg, const Settings *settings);
+        ArgumentInfo(const Token *arg, const Settings *settings, bool isCPP);
         ~ArgumentInfo();
 
         bool isArrayOrPointer() const;
@@ -83,15 +83,22 @@ private:
         const Variable *variableInfo;
         const Token *typeToken;
         const Function *functionInfo;
+        Token *tempToken;
         bool element;
         bool _template;
         bool address;
-        Token *tempToken;
+        bool isCPP;
 
     private:
         ArgumentInfo(const ArgumentInfo &); // not implemented
         ArgumentInfo operator = (const ArgumentInfo &); // not implemented
     };
+
+    void checkFormatString(const Token * const tok,
+                           const Token * const formatStringTok,
+                           const Token *       argListTok,
+                           const bool scan,
+                           const bool scanf_s);
 
     // Reporting errors..
     void coutCerrMisusageError(const Token* tok, const std::string& streamName);
@@ -101,7 +108,7 @@ private:
     void writeReadOnlyFileError(const Token *tok);
     void useClosedFileError(const Token *tok);
     void seekOnAppendedFileError(const Token *tok);
-    void invalidScanfError(const Token *tok, bool portability);
+    void invalidScanfError(const Token *tok);
     void wrongPrintfScanfArgumentsError(const Token* tok,
                                         const std::string &function,
                                         unsigned int numFormat,
@@ -132,8 +139,7 @@ private:
         c.writeReadOnlyFileError(0);
         c.useClosedFileError(0);
         c.seekOnAppendedFileError(0);
-        c.invalidScanfError(0, false);
-        c.invalidScanfError(0, true);
+        c.invalidScanfError(0);
         c.wrongPrintfScanfArgumentsError(0,"printf",3,2);
         c.invalidScanfArgTypeError_s(0, 1, "s", NULL);
         c.invalidScanfArgTypeError_int(0, 1, "d", NULL, false);

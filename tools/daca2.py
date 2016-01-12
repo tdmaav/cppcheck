@@ -14,8 +14,7 @@ import os
 import datetime
 import time
 
-DEBIAN = ['ftp://ftp.sunet.se/pub/Linux/distributions/Debian/debian/',
-          'http://ftp.sunet.se/pub/Linux/distributions/Debian/debian/',
+DEBIAN = ['ftp://ftp.se.debian.org/debian/',
           'ftp://ftp.debian.org/debian/']
 
 
@@ -90,14 +89,14 @@ def removeAllExceptResults():
                     shutil.rmtree(filename, onerror=handleRemoveReadonly)
                 elif filename != 'results.txt':
                     os.remove(filename)
-        except WindowsError, err:
+        except WindowsError as err:
             time.sleep(30)
             if count == 0:
                 print('Failed to cleanup files/folders')
                 print(err)
                 sys.exit(1)
             continue
-        except OSError, err:
+        except OSError as err:
             time.sleep(30)
             if count == 0:
                 print('Failed to cleanup files/folders')
@@ -150,10 +149,9 @@ def scanarchive(filepath, jobs):
 # boost #3654 (?)
 # flite #5975
 # insight#5184
-# valgrind #6151
 #
 
-    if filename[:5] == 'flite' or filename[:5] == 'boost' or filename[:7] == 'insight' or filename[:8] == 'valgrind':
+    if filename[:5] == 'flite' or filename[:5] == 'boost' or filename[:7] == 'insight':
         results = open('results.txt', 'at')
         results.write('fixme: skipped package to avoid hang\n')
         results.close()
@@ -169,6 +167,7 @@ def scanarchive(filepath, jobs):
          '-D__GCC__',
          '--enable=style',
          '--error-exitcode=0',
+         '--exception-handling=stderr',
          jobs,
          '.'],
         stdout=subprocess.PIPE,
@@ -179,6 +178,7 @@ def scanarchive(filepath, jobs):
     if p.returncode == 0:
         results.write(comm[1])
     elif comm[0].find('cppcheck: error: could not find or open any of the paths given.') < 0:
+        results.write(comm[1])
         results.write('Exit code is not zero! Crash?\n')
     results.write('\n')
     results.close()

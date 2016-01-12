@@ -62,7 +62,7 @@
      <x>0</x>
      <y>0</y>
      <width>640</width>
-     <height>25</height>
+     <height>20</height>
     </rect>
    </property>
    <widget class="QMenu" name="mMenuFile">
@@ -78,6 +78,10 @@
     <addaction name="separator"/>
     <addaction name="mActionProjectMRU"/>
     <addaction name="mActionSave"/>
+    <addaction name="separator"/>
+    <addaction name="mActionPrintPreview"/>
+    <addaction name="mActionPrint"/>
+    <addaction name="separator"/>
     <addaction name="mActionQuit"/>
    </widget>
    <widget class="QMenu" name="mMenuView">
@@ -111,6 +115,7 @@
     <addaction name="mActionShowScratchpad"/>
     <addaction name="mActionViewLog"/>
     <addaction name="mActionViewStats"/>
+    <addaction name="mActionLibraryEditor"/>
    </widget>
    <widget class="QMenu" name="mMenuHelp">
     <property name="title">
@@ -143,12 +148,17 @@
     </widget>
     <addaction name="mActionCheckFiles"/>
     <addaction name="mActionCheckDirectory"/>
-    <addaction name="mActionRecheck"/>
+    <addaction name="mActionRecheckModified"/>
+    <addaction name="mActionRecheckAll"/>
     <addaction name="mActionStop"/>
     <addaction name="separator"/>
     <addaction name="menuC_standard"/>
     <addaction name="menuCpp_standard"/>
     <addaction name="mActionPosix"/>
+    <addaction name="separator"/>
+    <addaction name="mActionAutoDetectLanguage"/>
+    <addaction name="mActionEnforceCpp"/>
+    <addaction name="mActionEnforceC"/>
     <addaction name="separator"/>
     <addaction name="mActionPlatforms"/>
    </widget>
@@ -179,7 +189,8 @@
    <addaction name="mActionOpenProjectFile"/>
    <addaction name="mActionShowScratchpad"/>
    <addaction name="mActionSave"/>
-   <addaction name="mActionRecheck"/>
+   <addaction name="mActionRecheckModified"/>
+   <addaction name="mActionRecheckAll"/>
    <addaction name="mActionStop"/>
    <addaction name="mActionClearResults"/>
    <addaction name="mActionSettings"/>
@@ -264,16 +275,25 @@
     <string>Ctrl+D</string>
    </property>
   </action>
-  <action name="mActionRecheck">
+  <action name="mActionRecheckModified">
    <property name="icon">
     <iconset resource="gui.qrc">
      <normaloff>:/images/view-refresh.png</normaloff>:/images/view-refresh.png</iconset>
    </property>
    <property name="text">
-    <string>&amp;Recheck files</string>
+    <string>&amp;Recheck modified files</string>
    </property>
    <property name="shortcut">
     <string>Ctrl+R</string>
+   </property>
+  </action>
+  <action name="mActionRecheckAll">
+   <property name="icon">
+    <iconset resource="gui.qrc">
+     <normaloff>:/images/view-recheck.png</normaloff>:/images/view-recheck.png</iconset>
+   </property>
+   <property name="text">
+    <string>&amp;Recheck all files</string>
    </property>
   </action>
   <action name="mActionStop">
@@ -680,6 +700,54 @@
    </property>
    <property name="text">
     <string>C++03</string>
+   </property>
+  </action>
+  <action name="mActionPrint">
+   <property name="text">
+    <string>&amp;Print...</string>
+   </property>
+   <property name="toolTip">
+    <string>Print the Current Report</string>
+   </property>
+  </action>
+  <action name="mActionPrintPreview">
+   <property name="text">
+    <string>Print Pre&amp;view...</string>
+   </property>
+   <property name="toolTip">
+    <string>Open a Print Preview Dialog for the Current Results</string>
+   </property>
+  </action>
+  <action name="mActionLibraryEditor">
+   <property name="text">
+    <string>Library Editor...</string>
+   </property>
+   <property name="toolTip">
+    <string>Open library editor</string>
+   </property>
+  </action>
+  <action name="mActionAutoDetectLanguage">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Auto-detect language</string>
+   </property>
+  </action>
+  <action name="mActionEnforceCpp">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Enforce C++</string>
+   </property>
+  </action>
+  <action name="mActionEnforceC">
+   <property name="checkable">
+    <bool>true</bool>
+   </property>
+   <property name="text">
+    <string>Enforce C</string>
    </property>
   </action>
  </widget>

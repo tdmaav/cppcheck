@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -29,8 +29,14 @@ public:
 
 
 private:
+    Settings settings0;
+    Settings settings1;
+    Settings settings2;
 
     void run() {
+        settings0.addEnabled("style");
+        settings2.addEnabled("style");
+
         TEST_CASE(simplifyTypedef1)
         TEST_CASE(simplifyTypedef2)
         TEST_CASE(simplifyTypedef3)
@@ -72,7 +78,6 @@ private:
         TEST_CASE(simplifyTypedef39);
         TEST_CASE(simplifyTypedef40);
         TEST_CASE(simplifyTypedef41); // ticket #1488
-        TEST_CASE(simplifyTypedef42); // ticket #1506
         TEST_CASE(simplifyTypedef43); // ticket #1588
         TEST_CASE(simplifyTypedef44);
         TEST_CASE(simplifyTypedef45); // ticket #1613
@@ -141,6 +146,13 @@ private:
         TEST_CASE(simplifyTypedef108); // ticket #4777
         TEST_CASE(simplifyTypedef109); // ticket #1823 - rvalue reference
         TEST_CASE(simplifyTypedef110); // ticket #6268
+        TEST_CASE(simplifyTypedef111); // ticket #6345
+        TEST_CASE(simplifyTypedef112); // ticket #6048
+        TEST_CASE(simplifyTypedef113); // ticket #7030
+        TEST_CASE(simplifyTypedef114); // ticket #7058 - skip "struct", AB::..
+        TEST_CASE(simplifyTypedef115); // ticket #6998
+        TEST_CASE(simplifyTypedef116); // ticket #5624
+        TEST_CASE(simplifyTypedef117); // ticket #6507
 
         TEST_CASE(simplifyTypedefFunction1);
         TEST_CASE(simplifyTypedefFunction2); // ticket #1685
@@ -156,15 +168,13 @@ private:
         TEST_CASE(simplifyTypedefShadow);  // #4445 - shadow variable
     }
 
-    std::string tok(const char code[], bool simplify = true, Settings::PlatformType type = Settings::Unspecified, bool debugwarnings = true) {
+    std::string tok(const char code[], bool simplify = true, Settings::PlatformType type = Settings::Native, bool debugwarnings = true) {
         errout.str("");
 
-        Settings settings;
-        settings.addEnabled("style");
-        settings.inconclusive = true;
-        settings.debugwarnings = debugwarnings;   // show warnings about unhandled typedef
-        settings.platform(type);
-        Tokenizer tokenizer(&settings, this);
+        settings0.inconclusive = true;
+        settings0.debugwarnings = debugwarnings;   // show warnings about unhandled typedef
+        settings0.platform(type);
+        Tokenizer tokenizer(&settings0, this);
 
         std::istringstream istr(code);
         tokenizer.tokenize(istr, "test.cpp");
@@ -178,8 +188,7 @@ private:
     std::string simplifyTypedef(const char code[]) {
         errout.str("");
 
-        Settings settings;
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(&settings1, this);
 
         std::istringstream istr(code);
         tokenizer.list.createTokens(istr);
@@ -187,6 +196,16 @@ private:
         tokenizer.simplifyTypedef();
 
         return tokenizer.tokens()->stringifyList(0, false);
+    }
+
+    void checkSimplifyTypedef(const char code[]) {
+        errout.str("");
+        // Tokenize..
+        settings2.inconclusive = true;
+        settings2.debugwarnings = true;   // show warnings about unhandled typedef
+        Tokenizer tokenizer(&settings2, this);
+        std::istringstream istr(code);
+        tokenizer.tokenize(istr, "test.cpp");
     }
 
 
@@ -474,7 +493,7 @@ private:
                             "};";
 
         // Tokenize and check output..
-        tok(code, true, Settings::Unspecified, false);
+        tok(code, true, Settings::Native, false);
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -526,18 +545,7 @@ private:
     void simplifyTypedef18() {
         const char code[] = "typedef vector<int[4]> a;\n"
                             "a b;";
-
-        // Clear the error buffer..
-        errout.str("");
-
-        Settings settings;
-        Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp");
-
-        tokenizer.simplifyTokenList2();
-
-        tokenizer.validate();
+        ASSERT_EQUALS("vector < int [ 4 ] > b ;", tok(code));
     }
 
     void simplifyTypedef19() {
@@ -589,18 +597,7 @@ private:
     void simplifyTypedef20() {
         // ticket #1284
         const char code[] = "typedef jobject invoke_t (jobject, Proxy *, Method *, JArray< jobject > *);";
-
-        // Clear the error buffer..
-        errout.str("");
-
-        Settings settings;
-        Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp");
-
-        tokenizer.simplifyTokenList2();
-
-        tokenizer.validate();
+        ASSERT_EQUALS(";", tok(code));
     }
 
     void simplifyTypedef21() {
@@ -682,7 +679,7 @@ private:
                 "class Fred { "
                 ""
                 "const unsigned int * * get ( ) { return test ; } "
-                "const static unsigned int * test ( const unsigned int * p ) { return p ; } "
+                "static const unsigned int * test ( const unsigned int * p ) { return p ; } "
                 "} ;";
 
             ASSERT_EQUALS(expected, tok(code, false));
@@ -1007,23 +1004,10 @@ private:
             "class X { } ; "
             "int main ( ) "
             "{ "
-            "X ( * * Foo ) ( const X & ) ; Foo = new X ( * ) ( const X & ) [ 2 ] ; "
+            "X * * Foo ; Foo = new X ( * ) ( const X & ) [ 2 ] ; "
             "}";
 
         ASSERT_EQUALS(expected, tok(code, false));
-    }
-
-    // Check simplifyTypedef
-    void checkSimplifyTypedef(const char code[]) {
-        errout.str("");
-        // Tokenize..
-        Settings settings;
-        settings.inconclusive = true;
-        settings.addEnabled("style");
-        settings.debugwarnings = true;   // show warnings about unhandled typedef
-        Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp");
     }
 
     void simplifyTypedef35() {
@@ -1099,7 +1083,7 @@ private:
                       "[test.cpp:20] -> [test.cpp:1]: (style, inconclusive) The function parameter 'A' hides a typedef with the same name.\n"
                       "[test.cpp:21] -> [test.cpp:1]: (style, inconclusive) The variable 'A' hides a typedef with the same name.\n"
                       "[test.cpp:24] -> [test.cpp:1]: (style, inconclusive) The typedef 'A' hides a typedef with the same name.\n"
-                      "[test.cpp:21]: (debug) ValueFlow bailout: increment/decrement of a\n", errout.str());
+                      , errout.str());
     }
 
     void simplifyTypedef36() {
@@ -1222,23 +1206,6 @@ private:
                              "    friend class type;\n"
                              "};");
         ASSERT_EQUALS("", errout.str());
-    }
-
-    void simplifyTypedef42() {
-        // ticket #1506
-        checkSimplifyTypedef("typedef struct A { } A;\n"
-                             "struct A;");
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:1]: (style) The struct 'A' forward declaration is unnecessary. Type struct is already declared earlier.\n", errout.str());
-
-        checkSimplifyTypedef("typedef union A { int i; float f; } A;\n"
-                             "union A;");
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:1]: (style) The union 'A' forward declaration is unnecessary. Type union is already declared earlier.\n", errout.str());
-
-        const char code [] = "typedef std::map<std::string, int> A;\n"
-                             "class A;";
-        checkSimplifyTypedef(code);
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:1]: (style) The class 'A' forward declaration is unnecessary. Type class is already declared earlier.\n", errout.str());
-        TODO_ASSERT_EQUALS("class A ;", "class std :: map < std :: string , int > ;", tok(code));
     }
 
     void simplifyTypedef43() {
@@ -1451,7 +1418,7 @@ private:
                             "type4 t4;";
 
         // The expected result..
-        const char expected[] = "char * t1 [ 10 ] ; "
+        const char expected[] = "char ( * t1 ) [ 10 ] ; "
                                 "char ( * ( * tp1 ) [ 2 ] ) [ 10 ] ; "
                                 "char ( & t2 ) [ 10 ] ; "
                                 "char ( & t3 ) [ x ] ; "
@@ -1715,7 +1682,7 @@ private:
                             "    Foo b(0);\n"
                             "    return b > Foo(10);\n"
                             "}";
-        const std::string actual(tok(code, true, Settings::Unspecified, false));
+        const std::string actual(tok(code, true, Settings::Native, false));
         ASSERT_EQUALS("int main ( ) { BAR < int > b ( 0 ) ; return b > BAR < int > ( 10 ) ; }", actual);
         ASSERT_EQUALS("", errout.str());
     }
@@ -1871,14 +1838,14 @@ private:
 
     void simplifyTypedef75() { // ticket #2426
         const char code[] = "typedef _Packed struct S { long l; };";
-        ASSERT_EQUALS("", tok(code, true, Settings::Unspecified, false));
+        ASSERT_EQUALS("", tok(code, true, Settings::Native, false));
         ASSERT_EQUALS("", errout.str());
     }
 
     void simplifyTypedef76() { // ticket #2453 segmentation fault
         const char code[] = "void f1(typedef int x) {}";
         const char expected[] = "void f1 ( typedef int x ) { }";
-        ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+        ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -2197,7 +2164,7 @@ private:
                                 "public: "
                                 "expression_error :: error_code * f ; "
                                 "} ;";
-        ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+        ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -2370,7 +2337,112 @@ private:
                                 "} ; "
                                 "} "
                                 "}";
-        ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+        ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void simplifyTypedef111() {     // ticket #6345
+        const char code1[] = "typedef typename A B;\n"
+                             "typedef typename B C;\n"
+                             "typename C c;\n";
+        const char expected1[] = "typename A c ;";
+        ASSERT_EQUALS(expected1, tok(code1));
+
+        const char code2[] = "typedef typename A B;\n"
+                             "typedef typename B C;\n"
+                             "C c;\n";
+        const char expected2[] = "typename A c ;";
+        ASSERT_EQUALS(expected2, tok(code2));
+
+        const char code3[] = "typedef typename A B;\n"
+                             "typedef B C;\n"
+                             "C c;\n";
+        const char expected3[] = "typename A c ;";
+        ASSERT_EQUALS(expected3, tok(code3));
+
+        const char code4[] = "typedef A B;\n"
+                             "typedef typename B C;\n"
+                             "C c;\n";
+        const char expected4[] = "typename A c ;";
+        ASSERT_EQUALS(expected4, tok(code4));
+
+        const char code5[] = "typedef A B;\n"
+                             "typedef B C;\n"
+                             "C c;\n";
+        const char expected5[] = "A c ;";
+        ASSERT_EQUALS(expected5, tok(code5));
+
+    }
+
+    void simplifyTypedef112() {     // ticket #6048
+        const char code[] = "template<\n"
+                            "typename DataType,\n"
+                            "typename SpaceType,\n"
+                            "typename TrafoConfig>\n"
+                            "class AsmTraits1 {\n"
+                            "    typedef typename SpaceType::TrafoType TrafoType;\n"
+                            "    typedef typename TrafoType::ShapeType ShapeType;\n"
+                            "    typedef typename TrafoType::template Evaluator<ShapeType, DataType>::Type TrafoEvaluator;\n"
+                            "    enum  {\n"
+                            "      domain_dim = TrafoEvaluator::domain_dim,\n"
+                            "    };\n"
+                            "};";
+
+        const char expected[] = "template < typename DataType , typename SpaceType , typename TrafoConfig > class AsmTraits1 { } ;";
+        ASSERT_EQUALS(expected, tok(code));
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void simplifyTypedef113() {     // ticket #7030
+        const char code[] = "typedef int T;\n"
+                            "void f() { T:; }";
+        const char expected[] = "void f ( ) { T : ; }";
+        ASSERT_EQUALS(expected, tok(code));
+    }
+
+    void simplifyTypedef114() {     // ticket #7058
+        const char code[] = "typedef struct { enum {A,B}; } AB;\n"
+                            "x=AB::B;";
+        const char expected[] = "struct AB { } ; x = 1 ;";
+        ASSERT_EQUALS(expected, tok(code));
+    }
+
+    void simplifyTypedef115() {     // ticket #6998
+        const char code[] = "typedef unsigned unsignedTypedef;\n"
+                            "unsignedTypedef t1 ;\n"
+                            "unsigned t2 ;";
+        const char expected[] = "unsigned int t1 ; "
+                                "unsigned int t2 ;";
+        ASSERT_EQUALS(expected, tok(code, false));
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void simplifyTypedef116() { // #5624
+        const char code[] = "void fn() {\n"
+                            "    typedef std::vector<CharacterConversion> CharacterToConversion;\n"
+                            "    CharacterToConversion c2c;\n"
+                            "    for (CharacterToConversion::iterator it = c2c.begin(); it != c2c.end(); ++it) {}\n"
+                            "    CharacterToConversion().swap(c2c);\n"
+                            "}";
+        const char expected[] = "void fn ( ) { "
+                                "std :: vector < CharacterConversion > c2c ; "
+                                "for ( std :: vector < CharacterConversion > :: iterator it = c2c . begin ( ) ; it != c2c . end ( ) ; ++ it ) { } "
+                                "std :: vector < CharacterConversion > ( ) . swap ( c2c ) ; "
+                                "}";
+        ASSERT_EQUALS(expected, tok(code, false));
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void simplifyTypedef117() { // #6507
+        const char code[] = "typedef struct bstr {} bstr;\n"
+                            "struct bstr bstr0(const char *s) {\n"
+                            "    return (struct bstr) { (unsigned char *)s, s ? strlen(s) : 0 };\n"
+                            "}";
+        const char expected[] = "struct bstr { } ; "
+                                "struct bstr bstr0 ( const char * s ) { "
+                                "return ( struct bstr ) { ( unsigned char * ) s , s ? strlen ( s ) : 0 } ; "
+                                "}";
+        ASSERT_EQUALS(expected, tok(code, false));
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -2614,7 +2686,7 @@ private:
                                     "C * f5 ; " // this gets simplified to a regular pointer
                                     "C * f6 ; " // this gets simplified to a regular pointer
                                     "C * f7 ;"; // this gets simplified to a regular pointer
-            ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+            ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
             ASSERT_EQUALS("", errout.str());
         }
 
@@ -2643,7 +2715,7 @@ private:
                                     "const C * f5 ; " // this gets simplified to a regular pointer
                                     "const C * f6 ; " // this gets simplified to a regular pointer
                                     "const C * f7 ;"; // this gets simplified to a regular pointer
-            ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+            ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
             ASSERT_EQUALS("", errout.str());
         }
 
@@ -2671,7 +2743,7 @@ private:
                                     "const C * f5 ; " // this gets simplified to a regular pointer
                                     "const C * f6 ; " // this gets simplified to a regular pointer
                                     "const C * f7 ;"; // this gets simplified to a regular pointer
-            ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+            ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
             ASSERT_EQUALS("", errout.str());
         }
 
@@ -2699,7 +2771,7 @@ private:
                                     "C * * f5 ; " // this gets simplified to a regular pointer
                                     "C * * f6 ; " // this gets simplified to a regular pointer
                                     "C * * f7 ;"; // this gets simplified to a regular pointer
-            ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+            ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
             ASSERT_EQUALS("", errout.str());
         }
 
@@ -2727,7 +2799,7 @@ private:
                                     "const C * * f5 ; " // this gets simplified to a regular pointer
                                     "const C * * f6 ; " // this gets simplified to a regular pointer
                                     "const C * * f7 ;"; // this gets simplified to a regular pointer
-            ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+            ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
             ASSERT_EQUALS("", errout.str());
         }
 
@@ -2756,7 +2828,7 @@ private:
                                     "const C * * f5 ; " // this gets simplified to a regular pointer
                                     "const C * * f6 ; " // this gets simplified to a regular pointer
                                     "const C * * f7 ;"; // this gets simplified to a regular pointer
-            ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+            ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
             ASSERT_EQUALS("", errout.str());
         }
     }
@@ -2901,7 +2973,7 @@ private:
                                     "B :: C * f2 ; "
                                     "B :: C * f3 ; "
                                     "B :: C * f4 ;";
-            ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+            ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
             ASSERT_EQUALS("", errout.str());
         }
 
@@ -2939,7 +3011,7 @@ private:
                                     "A :: B :: C * f2 ; "
                                     "A :: B :: C * f3 ; "
                                     "A :: B :: C * f4 ;";
-            ASSERT_EQUALS(expected, tok(code, true, Settings::Unspecified, false));
+            ASSERT_EQUALS(expected, tok(code, true, Settings::Native, false));
             ASSERT_EQUALS("", errout.str());
         }
     }
@@ -2958,8 +3030,8 @@ private:
                       "{ "
                       "int Format_T2 ; "
                       "} "
-                      "int ( * * t1 ) ( ) ; "
-                      "int ( * * t2 ) ( ) ;",
+                      "int * * t1 ; "
+                      "int * * t2 ;",
                       tok(code,false));
     }
 

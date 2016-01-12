@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,6 +40,8 @@ void CheckVaarg::va_start_argument()
     for (std::size_t i = 0; i < functions; ++i) {
         const Scope* scope = symbolDatabase->functionScopes[i];
         const Function* function = scope->function;
+        if (!function)
+            continue;
         for (const Token* tok = scope->classStart->next(); tok != scope->classEnd; tok = tok->next()) {
             if (!tok->scope()->isExecutable())
                 tok = tok->scope()->classEnd;
@@ -92,7 +94,7 @@ void CheckVaarg::va_list_usage()
         bool exitOnEndOfStatement = false;
 
         const Token* tok = var->nameToken()->next();
-        for (; tok != var->scope()->classEnd; tok = tok->next()) {
+        for (;  tok && tok != var->scope()->classEnd; tok = tok->next()) {
             if (Token::Match(tok, "va_start ( %varid%", var->declarationId())) {
                 if (open)
                     va_start_subsequentCallsError(tok, var->name());
@@ -146,5 +148,5 @@ void CheckVaarg::va_list_usedBeforeStartedError(const Token *tok, const std::str
 void CheckVaarg::va_start_subsequentCallsError(const Token *tok, const std::string& varname)
 {
     reportError(tok, Severity::error,
-                "va_start_subsequentCalls", "va_start() or va_copy() called subsequently on '" + varname + "' without va_end() inbetween.");
+                "va_start_subsequentCalls", "va_start() or va_copy() called subsequently on '" + varname + "' without va_end() in between.");
 }

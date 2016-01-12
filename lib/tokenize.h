@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -40,6 +40,10 @@ class TimerResults;
 
 /** @brief The main purpose is to tokenize the source code. It also has functions that simplify the token list */
 class CPPCHECKLIB Tokenizer {
+
+    friend class TestSimplifyTokens;
+    friend class TestSimplifyTypedef;
+    friend class TestTokenizer;
 public:
     Tokenizer();
     Tokenizer(const Settings * settings, ErrorLogger *errorLogger);
@@ -67,6 +71,11 @@ public:
      */
     bool IsScopeNoReturn(const Token *endScopeToken, bool *unknown = nullptr) const;
 
+    bool createTokens(std::istream &code,
+                      const char FileName[]);
+
+    bool simplifyTokens1(const std::string &configuration,
+                         bool noSymbolDB_AST = false);
     /**
      * Tokenize code
      * @param code input stream for code, e.g.
@@ -113,6 +122,8 @@ public:
     * the checking of this file.
     */
     bool simplifyTokenList1(const char FileName[]);
+
+    void SimplifyNamelessRValueReferences();
 
     /**
     * Most aggressive simplification of tokenlist
@@ -186,12 +197,22 @@ public:
      */
     void simplifyOffsetPointerDereference();
 
+    /**
+       * Simplify referencing a pointer offset:
+       *     "Replace "&str[num]" => "(str + num)"
+       */
+    void simplifyOffsetPointerReference();
+
     /** Insert array size where it isn't given */
     void arraySize();
 
     /** Simplify labels and 'case|default' syntaxes.
       */
     void simplifyLabelsCaseDefault();
+
+    /** simplify case ranges (gcc extension)
+      */
+    void simplifyCaseRange();
 
     /** Remove macros in global scope */
     void removeMacrosInGlobalScope();
@@ -265,6 +286,12 @@ public:
      */
     void simplifyCompoundAssignment();
 
+
+    /**
+     * Simplify "* const" to "*"
+     */
+    void simplifyPointerConst();
+
     /**
      * Simplify the location of "static" and "const" qualifiers in
      * a variable declaration or definition.
@@ -286,22 +313,6 @@ public:
      * Example: "a = b = c = 0;" => "a = 0; b = 0; c = 0;"
      */
     void simplifyVariableMultipleAssign();
-
-    /**
-     * simplify if-not
-     * Example: "if(0==x);" => "if(!x);"
-     */
-    void simplifyIfNot();
-
-    /**
-     * simplify if-not NULL
-     * Example: "if(0!=x);" => "if(x);"
-     * Special case: 'x = (0 != x);' is removed.
-     */
-    void simplifyIfNotNull();
-
-    /** @brief simplify if (a) { if (a) */
-    void simplifyIfSameInnerCondition();
 
     /**
      * Simplify the 'C Alternative Tokens'
@@ -350,11 +361,6 @@ public:
      * A c;
      */
     void simplifyTypedef();
-
-    /**
-     * Simplify float casts (float)1 => 1.0
-     */
-    void simplifyFloatCasts();
 
     /**
      * Simplify casts
@@ -432,9 +438,6 @@ public:
      */
     bool simplifyFunctionReturn();
 
-    /** Struct initialization */
-    void simplifyStructInit();
-
     /** Struct simplification
      * "struct S { } s;" => "struct S { }; S s;"
      */
@@ -494,13 +497,9 @@ public:
 
     void simplifyRoundCurlyParentheses();
 
-    void simplifyDebugNew();
-
     void simplifySQL();
 
-    bool hasEnumsWithTypedef();
-
-    void simplifyDefaultAndDeleteInsideClass();
+    void checkForEnumsWithTypedef();
 
     void findComplicatedSyntaxErrorsInTemplates();
 
@@ -523,9 +522,23 @@ public:
     static std::string simplifyString(const std::string &source);
 
     /**
-     * Change "int const x;" into "const int x;"
+     * is token pointing at function head?
+     * @param tok         A '(' or ')' token in a possible function head
+     * @param endsWith    string after function head
+     * @return token matching with endsWith if syntax seems to be a function head else nullptr
      */
-    void simplifyConst();
+    const Token * isFunctionHead(const Token *tok, const std::string &endsWith) const;
+
+private:
+
+    /**
+     * is token pointing at function head?
+     * @param tok         A '(' or ')' token in a possible function head
+     * @param endsWith    string after function head
+     * @param cpp         c++ code
+     * @return token matching with endsWith if syntax seems to be a function head else nullptr
+     */
+    static const Token * isFunctionHead(const Token *tok, const std::string &endsWith, bool cpp);
 
     /**
      * simplify "while (0)"
@@ -559,12 +572,6 @@ public:
     void simplifyFunctionPointers();
 
     /**
-     * Remove exception specifications.
-     */
-    void removeExceptionSpecifications();
-
-
-    /**
      * Send error message to error logger about internal bug.
      * @param tok the token that this bug concerns.
      */
@@ -580,11 +587,15 @@ public:
      */
     void createLinks2();
 
+public:
+
     /** Syntax error */
     void syntaxError(const Token *tok) const;
 
     /** Syntax error. Example: invalid number of ')' */
     void syntaxError(const Token *tok, char c) const;
+
+private:
 
     /** Report that there is an unhandled "class x y {" code */
     void unhandled_macro_class_x_y(const Token *tok) const;
@@ -621,14 +632,14 @@ public:
     void simplifyAsm();
 
     /**
+     * asm heuristics, Put ^{} statements in asm()
+     */
+    void simplifyAsm2();
+
+    /**
      * Simplify bitfields - the field width is removed as we don't use it.
      */
     void simplifyBitfields();
-
-    /**
-     * Remove __builtin_expect(...), likely(...), and unlikely(...)
-     */
-    void simplifyBuiltinExpect();
 
     /**
      * Remove unnecessary member qualification
@@ -636,19 +647,9 @@ public:
     void removeUnnecessaryQualification();
 
     /**
-     * unnecessary member qualification error
-     */
-    void unnecessaryQualificationError(const Token *tok, const std::string &qualification) const;
-
-    /**
      * Add std:: in front of std classes, when using namespace std; was given
      */
     void simplifyNamespaceStd();
-
-    /**
-     * Remove Microsoft MFC 'DECLARE_MESSAGE_MAP()'
-     */
-    void simplifyMicrosoftMFC();
 
     /**
     * Convert Microsoft memory functions
@@ -682,6 +683,22 @@ public:
     void simplifyOperatorName();
 
     /**
+    * Remove [[deprecated]] (C++14) from TokenList
+    */
+    void simplifyDeprecated();
+
+    /**
+     * Replace strlen(str)
+     * @return true if any replacement took place, false else
+     * */
+    bool simplifyStrlen();
+
+    /**
+    * Prepare ternary operators with parentheses so that the AST can be created
+    * */
+    void prepareTernaryOpForAST();
+
+    /**
      * check for duplicate enum definition
      */
     bool duplicateDefinition(Token **tokPtr, const Token *name) const;
@@ -700,42 +717,13 @@ public:
     bool duplicateTypedef(Token **tokPtr, const Token *name, const Token *typeDef, const std::set<std::string>& structs) const;
     void duplicateTypedefError(const Token *tok1, const Token *tok2, const std::string & type) const;
 
-    /**
-     * Report error - duplicate declarations
-     */
-    void duplicateDeclarationError(const Token *tok1, const Token *tok2, const std::string &type) const;
-
     void unsupportedTypedef(const Token *tok) const;
 
-    /** Was there templates in the code? */
-    bool codeWithTemplates() const {
-        return _codeWithTemplates;
-    }
+    void setVarIdClassDeclaration(Token * const startToken,
+                                  const std::map<std::string, unsigned int> &variableId,
+                                  const unsigned int scopeStartVarId,
+                                  std::map<unsigned int, std::map<std::string,unsigned int> >& structMembers);
 
-    void setSettings(const Settings *settings) {
-        _settings = settings;
-        list.setSettings(settings);
-    }
-
-    const SymbolDatabase *getSymbolDatabase() const {
-        return _symbolDatabase;
-    }
-    void createSymbolDatabase();
-    void deleteSymbolDatabase();
-
-    void printDebugOutput() const;
-
-    void dump(std::ostream &out) const;
-
-    Token *deleteInvalidTypedef(Token *typeDef);
-
-    /**
-     * Get variable count.
-     * @return number of variables
-     */
-    unsigned int varIdCount() const {
-        return _varId;
-    }
 
     /**
      * Simplify e.g. 'return(strncat(temp,"a",1));' into
@@ -748,6 +736,43 @@ public:
      */
     void printUnknownTypes() const;
 
+public:
+
+    /** Was there templates in the code? */
+    bool codeWithTemplates() const {
+        return _codeWithTemplates;
+    }
+
+
+    void setSettings(const Settings *settings) {
+        _settings = settings;
+        list.setSettings(settings);
+    }
+
+    const SymbolDatabase *getSymbolDatabase() const {
+        return _symbolDatabase;
+    }
+    void createSymbolDatabase();
+    void deleteSymbolDatabase();
+
+    /** print --debug output if debug flags match the simplification:
+     * 0=unknown/both simplifications
+     * 1=1st simplifications
+     * 2=2nd simplifications
+     */
+    void printDebugOutput(unsigned int simplification) const;
+
+    void dump(std::ostream &out) const;
+
+    Token *deleteInvalidTypedef(Token *typeDef);
+
+    /**
+     * Get variable count.
+     * @return number of variables
+     */
+    unsigned int varIdCount() const {
+        return _varId;
+    }
 
     /**
      * Token list: stores all tokens.
@@ -792,7 +817,7 @@ public:
     /**
     * Helper function to check for start of function execution scope.
     * Do not use this in checks.  Use the symbol database.
-    * @param tok --> pointer to end parentheses of parameter list
+    * @param tok pointer to end parentheses of parameter list
     * @return pointer to start brace of function scope or nullptr if not start.
     */
     static const Token * startOfExecutableScope(const Token * tok);
@@ -804,10 +829,7 @@ private:
     /** Disable assignment operator, no implementation */
     Tokenizer &operator=(const Tokenizer &);
 
-    static Token * startOfFunction(Token * tok);
-    static Token * startOfExecutableScope(Token * tok) {
-        return const_cast<Token*>(startOfExecutableScope(const_cast<const Token *>(tok)));
-    }
+    Token *processFunc(Token *tok2, bool inOperator) const;
 
     /** Set pod types */
     void setPodTypes();

@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,9 @@
 #define valueflowH
 //---------------------------------------------------------------------------
 
+#include <string>
+#include "config.h"
+
 class Token;
 class TokenList;
 class SymbolDatabase;
@@ -28,10 +31,10 @@ class ErrorLogger;
 class Settings;
 
 namespace ValueFlow {
-    class Value {
+    class CPPCHECKLIB Value {
     public:
-        explicit Value(long long val = 0) : intvalue(val), tokvalue(nullptr), varvalue(val), condition(0), varId(0U), conditional(false), inconclusive(false), defaultArg(false) {}
-        Value(const Token *c, long long val) : intvalue(val), tokvalue(nullptr), varvalue(val), condition(c), varId(0U), conditional(false), inconclusive(false), defaultArg(false) {}
+        explicit Value(long long val = 0) : intvalue(val), tokvalue(nullptr), varvalue(val), condition(0), varId(0U), conditional(false), inconclusive(false), defaultArg(false), valueKind(ValueKind::Possible) {}
+        Value(const Token *c, long long val) : intvalue(val), tokvalue(nullptr), varvalue(val), condition(c), varId(0U), conditional(false), inconclusive(false), defaultArg(false), valueKind(ValueKind::Possible) {}
 
         /** int value */
         long long intvalue;
@@ -56,9 +59,44 @@ namespace ValueFlow {
 
         /** Is this value passed as default parameter to the function? */
         bool defaultArg;
+
+        /** How known is this value */
+        enum ValueKind {
+            /** This value is possible, other unlisted values may also be possible */
+            Possible,
+            /** Only listed values are possible */
+            Known,
+            /** Max value. Greater values are impossible. */
+            Max,
+            /** Min value. Smaller values are impossible. */
+            Min
+        } valueKind;
+
+        void setKnown() {
+            valueKind = ValueKind::Known;
+        }
+
+        bool isKnown() const {
+            return valueKind == ValueKind::Known;
+        }
+
+        void setPossible() {
+            valueKind = ValueKind::Possible;
+        }
+
+        bool isPossible() const {
+            return valueKind == ValueKind::Possible;
+        }
+
+        void changeKnownToPossible() {
+            if (isKnown())
+                valueKind = ValueKind::Possible;
+        }
     };
 
     void setValues(TokenList *tokenlist, SymbolDatabase* symboldatabase, ErrorLogger *errorLogger, const Settings *settings);
+
+    std::string eitherTheConditionIsRedundant(const Token *condition);
 }
 
 #endif // valueflowH

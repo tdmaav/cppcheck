@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -37,6 +37,7 @@ CheckUnusedFunctions CheckUnusedFunctions::instance;
 
 void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char FileName[], const Settings *settings)
 {
+    const bool doMarkup = settings->library.markupFile(FileName);
     const SymbolDatabase* symbolDatabase = tokenizer.getSymbolDatabase();
 
     // Function declarations..
@@ -51,7 +52,7 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char Fi
             continue;
 
         // Don't care about templates
-        if (func->retDef->str() == "template")
+        if (tokenizer.isCPP() && func->retDef->str() == "template")
             continue;
 
         FunctionUsage &usage = _functions[func->name()];
@@ -103,7 +104,7 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char Fi
             }
         }
 
-        if (!settings->library.markupFile(FileName) // only check source files
+        if (!doMarkup // only check source files
             && settings->library.isexporter(tok->str()) && tok->next() != 0) {
             const Token * propToken = tok->next();
             while (propToken && propToken->str() != ")") {
@@ -125,8 +126,7 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char Fi
             }
         }
 
-        if (settings->library.markupFile(FileName)
-            && settings->library.isimporter(FileName, tok->str()) && tok->next()) {
+        if (doMarkup && settings->library.isimporter(FileName, tok->str()) && tok->next()) {
             const Token * propToken = tok->next();
             if (propToken->next()) {
                 propToken = propToken->next();
@@ -209,15 +209,14 @@ void CheckUnusedFunctions::parseTokens(const Tokenizer &tokenizer, const char Fi
 
 
 
-void CheckUnusedFunctions::check(ErrorLogger * const errorLogger)
+void CheckUnusedFunctions::check(ErrorLogger * const errorLogger, const Settings& settings)
 {
     for (std::map<std::string, FunctionUsage>::const_iterator it = _functions.begin(); it != _functions.end(); ++it) {
         const FunctionUsage &func = it->second;
         if (func.usedOtherFile || func.filename.empty())
             continue;
         if (it->first == "main" ||
-            it->first == "WinMain" ||
-            it->first == "_tmain" ||
+            (settings.isWindowsPlatform() && (it->first == "WinMain" || it->first == "_tmain")) ||
             it->first == "if" ||
             (it->first.compare(0, 8, "operator") == 0 && it->first.size() > 8 && !std::isalnum(it->first[8])))
             continue;
@@ -260,14 +259,14 @@ void CheckUnusedFunctions::unusedFunctionError(ErrorLogger * const errorLogger,
 
 Check::FileInfo *CheckUnusedFunctions::getFileInfo(const Tokenizer *tokenizer, const Settings *settings) const
 {
-    if (settings->isEnabled("unusedFunction") && settings->_jobs == 1)
+    if (settings->isEnabled("unusedFunction") && settings->jobs == 1)
         instance.parseTokens(*tokenizer, tokenizer->list.getFiles().front().c_str(), settings);
     return nullptr;
 
 }
 
-void CheckUnusedFunctions::analyseWholeProgram(const std::list<Check::FileInfo*> &fileInfo, ErrorLogger &errorLogger)
+void CheckUnusedFunctions::analyseWholeProgram(const std::list<Check::FileInfo*> &fileInfo, const Settings& settings, ErrorLogger &errorLogger)
 {
     (void)fileInfo;
-    instance.check(&errorLogger);
+    check(&errorLogger, settings);
 }

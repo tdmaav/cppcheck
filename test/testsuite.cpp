@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -18,9 +18,10 @@
 
 #include "testsuite.h"
 #include "options.h"
+#include "redirect.h"
 
-#include <iostream>
 #include <cstdio>
+#include <iostream>
 #include <list>
 
 std::ostringstream errout;
@@ -86,7 +87,6 @@ bool TestFixture::prepareTest(const char testname[])
         } else {
             std::cout << classname << "::" << testname << std::endl;
         }
-        _lib = Library();
         currentTest = classname + "::" + testname;
         return true;
     }
@@ -170,12 +170,20 @@ void TestFixture::assertEquals(const char *filename, unsigned int linenr, const 
 
 void TestFixture::assertEquals(const char *filename, unsigned int linenr, long long expected, long long actual, const std::string &msg) const
 {
-    assertEquals(filename, linenr, MathLib::toString(expected), MathLib::toString(actual), msg);
+    std::ostringstream ostr1;
+    ostr1 << expected;
+    std::ostringstream ostr2;
+    ostr2 << actual;
+    assertEquals(filename, linenr, ostr1.str(), ostr2.str(), msg);
 }
 
 void TestFixture::assertEqualsDouble(const char *filename, unsigned int linenr, double expected, double actual, const std::string &msg) const
 {
-    assertEquals(filename, linenr, MathLib::toString(expected), MathLib::toString(actual), msg);
+    std::ostringstream ostr1;
+    ostr1 << expected;
+    std::ostringstream ostr2;
+    ostr2 << actual;
+    assertEquals(filename, linenr, ostr1.str(), ostr2.str(), msg);
 }
 
 void TestFixture::todoAssertEquals(const char *filename, unsigned int linenr,
@@ -237,18 +245,6 @@ void TestFixture::run(const std::string &str)
         run();
 }
 
-void TestFixture::warn(const char msg[]) const
-{
-    warnings << "Warning: " << currentTest << " " << msg << std::endl;
-}
-
-void TestFixture::warnUnsimplified(const std::string& unsimplified, const std::string& simplified)
-{
-    warn(("Unsimplified code in test case. It looks like this test "
-          "should either be cleaned up or moved to TestTokenizer or "
-          "TestSimplifyTokens instead.\nactual=" + unsimplified + "\nexpected=" + simplified).c_str());
-}
-
 void TestFixture::processOptions(const options& args)
 {
     quiet_tests = args.quiet();
@@ -293,7 +289,7 @@ std::size_t TestFixture::runTests(const options& args)
 
     if (!missingLibs.empty()) {
         std::cerr << "Missing libraries: ";
-        for (std::set<std::string>::const_iterator i = missingLibs.cbegin(); i != missingLibs.cend(); ++i)
+        for (std::set<std::string>::const_iterator i = missingLibs.begin(); i != missingLibs.end(); ++i)
             std::cerr << *i << "  ";
         std::cerr << std::endl << std::endl;
     }

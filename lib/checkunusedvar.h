@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -65,7 +65,6 @@ public:
 
     /** @brief %Check for unused function variables */
     void checkFunctionVariableUsage_iterateScopes(const Scope* const scope, Variables& variables, bool insideLoop);
-    void checkVariableUsage(const Scope* const scope, const Token* start, Variables& variables);
     void checkFunctionVariableUsage();
 
     /** @brief %Check that all struct members are used */
@@ -76,7 +75,7 @@ private:
     bool isEmptyType(const Type* type);
 
     // Error messages..
-    void unusedStructMemberError(const Token *tok, const std::string &structname, const std::string &varname);
+    void unusedStructMemberError(const Token *tok, const std::string &structname, const std::string &varname, bool isUnion = false);
     void unusedVariableError(const Token *tok, const std::string &varname);
     void allocatedButUnusedVariableError(const Token *tok, const std::string &varname);
     void unreadVariableError(const Token *tok, const std::string &varname);

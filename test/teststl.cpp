@@ -1,6 +1,6 @@
 /*
  * Cppcheck - A tool for static C/C++ code analysis
- * Copyright (C) 2007-2015 Daniel Marjamäki and Cppcheck team.
+ * Copyright (C) 2007-2016 Cppcheck team.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -30,6 +30,9 @@ private:
     Settings settings;
 
     void run() {
+        settings.addEnabled("warning");
+        settings.addEnabled("style");
+        settings.addEnabled("performance");
         LOAD_LIB_2(settings.library, "std.cfg");
 
         TEST_CASE(iterator1);
@@ -45,7 +48,6 @@ private:
         TEST_CASE(iterator11);
         TEST_CASE(iterator12);
         TEST_CASE(iterator13);
-        TEST_CASE(iterator14); // #5598 invalid code causing a crash
 
         TEST_CASE(dereference);
         TEST_CASE(dereference_break);  // #3644 - handle "break"
@@ -72,6 +74,7 @@ private:
         TEST_CASE(eraseAssignByFunctionCall);
         TEST_CASE(eraseErase);
         TEST_CASE(eraseByValue);
+        TEST_CASE(eraseIf);
         TEST_CASE(eraseOnVector);
 
         TEST_CASE(pushback1);
@@ -86,6 +89,7 @@ private:
         TEST_CASE(pushback10);
         TEST_CASE(pushback11);
         TEST_CASE(pushback12);
+        TEST_CASE(pushback13);
         TEST_CASE(insert1);
         TEST_CASE(insert2);
 
@@ -94,6 +98,7 @@ private:
         TEST_CASE(stlBoundaries3);
         TEST_CASE(stlBoundaries4); // #4364
         TEST_CASE(stlBoundaries5); // #4352
+        TEST_CASE(stlBoundaries6); // #7106
 
         // if (str.find("ab"))
         TEST_CASE(if_find);
@@ -130,14 +135,12 @@ private:
         TEST_CASE(readingEmptyStlContainer);
     }
 
-    void check(const char code[], const bool inconclusive=false) {
+    void check(const char code[], const bool inconclusive=false, const Standards::cppstd_t cppstandard=Standards::CPP11) {
         // Clear the error buffer..
         errout.str("");
 
-        settings.addEnabled("warning");
-        settings.addEnabled("style");
-        settings.addEnabled("performance");
         settings.inconclusive = inconclusive;
+        settings.standards.cpp = cppstandard;
 
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
@@ -146,7 +149,7 @@ private:
         tokenizer.simplifyTokenList2();
 
         // Check..
-        CheckStl checkStl;
+        CheckStl checkStl(&tokenizer, &settings, this);
         checkStl.runSimplifiedChecks(&tokenizer, &settings, this);
     }
     void check(const std::string &code, const bool inconclusive=false) {
@@ -295,6 +298,20 @@ private:
               "    std::vector<int>::iterator it = std::find_first_of(ints1.begin(), ints1.end(), ints2.begin(), ints2.end());\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        // #6839
+        check("void f(const std::wstring& a, const std::wstring& b) {\n"
+              "    const std::string tp1 = std::string(a.begin(), b.end());\n"
+              "    const std::wstring tp2 = std::string(b.begin(), a.end());\n"
+              "    const std::u16string tp3(a.begin(), b.end());\n"
+              "    const std::u32string tp4(b.begin(), a.end());\n"
+              "    const std::string fp1 = std::string(a.begin(), a.end());\n"
+              "    const std::string tp2(a.begin(), a.end());\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (error) Iterators of different containers are used together.\n"
+                      "[test.cpp:3]: (error) Iterators of different containers are used together.\n"
+                      "[test.cpp:4]: (error) Iterators of different containers are used together.\n"
+                      "[test.cpp:5]: (error) Iterators of different containers are used together.\n", errout.str());
     }
 
     void iterator9() {
@@ -438,11 +455,6 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
-    void iterator14() {
-        check(" { { void foo() { struct }; template <typename> struct S { Used x; void bar() } auto f = [this] { }; } };");
-        ASSERT_EQUALS("", errout.str());
-    }
-
     // Dereferencing invalid pointer
     void dereference() {
         check("void f()\n"
@@ -454,6 +466,18 @@ private:
               "    std::cout << (*iter) << std::endl;\n"
               "}");
         ASSERT_EQUALS("[test.cpp:7] -> [test.cpp:6]: (error) Iterator 'iter' used after element has been erased.\n", errout.str());
+
+        // #6554 "False positive eraseDereference - erase in while() loop"
+        check("typedef std::map<Packet> packetMap;\n"
+              "packetMap waitingPackets;\n"
+              "void ProcessRawPacket() {\n"
+              "    packetMap::iterator wpi;\n"
+              "    while ((wpi = waitingPackets.find(lastInOrder + 1)) != waitingPackets.end()) {\n"
+              "        waitingPackets.erase(wpi);\n"
+              "        for (unsigned pos = 0; pos < buf.size(); ) {     }\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void dereference_break() {  // #3644
@@ -510,6 +534,14 @@ private:
               "    auto x = *myList.begin();\n"
               "    myList.erase(x);\n"
               "    auto b = x.first;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("const CXXRecordDecl *CXXRecordDecl::getTemplateInstantiationPattern() const {\n"
+              "    if (auto *TD = dyn_cast<ClassTemplateSpecializationDecl>(this)) {\n"
+              "        auto From = TD->getInstantiatedFrom();\n"
+              "    }\n"
+              "    return nullptr;\n"
               "}");
         ASSERT_EQUALS("", errout.str());
     }
@@ -639,6 +671,7 @@ private:
     void erase1() {
         check("void f()\n"
               "{\n"
+              "    std::list<int>::iterator it;\n"
               "    for (it = foo.begin(); it != foo.end(); ++it) {\n"
               "        foo.erase(it);\n"
               "    }\n"
@@ -646,14 +679,22 @@ private:
               "        foo.erase(it);\n"
               "    }\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (error) Iterator 'it' used after element has been erased.\n"
-                      "[test.cpp:6] -> [test.cpp:7]: (error) Iterator 'it' used after element has been erased.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:4] -> [test.cpp:5]: (error) Iterator 'it' used after element has been erased.\n"
+                      "[test.cpp:7] -> [test.cpp:8]: (error) Iterator 'it' used after element has been erased.\n", errout.str());
 
         check("void f(std::list<int> &ints)\n"
               "{\n"
               "    std::list<int>::iterator i = ints.begin();\n"
               "    i = ints.erase(i);\n"
               "    *i = 0;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f()\n"
+              "{\n"
+              "    std::list<int>::iterator i;\n"
+              "    while (i != x.y.end())\n"
+              "        i = x.y.erase(i);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
 
@@ -764,7 +805,7 @@ private:
     void eraseBreak() {
         check("void f()\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        foo.erase(it);\n"
               "        if (x)"
@@ -775,7 +816,7 @@ private:
 
         check("void f()\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        if (x) {\n"
               "            foo.erase(it);\n"
@@ -787,7 +828,7 @@ private:
 
         check("void f(int x)\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        foo.erase(it);\n"
               "        if (x)"
@@ -880,13 +921,13 @@ private:
               "        }\n"
               "    }\n"
               "}");
-        TODO_ASSERT_EQUALS("[test.cpp:9]: (error) Dangerous iterator usage after erase()-method.\n", "", errout.str());
+        ASSERT_EQUALS("[test.cpp:5] -> [test.cpp:9]: (error) Iterator 'it' used after element has been erased.\n", errout.str());
     }
 
     void eraseGoto() {
         check("void f()\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        foo.erase(it);\n"
               "        goto abc;\n"
@@ -899,7 +940,7 @@ private:
     void eraseAssign1() {
         check("void f()\n"
               "{\n"
-              "    for (iterator it = foo.begin(); it != foo.end(); ++it)\n"
+              "    for (std::vector<int>::iterator it = foo.begin(); it != foo.end(); ++it)\n"
               "    {\n"
               "        foo.erase(it);\n"
               "        it = foo.begin();\n"
@@ -1021,6 +1062,19 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void eraseIf() {
+        // #4816
+        check("void func(std::list<std::string> strlist) {\n"
+              "    for (std::list<std::string>::iterator str = strlist.begin(); str != strlist.end(); str++) {\n"
+              "        if (func2(*str)) {\n"
+              "    	       strlist.erase(str);\n"
+              "            if (strlist.empty())\n"
+              "                 return;\n"
+              "        }\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (error) Iterator 'str' used after element has been erased.\n", errout.str());
+    }
 
     void eraseOnVector() {
         check("void f(const std::vector<int>& m_ImplementationMap) {\n"
@@ -1245,6 +1299,16 @@ private:
                       "[test.cpp:9]: (error) After insert(), the iterator 'it' may be invalid.\n", errout.str());
     }
 
+    void pushback13() {
+        check("bool Preprocessor::ConcatenateIncludeName(SmallString<128> &FilenameBuffer, SourceLocation &End) {\n"
+              "    unsigned PreAppendSize = FilenameBuffer.size();\n"
+              "    FilenameBuffer.resize(PreAppendSize + CurTok.getLength());\n"
+              "    const char *BufPtr = &FilenameBuffer[PreAppendSize];\n"
+              "    return true;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
     void insert1() {
         check("void f(std::vector<int> &ints)\n"
               "{\n"
@@ -1342,8 +1406,7 @@ private:
 
     void stlBoundaries1() {
         const std::string stlCont[] = {
-            "list", "set", "multiset", "map",
-            "multimap", "hash_map", "hash_multimap", "hash_set"
+            "list", "set", "multiset", "map", "multimap"
         };
 
         for (size_t i = 0; i < getArraylength(stlCont); ++i) {
@@ -1354,16 +1417,16 @@ private:
                   "        ;\n"
                   "}");
 
-            ASSERT_EQUALS("[test.cpp:4]: (error) Dangerous iterator comparison using operator< on 'std::" + stlCont[i] + "'.\n", errout.str());
+            ASSERT_EQUALS("[test.cpp:4]: (error) Dangerous comparison using operator< on iterator.\n", errout.str());
         }
 
         check("void f() {\n"
               "    std::forward_list<int>::iterator it;\n"
               "    for (it = ab.begin(); ab.end() > it; ++it) {}\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:3]: (error) Dangerous iterator comparison using operator< on 'std::forward_list'.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (error) Dangerous comparison using operator< on iterator.\n", errout.str());
 
-        // #5926 no FP Dangerous iterator comparison using operator< on 'std::deque'.
+        // #5926 no FP Dangerous comparison using operator< on iterator on std::deque
         check("void f() {\n"
               "    std::deque<int>::iterator it;\n"
               "    for (it = ab.begin(); ab.end() > it; ++it) {}\n"
@@ -1409,7 +1472,7 @@ private:
               "    std::forward_list<std::vector<std::vector<int>>>::iterator it;\n"
               "    for (it = ab.begin(); ab.end() > it; ++it) {}\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:3]: (error) Dangerous iterator comparison using operator< on 'std::forward_list'.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (error) Dangerous comparison using operator< on iterator.\n", errout.str());
 
         // don't crash
         check("void f() {\n"
@@ -1423,7 +1486,7 @@ private:
               "        for (it = ab.begin(); ab.end() > it; ++it) {}\n"
               "    }\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:4]: (error) Dangerous iterator comparison using operator< on 'std::forward_list'.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:4]: (error) Dangerous comparison using operator< on iterator.\n", errout.str());
     }
 
     void stlBoundaries5() {
@@ -1444,6 +1507,17 @@ private:
               "    return i.foo();;\n"
               "}");
         ASSERT_EQUALS("[test.cpp:8]: (error) Invalid iterator 'i' used.\n", errout.str());
+    }
+
+    void stlBoundaries6() { // #7106
+        check("void foo(std::vector<int>& vec) {\n"
+              "    for (Function::iterator BB : vec) {\n"
+              "        for (int Inst : *BB)\n"
+              "        {\n"
+              "        }\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
 
@@ -1647,110 +1721,157 @@ private:
               "    if (a.find(\"<\") < b.find(\">\")) {}\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        check("void f(const std::string &s) {\n"
+              "    if (foo(s.find(\"abc\"))) { }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
 
     void size1() {
-        check("struct Fred {\n"
-              "    void foo();\n"
-              "    std::list<int> x;\n"
-              "};\n"
-              "void Fred::foo()\n"
-              "{\n"
-              "    if (x.size() == 0) {}\n"
-              "}");
+        const char* code = "struct Fred {\n"
+                           "    void foo();\n"
+                           "    std::list<int> x;\n"
+                           "};\n"
+                           "void Fred::foo()\n"
+                           "{\n"
+                           "    if (x.size() == 0) {}\n"
+                           "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:7]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("std::list<int> x;\n"
-              "void f()\n"
-              "{\n"
-              "    if (x.size() == 0) {}\n"
-              "}");
+        code = "std::list<int> x;\n"
+               "void f()\n"
+               "{\n"
+               "    if (x.size() == 0) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (x.size() == 0) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (x.size() == 0) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (0 == x.size()) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (0 == x.size()) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (x.size() != 0) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (x.size() != 0) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (0 != x.size()) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (0 != x.size()) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (x.size() > 0) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (x.size() > 0) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (0 < x.size()) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (0 < x.size()) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (x.size() >= 1) {}\n"
-              "}");
+        code =  "void f()\n"
+                "{\n"
+                "    std::list<int> x;\n"
+                "    if (x.size() >= 1) {}\n"
+                "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (x.size() < 1) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (x.size() < 1) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (1 <= x.size()) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (1 <= x.size()) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (1 > x.size()) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (1 > x.size()) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (x.size()) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (x.size()) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    if (!x.size()) {}\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    if (!x.size()) {}\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
         check("void f()\n"
               "{\n"
@@ -1759,19 +1880,25 @@ private:
               "}");
         ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
+        code ="void f()\n"
               "{\n"
               "    std::list<int> x;\n"
               "    fun(!x.size());\n"
-              "}");
+              "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
-        check("void f()\n"
-              "{\n"
-              "    std::list<int> x;\n"
-              "    fun(a && x.size());\n"
-              "}");
+        code = "void f()\n"
+               "{\n"
+               "    std::list<int> x;\n"
+               "    fun(a && x.size());\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:4]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
 
         check("void f() {\n" // #4039
               "    std::list<int> x;\n"
@@ -1793,46 +1920,53 @@ private:
     }
 
     void size2() {
-        check("struct Fred {\n"
-              "    std::list<int> x;\n"
-              "};\n"
-              "struct Wilma {\n"
-              "    Fred f;\n"
-              "    void foo();\n"
-              "};\n"
-              "void Wilma::foo()\n"
-              "{\n"
-              "    if (f.x.size() == 0) {}\n"
-              "}");
+        const char* code = "struct Fred {\n"
+                           "    std::list<int> x;\n"
+                           "};\n"
+                           "struct Wilma {\n"
+                           "    Fred f;\n"
+                           "    void foo();\n"
+                           "};\n"
+                           "void Wilma::foo()\n"
+                           "{\n"
+                           "    if (f.x.size() == 0) {}\n"
+                           "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:10]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
     }
 
     void size3() {
-        check("namespace N {\n"
-              "    class Zzz {\n"
-              "    public:\n"
-              "        std::list<int> x;\n"
-              "    };\n"
-              "}\n"
-              "using namespace N;\n"
-              "Zzz * zzz;\n"
-              "int main() {\n"
-              "    if (zzz->x.size() > 0) { }\n"
-              "}");
+        const char* code = "namespace N {\n"
+                           "    class Zzz {\n"
+                           "    public:\n"
+                           "        std::list<int> x;\n"
+                           "    };\n"
+                           "}\n"
+                           "using namespace N;\n"
+                           "Zzz * zzz;\n"
+                           "int main() {\n"
+                           "    if (zzz->x.size() > 0) { }\n"
+                           "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:10]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
 
-        check("namespace N {\n"
-              "    class Zzz {\n"
-              "    public:\n"
-              "        std::list<int> x;\n"
-              "    };\n"
-              "}\n"
-              "using namespace N;\n"
-              "int main() {\n"
-              "    Zzz * zzz;\n"
-              "    if (zzz->x.size() > 0) { }\n"
-              "}");
+        code = "namespace N {\n"
+               "    class Zzz {\n"
+               "    public:\n"
+               "        std::list<int> x;\n"
+               "    };\n"
+               "}\n"
+               "using namespace N;\n"
+               "int main() {\n"
+               "    Zzz * zzz;\n"
+               "    if (zzz->x.size() > 0) { }\n"
+               "}";
+        check(code, false, Standards::CPP03);
         ASSERT_EQUALS("[test.cpp:10]: (performance) Possible inefficient checking for 'x' emptiness.\n", errout.str());
+        check(code);
+        ASSERT_EQUALS("", errout.str());
     }
 
     void size4() { // #2652 - don't warn about vector/deque
@@ -1843,6 +1977,11 @@ private:
 
         check("void f(std::deque<int> &v) {\n"
               "    if (v.size() > 0U) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(std::array<int,3> &a) {\n"
+              "    if (a.size() > 0U) {}\n"
               "}");
         ASSERT_EQUALS("", errout.str());
     }
@@ -2582,13 +2721,13 @@ private:
               "    std::string strValue = CMap[1]; \n"
               "    std::cout << strValue << CMap.size() << std::endl;\n"
               "}\n",true);
-        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'CMap'\n", errout.str());
 
         check("void f() {\n"
               "    std::map<int,std::string> CMap;\n"
               "    std::string strValue = CMap[1];"
               "}\n",true);
-        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'CMap'\n", errout.str());
 
         check("void f() {\n"
               "    std::map<int,std::string> CMap;\n"
@@ -2605,7 +2744,7 @@ private:
               "    }\n"
               "    return Vector;\n"
               "}\n",true);
-        ASSERT_EQUALS("[test.cpp:4]: (style, inconclusive) Reading from empty STL container\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:4]: (style, inconclusive) Reading from empty STL container 'Vector'\n", errout.str());
 
         check("f() {\n"
               "    try {\n"
@@ -2652,25 +2791,105 @@ private:
               "}", true);
         ASSERT_EQUALS("", errout.str());
 
-        check("void f(std::vector<int> v) {\n"
+        check("void f(std::set<int> v) {\n"
               "    v.clear();\n"
               "    int i = v.find(foobar);\n"
               "}", true);
-        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'v'\n", errout.str());
+
+        check("void f(std::set<int> v) {\n"
+              "    v.clear();\n"
+              "    v.begin();\n"
+              "}", true);
+        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'v'\n", errout.str());
+
+        check("void f(std::set<int> v) {\n"
+              "    v.clear();\n"
+              "    *v.begin();\n"
+              "}", true);
+        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'v'\n", errout.str());
+
+        check("void f(std::set<int> v) {\n"
+              "    v.clear();\n"
+              "    for(auto i = v.cbegin();\n"
+              "        i != v.cend(); ++i) {}\n"
+              "}", true);
+        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'v'\n"
+                      "[test.cpp:4]: (style, inconclusive) Reading from empty STL container 'v'\n", errout.str());
+
+        check("void f(std::set<int> v) {\n"
+              "    v.clear();\n"
+              "    foo(v.begin());\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
 
         check("void f() {\n"
               "    std::map<int, std::string> CMap;\n"
               "    std::string strValue = CMap[1];\n"
               "    std::string strValue2 = CMap[1];\n"
               "}\n", true);
-        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'CMap'\n", errout.str());
 
         // #4306
         check("void f(std::vector<int> v) {\n"
               "    v.clear();\n"
               "    for(int i = 0; i < v.size(); i++) { cout << v[i]; }\n"
               "}", true);
-        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'v'\n", errout.str());
+
+        // #6663
+        check("void foo() {\n"
+              "    std::set<int> container;\n"
+              "    while (container.size() < 5)\n"
+              "        container.insert(22);\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
+
+        // #6679
+        check("class C {\n"
+              "    C() {\n"
+              "        switch (ret) {\n"
+              "            case 1:\n"
+              "                vec.clear();\n"
+              "                break;\n"
+              "            case 2:\n"
+              "                if (vec.empty())\n"
+              "                    ;\n"
+              "                break;\n"
+              "        }\n"
+              "    }\n"
+              "    std::vector<int> vec;\n"
+              "};", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check("class C {\n"
+              "    C() {\n"
+              "        switch (ret) {\n"
+              "            case 1:\n"
+              "                vec.clear();\n"
+              "            case 2:\n"
+              "                if (vec.empty())\n"
+              "                    ;\n"
+              "                break;\n"
+              "        }\n"
+              "    }\n"
+              "    std::vector<int> vec;\n"
+              "};", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check("class C {\n"
+              "    C() {\n"
+              "        switch (ret) {\n"
+              "            case 1:\n"
+              "                vec.clear();\n"
+              "                if (vec.empty())\n"
+              "                    ;\n"
+              "                break;\n"
+              "        }\n"
+              "    }\n"
+              "    std::vector<int> vec;\n"
+              "};", true);
+        ASSERT_EQUALS("[test.cpp:6]: (style, inconclusive) Reading from empty STL container 'vec'\n", errout.str());
     }
 };
 
