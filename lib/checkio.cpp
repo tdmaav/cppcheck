@@ -33,6 +33,8 @@ namespace {
     CheckIO instance;
 }
 
+// CVE ID used:
+static const CWE CWE398(398U);  // Indicator of Poor Code Quality
 static const CWE CWE664(664U);
 static const CWE CWE685(685U);
 static const CWE CWE687(687U);
@@ -333,7 +335,7 @@ void CheckIO::checkFileUsage()
 void CheckIO::fflushOnInputStreamError(const Token *tok, const std::string &varname)
 {
     reportError(tok, Severity::portability,
-                "fflushOnInputStream", "fflush() called on input stream '" + varname + "' may result in undefined behaviour on non-linux systems.");
+                "fflushOnInputStream", "fflush() called on input stream '" + varname + "' may result in undefined behaviour on non-linux systems.", CWE398, false);
 }
 
 void CheckIO::ioWithoutPositioningError(const Token *tok)
@@ -364,7 +366,7 @@ void CheckIO::useClosedFileError(const Token *tok)
 void CheckIO::seekOnAppendedFileError(const Token *tok)
 {
     reportError(tok, Severity::warning,
-                "seekOnAppendedFile", "Repositioning operation performed on a file opened in append mode has no effect.");
+                "seekOnAppendedFile", "Repositioning operation performed on a file opened in append mode has no effect.", CWE398, false);
 }
 
 
@@ -1449,7 +1451,17 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * tok, const Settings *settings,
                     varTok = tok1->linkAt(-1)->previous();
                     if (varTok->str() == ")" && varTok->link()->previous()->tokType() == Token::eFunction) {
                         const Function * function = varTok->link()->previous()->function();
-                        if (function && function->retDef) {
+                        if (function && function->retType && function->retType->isEnumType()) {
+                            if (function->retType->classScope->enumType)
+                                typeToken = function->retType->classScope->enumType;
+                            else {
+                                tempToken = new Token(0);
+                                tempToken->fileIndex(tok1->fileIndex());
+                                tempToken->linenr(tok1->linenr());
+                                tempToken->str("int");
+                                typeToken = tempToken;
+                            }
+                        } else if (function && function->retDef) {
                             typeToken = function->retDef;
                             while (typeToken->str() == "const" || typeToken->str() == "extern")
                                 typeToken = typeToken->next();
@@ -1460,7 +1472,17 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * tok, const Settings *settings,
                     }
                 } else if (tok1->previous()->str() == ")" && tok1->linkAt(-1)->previous()->tokType() == Token::eFunction) {
                     const Function * function = tok1->linkAt(-1)->previous()->function();
-                    if (function && function->retDef) {
+                    if (function && function->retType && function->retType->isEnumType()) {
+                        if (function->retType->classScope->enumType)
+                            typeToken = function->retType->classScope->enumType;
+                        else {
+                            tempToken = new Token(0);
+                            tempToken->fileIndex(tok1->fileIndex());
+                            tempToken->linenr(tok1->linenr());
+                            tempToken->str("int");
+                            typeToken = tempToken;
+                        }
+                    } else if (function && function->retDef) {
                         typeToken = function->retDef;
                         while (typeToken->str() == "const" || typeToken->str() == "extern")
                             typeToken = typeToken->next();
@@ -1536,6 +1558,16 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * tok, const Settings *settings,
             if (variableInfo) {
                 if (element && isStdVectorOrString()) { // isStdVectorOrString sets type token if true
                     element = false;    // not really an array element
+                } else if (variableInfo->isEnumType()) {
+                    if (variableInfo->type() && variableInfo->type()->classScope && variableInfo->type()->classScope->enumType)
+                        typeToken = variableInfo->type()->classScope->enumType;
+                    else {
+                        tempToken = new Token(0);
+                        tempToken->fileIndex(tok1->fileIndex());
+                        tempToken->linenr(tok1->linenr());
+                        tempToken->str("int");
+                        typeToken = tempToken;
+                    }
                 } else
                     typeToken = variableInfo->typeStartToken();
             }
