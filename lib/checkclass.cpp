@@ -41,8 +41,7 @@ static const CWE CWE665(665U);
 static const CWE CWE758(758U);
 static const CWE CWE762(762U);
 
-static    const char * getFunctionTypeName(
-    Function::Type type)
+static const char * getFunctionTypeName(Function::Type type)
 {
     switch (type) {
     case Function::eConstructor:
@@ -873,7 +872,7 @@ void CheckClass::suggestInitializationList(const Token* tok, const std::string& 
 // ClassCheck: Unused private functions
 //---------------------------------------------------------------------------
 
-static bool checkFunctionUsage(const std::string& name, const Scope* scope)
+static bool checkFunctionUsage(const Function *privfunc, const Scope* scope)
 {
     if (!scope)
         return true; // Assume it is used, if scope is not seen
@@ -882,14 +881,16 @@ static bool checkFunctionUsage(const std::string& name, const Scope* scope)
         if (func->functionScope) {
             if (Token::Match(func->tokenDef, "%name% (")) {
                 for (const Token *ftok = func->tokenDef->tokAt(2); ftok && ftok->str() != ")"; ftok = ftok->next()) {
-                    if (Token::Match(ftok, "= %name% [(,)]") && ftok->strAt(1) == name)
+                    if (Token::Match(ftok, "= %name% [(,)]") && ftok->strAt(1) == privfunc->name())
                         return true;
                     if (ftok->str() == "(")
                         ftok = ftok->link();
                 }
             }
             for (const Token *ftok = func->functionScope->classDef->linkAt(1); ftok != func->functionScope->classEnd; ftok = ftok->next()) {
-                if (ftok->str() == name) // Function used. TODO: Handle overloads
+                if (ftok->function() == privfunc)
+                    return true;
+                if (ftok->varId() == 0U && ftok->str() == privfunc->name()) // TODO: This condition should be redundant
                     return true;
             }
         } else if ((func->type != Function::eCopyConstructor &&
@@ -898,10 +899,10 @@ static bool checkFunctionUsage(const std::string& name, const Scope* scope)
             return true;
     }
 
-    for (std::list<Scope*>::const_iterator i = scope->nestedList.begin(); i != scope->nestedList.end(); ++i) {
-        if ((*i)->isClassOrStruct())
-            if (checkFunctionUsage(name, *i)) // Check nested classes, which can access private functions of their base
-                return true;
+    for (std::list<Type*>::const_iterator i = scope->definedTypes.begin(); i != scope->definedTypes.end(); ++i) {
+        const Type *type = *i;
+        if (type->enclosingScope == scope && checkFunctionUsage(privfunc, type->classScope))
+            return true;
     }
 
     for (std::list<Variable>::const_iterator i = scope->varlist.begin(); i != scope->varlist.end(); ++i) {
@@ -910,7 +911,7 @@ static bool checkFunctionUsage(const std::string& name, const Scope* scope)
             if (tok)
                 tok = tok->tokAt(2);
             while (tok && tok->str() != ";") {
-                if (tok->str() == name && (tok->strAt(-1) == "." || tok->strAt(-2) == scope->className))
+                if (tok->function() == privfunc)
                     return true;
                 tok = tok->next();
             }
@@ -952,20 +953,19 @@ void CheckClass::privateFunctions()
         }
 
         while (!privateFuncs.empty()) {
-            const std::string& funcName = privateFuncs.front()->tokenDef->str();
             // Check that all private functions are used
-            bool used = checkFunctionUsage(funcName, scope); // Usage in this class
+            bool used = checkFunctionUsage(privateFuncs.front(), scope); // Usage in this class
             // Check in friend classes
             const std::list<Type::FriendInfo>& friendList = scope->definedType->friendList;
             for (std::list<Type::FriendInfo>::const_iterator it = friendList.begin(); !used && it != friendList.end(); ++it) {
                 if (it->type)
-                    used = checkFunctionUsage(funcName, it->type->classScope);
+                    used = checkFunctionUsage(privateFuncs.front(), it->type->classScope);
                 else
                     used = true; // Assume, it is used if we do not see friend class
             }
 
             if (!used)
-                unusedPrivateFunctionError(privateFuncs.front()->tokenDef, scope->className, funcName);
+                unusedPrivateFunctionError(privateFuncs.front()->tokenDef, scope->className, privateFuncs.front()->name());
 
             privateFuncs.pop_front();
         }
@@ -1109,8 +1109,8 @@ void CheckClass::checkMemsetType(const Scope *start, const Token *tok, const Sco
             memsetErrorReference(tok, tok->str(), type->classDef->str());
             continue;
         }
-        // don't warn if variable static or const, pointer or reference
-        if (!var->isStatic() && !var->isConst() && !var->isPointer()) {
+        // don't warn if variable static or const, pointer or array of pointers
+        if (!var->isStatic() && !var->isConst() && !var->isPointer() && (!var->isArray() || var->typeEndToken()->str() != "*")) {
             const Token *tok1 = var->typeStartToken();
             const Scope *typeScope = var->typeScope();
 

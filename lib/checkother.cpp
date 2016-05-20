@@ -36,13 +36,16 @@ namespace {
 static const struct CWE CWE197(197U);   // Numeric Truncation Error
 static const struct CWE CWE369(369U);
 static const struct CWE CWE398(398U);   // Indicator of Poor Code Quality
-static const struct CWE CWE563(563U);
+static const struct CWE CWE484(484U);   // Omitted Break Statement in Switch
+static const struct CWE CWE563(563U);   // Assignment to Variable without Use ('Unused Variable')
 static const struct CWE CWE570(570U);   // Expression is Always False
 static const struct CWE CWE571(571U);   // Expression is Always True
-static const struct CWE CWE686(686U);
+static const struct CWE CWE686(686U);   // Function Call With Incorrect Argument Type
+static const struct CWE CWE687(687U);   // Function Call With Incorrectly Specified Argument Value
+static const struct CWE CWE688(688U);   // Function Call With Incorrect Variable or Reference as Argument
 static const struct CWE CWE704(704U);   // Incorrect Type Conversion or Cast
-
-static const struct CWE CWE758(758U);
+static const struct CWE CWE758(758U);   // Reliance on Undefined, Unspecified, or Implementation-Defined Behavior
+static const struct CWE CWE783(783U);   // Operator Precedence Logic Error
 
 //----------------------------------------------------------------------------------
 // The return value of fgetc(), getc(), ungetc(), getchar() etc. is an integer value.
@@ -173,7 +176,7 @@ void CheckOther::clarifyCalculationError(const Token *tok, const std::string &op
                 "clarifyCalculation",
                 "Clarify calculation precedence for '" + op + "' and '?'.\n"
                 "Suspicious calculation. Please use parentheses to clarify the code. "
-                "The code '" + calc + "' should be written as either '" + s1 + "' or '" + s2 + "'.");
+                "The code '" + calc + "' should be written as either '" + s1 + "' or '" + s2 + "'.", CWE783, false);
 }
 
 //---------------------------------------------------------------------------
@@ -209,7 +212,7 @@ void CheckOther::clarifyStatementError(const Token *tok)
 {
     reportError(tok, Severity::warning, "clarifyStatement", "Ineffective statement similar to '*A++;'. Did you intend to write '(*A)++;'?\n"
                 "A statement like '*A++;' might not do what you intended. Postfix 'operator++' is executed before 'operator*'. "
-                "Thus, the dereference is meaningless. Did you intend to write '(*A)++;'?");
+                "Thus, the dereference is meaningless. Did you intend to write '(*A)++;'?", CWE783, false);
 }
 
 //---------------------------------------------------------------------------
@@ -604,14 +607,14 @@ void CheckOther::redundantCopyError(const Token *tok1, const Token* tok2, const 
 {
     const std::list<const Token *> callstack = make_container< std::list<const Token *> >() << tok1 << tok2;
     reportError(callstack, Severity::performance, "redundantCopy",
-                "Buffer '" + var + "' is being written before its old content has been used.", CWE398, false);
+                "Buffer '" + var + "' is being written before its old content has been used.", CWE563, false);
 }
 
 void CheckOther::redundantCopyInSwitchError(const Token *tok1, const Token* tok2, const std::string &var)
 {
     const std::list<const Token *> callstack = make_container< std::list<const Token *> >() << tok1 << tok2;
     reportError(callstack, Severity::warning, "redundantCopyInSwitch",
-                "Buffer '" + var + "' is being written before its old content has been used. 'break;' missing?");
+                "Buffer '" + var + "' is being written before its old content has been used. 'break;' missing?", CWE563, false);
 }
 
 void CheckOther::redundantAssignmentError(const Token *tok1, const Token* tok2, const std::string& var, bool inconclusive)
@@ -620,17 +623,17 @@ void CheckOther::redundantAssignmentError(const Token *tok1, const Token* tok2, 
     if (inconclusive)
         reportError(callstack, Severity::style, "redundantAssignment",
                     "Variable '" + var + "' is reassigned a value before the old one has been used if variable is no semaphore variable.\n"
-                    "Variable '" + var + "' is reassigned a value before the old one has been used. Make sure that this variable is not used like a semaphore in a threading environment before simplifying this code.", CWE398, true);
+                    "Variable '" + var + "' is reassigned a value before the old one has been used. Make sure that this variable is not used like a semaphore in a threading environment before simplifying this code.", CWE563, true);
     else
         reportError(callstack, Severity::style, "redundantAssignment",
-                    "Variable '" + var + "' is reassigned a value before the old one has been used.", CWE398, false);
+                    "Variable '" + var + "' is reassigned a value before the old one has been used.", CWE563, false);
 }
 
 void CheckOther::redundantAssignmentInSwitchError(const Token *tok1, const Token* tok2, const std::string &var)
 {
     const std::list<const Token *> callstack = make_container< std::list<const Token *> >() << tok1 << tok2;
     reportError(callstack, Severity::warning, "redundantAssignInSwitch",
-                "Variable '" + var + "' is reassigned a value before the old one has been used. 'break;' missing?");
+                "Variable '" + var + "' is reassigned a value before the old one has been used. 'break;' missing?", CWE563, false);
 }
 
 
@@ -842,7 +845,7 @@ void CheckOther::checkSwitchCaseFallThrough()
 void CheckOther::switchCaseFallThrough(const Token *tok)
 {
     reportError(tok, Severity::style,
-                "switchCaseFallThrough", "Switch falls through case without comment. 'break;' missing?");
+                "switchCaseFallThrough", "Switch falls through case without comment. 'break;' missing?", CWE484, false);
 }
 
 
@@ -1086,7 +1089,7 @@ void CheckOther::memsetZeroBytesError(const Token *tok)
     const std::string verbose(summary + " The second and third arguments might be inverted."
                               " The function memset ( void * ptr, int value, size_t num ) sets the"
                               " first num bytes of the block of memory pointed by ptr to the specified value.");
-    reportError(tok, Severity::warning, "memsetZeroBytes", summary + "\n" + verbose);
+    reportError(tok, Severity::warning, "memsetZeroBytes", summary + "\n" + verbose, CWE687, false);
 }
 
 void CheckOther::checkMemsetInvalid2ndParam()
@@ -1136,14 +1139,14 @@ void CheckOther::memsetFloatError(const Token *tok, const std::string &var_value
                               "' is a float, its representation is implementation defined.");
     const std::string verbose(message + " memset() is used to set each byte of a block of memory to a specific value and"
                               " the actual representation of a floating-point value is implementation defined.");
-    reportError(tok, Severity::portability, "memsetFloat", message + "\n" + verbose);
+    reportError(tok, Severity::portability, "memsetFloat", message + "\n" + verbose, CWE688, false);
 }
 
 void CheckOther::memsetValueOutOfRangeError(const Token *tok, const std::string &value)
 {
     const std::string message("The 2nd memset() argument '" + value + "' doesn't fit into an 'unsigned char'.");
     const std::string verbose(message + " The 2nd parameter is passed as an 'int', but the function fills the block of memory using the 'unsigned char' conversion of this value.");
-    reportError(tok, Severity::warning, "memsetValueOutOfRange", message + "\n" + verbose);
+    reportError(tok, Severity::warning, "memsetValueOutOfRange", message + "\n" + verbose, CWE686, false);
 }
 
 //---------------------------------------------------------------------------
@@ -1324,7 +1327,7 @@ void CheckOther::variableScopeError(const Token *tok, const std::string &varname
                 "        }\n"
                 "    }\n"
                 "}\n"
-                "When you see this message it is always safe to reduce the variable scope 1 level.");
+                "When you see this message it is always safe to reduce the variable scope 1 level.", CWE398, false);
 }
 
 //---------------------------------------------------------------------------
@@ -1504,7 +1507,7 @@ void CheckOther::charBitOpError(const Token *tok)
                 "    int i = 0 | c;\n"
                 "    if (i & 0x8000)\n"
                 "        printf(\"not expected\");\n"
-                "The \"not expected\" will be printed on the screen.");
+                "The \"not expected\" will be printed on the screen.", CWE398, false);
 }
 
 //---------------------------------------------------------------------------
@@ -1577,7 +1580,7 @@ void CheckOther::checkIncompleteStatement()
 
 void CheckOther::constStatementError(const Token *tok, const std::string &type)
 {
-    reportError(tok, Severity::warning, "constStatement", "Redundant code: Found a statement that begins with " + type + " constant.");
+    reportError(tok, Severity::warning, "constStatement", "Redundant code: Found a statement that begins with " + type + " constant.", CWE398, false);
 }
 
 //---------------------------------------------------------------------------
@@ -1599,7 +1602,7 @@ void CheckOther::checkZeroDivision()
             if (MathLib::isFloat(tok->astOperand1()->str()))
                 continue;
         } else if (tok->astOperand1()->isName()) {
-            if (tok->astOperand1()->variable() && !tok->astOperand1()->variable()->isIntegralType())
+            if (!tok->astOperand1()->valueType()->isIntegral())
                 continue;
         } else if (!tok->astOperand1()->isArithmeticalOp())
             continue;
@@ -1966,7 +1969,7 @@ void CheckOther::duplicateExpressionTernaryError(const Token *tok)
 void CheckOther::selfAssignmentError(const Token *tok, const std::string &varname)
 {
     reportError(tok, Severity::warning,
-                "selfAssignment", "Redundant assignment of '" + varname + "' to itself.");
+                "selfAssignment", "Redundant assignment of '" + varname + "' to itself.", CWE398, false);
 }
 
 //-----------------------------------------------------------------------------
@@ -2177,7 +2180,7 @@ void CheckOther::redundantCopyError(const Token *tok,const std::string& varname)
                 "Use const reference for '" + varname + "' to avoid unnecessary data copying.\n"
                 "The const variable '"+varname+"' is assigned a copy of the data. You can avoid "
                 "the unnecessary data copying by converting '" + varname + "' to const reference.",
-                CWE(0U),
+                CWE398,
                 true); // since #5618 that check became inconlusive
 }
 

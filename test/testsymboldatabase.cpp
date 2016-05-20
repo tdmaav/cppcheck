@@ -242,6 +242,11 @@ private:
         TEST_CASE(symboldatabase53); // #7124 (library podtype)
         TEST_CASE(symboldatabase54); // #7257
 
+        TEST_CASE(enum1);
+        TEST_CASE(enum2);
+        TEST_CASE(enum3);
+        TEST_CASE(enum4);
+
         TEST_CASE(isImplicitlyVirtual);
         TEST_CASE(isPure);
 
@@ -271,10 +276,12 @@ private:
         TEST_CASE(varTypesFloating); // known floating
         TEST_CASE(varTypesOther);    // (un)known
 
-        TEST_CASE(functionPrototype); // ticket #5867
+        TEST_CASE(functionPrototype); // #5867
 
-        TEST_CASE(lambda); // ticket #5867
-        TEST_CASE(circularDependencies); // 6298
+        TEST_CASE(lambda); // #5867
+        TEST_CASE(lambda2); // #7473
+
+        TEST_CASE(circularDependencies); // #6298
 
         TEST_CASE(executableScopeWithUnknownFunction);
 
@@ -336,7 +343,6 @@ private:
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
-        ASSERT(true == v.isIntegralType());
     }
 
     void test_isVariableDeclarationIdentifiesCpp11Initialization() {
@@ -350,7 +356,6 @@ private:
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
-        ASSERT(true == v.isIntegralType());
     }
 
     void test_isVariableDeclarationIdentifiesScopedDeclaration() {
@@ -667,7 +672,7 @@ private:
     void isVariableDeclarationPointerConst() {
         reset();
         givenACodeSampleToTokenize var("std::string const* s;");
-        bool result = si.isVariableDeclaration(var.tokens(), vartok, typetok);
+        bool result = si.isVariableDeclaration(var.tokens()->next(), vartok, typetok);
         ASSERT_EQUALS(true, result);
         Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
         ASSERT(false == v.isArray());
@@ -2251,6 +2256,72 @@ private:
         }
     }
 
+    void enum1() {
+        GET_SYMBOL_DB("enum BOOL { FALSE, TRUE }; enum BOOL b;");
+
+        /* there is a enum scope with the name BOOL */
+        ASSERT(db && db->scopeList.back().type == Scope::eEnum && db->scopeList.back().className == "BOOL");
+
+        /* b is a enum variable, type is BOOL */
+        ASSERT(db && db->getVariableFromVarId(1)->isEnumType());
+    }
+
+    void enum2() {
+        GET_SYMBOL_DB("enum BOOL { FALSE, TRUE } b;");
+
+        /* there is a enum scope with the name BOOL */
+        ASSERT(db && db->scopeList.back().type == Scope::eEnum && db->scopeList.back().className == "BOOL");
+
+        /* b is a enum variable, type is BOOL */
+        ASSERT(db && db->getVariableFromVarId(1)->isEnumType());
+    }
+
+    void enum3() {
+        GET_SYMBOL_DB("enum ABC { A=11,B,C=A+B };");
+        ASSERT(db && db->scopeList.back().type == Scope::eEnum);
+        if (db) {
+            /* There is an enum A with value 11 */
+            const Enumerator *A = db->scopeList.back().findEnumerator("A");
+            ASSERT(A && A->value==11 && A->value_known);
+
+            /* There is an enum B with value 12 */
+            const Enumerator *B = db->scopeList.back().findEnumerator("B");
+            ASSERT(B && B->value==12 && B->value_known);
+
+            /* There is an enum C with value 23 */
+            const Enumerator *C = db->scopeList.back().findEnumerator("C");
+            ASSERT(C && C->value==23 && C->value_known);
+        }
+    }
+
+    void enum4() { // #7493
+        GET_SYMBOL_DB("enum Offsets { O1, O2, O3 };\n"
+                      "enum MyEnums { E1=O1+1, E2=O2+1, E3=O3+1 };");
+        ASSERT(db);
+        if (!db)
+            return;
+        ASSERT_EQUALS(3U, db->scopeList.size());
+
+        // Assert that all enum values are known
+        std::list<Scope>::const_iterator scope = db->scopeList.begin();
+
+        // Offsets
+        ++scope;
+        ASSERT_EQUALS((unsigned int)Scope::eEnum, (unsigned int)scope->type);
+        ASSERT_EQUALS(3U, scope->enumeratorList.size());
+        ASSERT_EQUALS(true, scope->enumeratorList[0].value_known);
+        ASSERT_EQUALS(true, scope->enumeratorList[1].value_known);
+        ASSERT_EQUALS(true, scope->enumeratorList[2].value_known);
+
+        // MyEnums
+        ++scope;
+        ASSERT_EQUALS((unsigned int)Scope::eEnum, (unsigned int)scope->type);
+        ASSERT_EQUALS(3U, scope->enumeratorList.size());
+        TODO_ASSERT_EQUALS(true, false, scope->enumeratorList[0].value_known);
+        TODO_ASSERT_EQUALS(true, false, scope->enumeratorList[1].value_known);
+        TODO_ASSERT_EQUALS(true, false, scope->enumeratorList[2].value_known);
+    }
+
     void isImplicitlyVirtual() {
         {
             GET_SYMBOL_DB("class Base {\n"
@@ -2923,77 +2994,66 @@ private:
         ASSERT(b != nullptr);
         if (b) {
             ASSERT_EQUALS("b", b->nameToken()->str());
-            ASSERT_EQUALS(true, b->isIntegralType());
             ASSERT_EQUALS(false, b->isFloatingType());
         }
         const Variable *c = db->getVariableFromVarId(2);
         ASSERT(c != nullptr);
         if (c) {
             ASSERT_EQUALS("c", c->nameToken()->str());
-            ASSERT_EQUALS(true, c->isIntegralType());
             ASSERT_EQUALS(false, c->isFloatingType());
         }
         const Variable *uc = db->getVariableFromVarId(3);
         ASSERT(uc != nullptr);
         if (uc) {
             ASSERT_EQUALS("uc", uc->nameToken()->str());
-            ASSERT_EQUALS(true, uc->isIntegralType());
             ASSERT_EQUALS(false, uc->isFloatingType());
         }
         const Variable *s = db->getVariableFromVarId(4);
         ASSERT(s != nullptr);
         if (s) {
             ASSERT_EQUALS("s", s->nameToken()->str());
-            ASSERT_EQUALS(true, s->isIntegralType());
             ASSERT_EQUALS(false, s->isFloatingType());
         }
         const Variable *us = db->getVariableFromVarId(5);
         ASSERT(us != nullptr);
         if (us) {
             ASSERT_EQUALS("us", us->nameToken()->str());
-            ASSERT_EQUALS(true, us->isIntegralType());
             ASSERT_EQUALS(false, us->isFloatingType());
         }
         const Variable *i = db->getVariableFromVarId(6);
         ASSERT(i != nullptr);
         if (i) {
             ASSERT_EQUALS("i", i->nameToken()->str());
-            ASSERT_EQUALS(true, i->isIntegralType());
             ASSERT_EQUALS(false, i->isFloatingType());
         }
         const Variable *u = db->getVariableFromVarId(7);
         ASSERT(u != nullptr);
         if (u) {
             ASSERT_EQUALS("u", u->nameToken()->str());
-            ASSERT_EQUALS(true, u->isIntegralType());
             ASSERT_EQUALS(false, u->isFloatingType());
         }
         const Variable *ui = db->getVariableFromVarId(8);
         ASSERT(ui != nullptr);
         if (ui) {
             ASSERT_EQUALS("ui", ui->nameToken()->str());
-            ASSERT_EQUALS(true, ui->isIntegralType());
             ASSERT_EQUALS(false, ui->isFloatingType());
         }
         const Variable *l = db->getVariableFromVarId(9);
         ASSERT(l != nullptr);
         if (l) {
             ASSERT_EQUALS("l", l->nameToken()->str());
-            ASSERT_EQUALS(true, l->isIntegralType());
             ASSERT_EQUALS(false, l->isFloatingType());
         }
         const Variable *ul = db->getVariableFromVarId(10);
         ASSERT(ul != nullptr);
         if (ul) {
             ASSERT_EQUALS("ul", ul->nameToken()->str());
-            ASSERT_EQUALS(true, ul->isIntegralType());
             ASSERT_EQUALS(false, ul->isFloatingType());
         }
         const Variable *ll = db->getVariableFromVarId(11);
         ASSERT(ll != nullptr);
         if (ll) {
             ASSERT_EQUALS("ll", ll->nameToken()->str());
-            ASSERT_EQUALS(true, ll->isIntegralType());
             ASSERT_EQUALS(false, ll->isFloatingType());
         }
     }
@@ -3005,21 +3065,18 @@ private:
             ASSERT(f != nullptr);
             if (f) {
                 ASSERT_EQUALS("f", f->nameToken()->str());
-                ASSERT_EQUALS(false, f->isIntegralType());
                 ASSERT_EQUALS(true, f->isFloatingType());
             }
             const Variable *d = db->getVariableFromVarId(2);
             ASSERT(d != nullptr);
             if (d) {
                 ASSERT_EQUALS("d", d->nameToken()->str());
-                ASSERT_EQUALS(false, d->isIntegralType());
                 ASSERT_EQUALS(true, d->isFloatingType());
             }
             const Variable *ld = db->getVariableFromVarId(3);
             ASSERT(ld != nullptr);
             if (ld) {
                 ASSERT_EQUALS("ld", ld->nameToken()->str());
-                ASSERT_EQUALS(false, ld->isIntegralType());
                 ASSERT_EQUALS(true, ld->isFloatingType());
             }
         }
@@ -3029,7 +3086,6 @@ private:
             ASSERT(f != nullptr);
             if (f) {
                 ASSERT_EQUALS("f", f->nameToken()->str());
-                ASSERT_EQUALS(false, f->isIntegralType());
                 ASSERT_EQUALS(true, f->isFloatingType());
                 ASSERT_EQUALS(true, f->isArrayOrPointer());
             }
@@ -3037,7 +3093,6 @@ private:
             ASSERT(scf != nullptr);
             if (scf) {
                 ASSERT_EQUALS("scf", scf->nameToken()->str());
-                ASSERT_EQUALS(false, scf->isIntegralType());
                 ASSERT_EQUALS(true, scf->isFloatingType());
                 ASSERT_EQUALS(true, scf->isArrayOrPointer());
             }
@@ -3048,7 +3103,6 @@ private:
             ASSERT(fa != nullptr);
             if (fa) {
                 ASSERT_EQUALS("fa", fa->nameToken()->str());
-                ASSERT_EQUALS(false, fa->isIntegralType());
                 ASSERT_EQUALS(true, fa->isFloatingType());
                 ASSERT_EQUALS(true, fa->isArrayOrPointer());
             }
@@ -3061,14 +3115,12 @@ private:
         ASSERT(a != nullptr);
         if (a) {
             ASSERT_EQUALS("a", a->nameToken()->str());
-            ASSERT_EQUALS(false, a->isIntegralType());
             ASSERT_EQUALS(false, a->isFloatingType());
         }
         const Variable *b = db->getVariableFromVarId(2);
         ASSERT(b != nullptr);
         if (b) {
             ASSERT_EQUALS("b", b->nameToken()->str());
-            ASSERT_EQUALS(false, b->isIntegralType());
             ASSERT_EQUALS(false, b->isFloatingType());
         }
     }
@@ -3091,6 +3143,27 @@ private:
                       "    {\n"
                       "        float x = 1.0f;\n"
                       "        y += 10.0f - x;\n"
+                      "    }\n"
+                      "    lambda();\n"
+                      "}");
+
+        ASSERT(db && db->scopeList.size() == 3);
+        if (db && db->scopeList.size() == 3) {
+            std::list<Scope>::const_iterator scope = db->scopeList.begin();
+            ASSERT_EQUALS(Scope::eGlobal, scope->type);
+            ++scope;
+            ASSERT_EQUALS(Scope::eFunction, scope->type);
+            ++scope;
+            ASSERT_EQUALS(Scope::eLambda, scope->type);
+        }
+    }
+
+    void lambda2() {
+        GET_SYMBOL_DB("void func() {\n"
+                      "    float y = 0.0f;\n"
+                      "    auto lambda = [&]() -> bool\n"
+                      "    {\n"
+                      "        float x = 1.0f;\n"
                       "    }\n"
                       "    lambda();\n"
                       "}");
@@ -3218,6 +3291,12 @@ private:
         ASSERT_EQUALS("signed int", typeOf("struct X {int i;}; void f(struct X x) { x.i }", "."));
         ASSERT_EQUALS("signed int *", typeOf("int *p; a = p++;", "++"));
         ASSERT_EQUALS("signed int", typeOf("int x; a = x++;", "++"));
+        ASSERT_EQUALS("signed int *", typeOf("enum AB {A,B}; AB *ab; x=ab+2;", "+"));
+        ASSERT_EQUALS("signed int *", typeOf("enum AB {A,B}; enum AB *ab; x=ab+2;", "+"));
+        ASSERT_EQUALS("AB *", typeOf("struct AB {int a; int b;}; AB ab; x=&ab;", "&"));
+        ASSERT_EQUALS("AB *", typeOf("struct AB {int a; int b;}; struct AB ab; x=&ab;", "&"));
+        ASSERT_EQUALS("A::BC *", typeOf("namespace A { struct BC { int b; int c; }; }; struct A::BC abc; x=&abc;", "&"));
+        ASSERT_EQUALS("A::BC *", typeOf("namespace A { struct BC { int b; int c; }; }; struct A::BC *abc; x=abc+1;", "+"));
 
         // Unary arithmetic/bit operators
         ASSERT_EQUALS("signed int", typeOf("int x; a = -x;", "-"));

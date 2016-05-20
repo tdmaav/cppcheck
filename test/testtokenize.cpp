@@ -23,7 +23,7 @@
 #include "path.h"
 #include "preprocessor.h" // usually tests here should not use preprocessor...
 #include <cstring>
-
+#include <sstream>
 
 class TestTokenizer : public TestFixture {
 public:
@@ -59,7 +59,6 @@ private:
         TEST_CASE(tokenize20);  // replace C99 _Bool => bool
         TEST_CASE(tokenize21);  // tokenize 0x0E-7
         TEST_CASE(tokenize22);  // special marker $ from preprocessor
-        TEST_CASE(tokenize24);  // #4195 (segmentation fault)
         TEST_CASE(tokenize25);  // #4239 (segmentation fault)
         TEST_CASE(tokenize26);  // #4245 (segmentation fault)
         TEST_CASE(tokenize27);  // #4525 (segmentation fault)
@@ -388,6 +387,7 @@ private:
         // a = b = 0;
         TEST_CASE(multipleAssignment);
 
+        TEST_CASE(sizeOfCharLiteral);
         TEST_CASE(platformWin);
         TEST_CASE(platformWin32);
         TEST_CASE(platformWin32A);
@@ -742,11 +742,6 @@ private:
         ASSERT_EQUALS("a = $0 ;", tokenizeAndStringify("a = $0;"));
         ASSERT_EQUALS("a $++ ;", tokenizeAndStringify("a$++;"));
         ASSERT_EQUALS("$if ( ! p )", tokenizeAndStringify("$if(!p)"));
-    }
-
-    // #4195 - segfault for "enum { int f ( ) { return = } r = f ( ) ; }"
-    void tokenize24() {
-        TODO_ASSERT_THROW(tokenizeAndStringify("enum { int f ( ) { return = } r = f ( ) ; }"), InternalError);
     }
 
     // #4239 - segfault for "f ( struct { int typedef T x ; } ) { }"
@@ -2698,7 +2693,7 @@ private:
                             "}";
         ASSERT_EQUALS("void f ( ) {\n"
                       "int i ; i = 1 ;\n"
-                      "const int * constPtrToConst ; constPtrToConst = & i ;\n"
+                      "const int * const constPtrToConst ; constPtrToConst = & i ;\n"
                       "std :: cout << i << std :: endl ;\n"
                       "std :: cout << & i << std :: endl ;\n"
                       "}", tokenizeAndStringify(code, true));
@@ -3933,7 +3928,7 @@ private:
                              "    a::b const *p = 0;\n"
                              "}\n";
         ASSERT_EQUALS("void f ( ) {\n"
-                      "a :: b const * p ; p = 0 ;\n"
+                      "const a :: b * p ; p = 0 ;\n"
                       "}"
                       , tokenizeAndStringify(code1));
 
@@ -3942,7 +3937,7 @@ private:
                              "    ::a::b const *p = 0;\n"
                              "}\n";
         ASSERT_EQUALS("void f ( ) {\n"
-                      ":: a :: b const * p ; p = 0 ;\n"
+                      "const :: a :: b * p ; p = 0 ;\n"
                       "}"
                       , tokenizeAndStringify(code2));
     }
@@ -4549,6 +4544,17 @@ private:
         }
 
         {
+            const char code[] = "Data<T&&>";
+            errout.str("");
+            Tokenizer tokenizer(&settings0, this);
+            std::istringstream istr(code);
+            tokenizer.tokenize(istr, "test.cpp");
+            const Token *tok = tokenizer.tokens();
+            ASSERT_EQUALS(true, tok->linkAt(1) == tok->tokAt(4));
+            ASSERT_EQUALS(true, tok->tokAt(1) == tok->linkAt(4));
+        }
+
+        {
             // #6601
             const char code[] = "template<class R> struct FuncType<R(&)()> : FuncType<R()> { };";
             errout.str("");
@@ -4755,6 +4761,8 @@ private:
         ASSERT_EQUALS("short array [ 3 ] ;", tokenizeAndStringify("short array[3] __attribute ((aligned));"));
         ASSERT_EQUALS("int x [ 2 ] ;", tokenizeAndStringify("int x[2] __attribute ((packed));"));
         ASSERT_EQUALS("int vecint ;", tokenizeAndStringify("int __attribute((mode(SI))) __attribute((vector_size (16))) vecint;"));
+
+        ASSERT_EQUALS("struct Payload_IR_config { uint8_t tap [ 16 ] ; } ;", tokenizeAndStringify("struct __attribute__((packed, gcc_struct)) Payload_IR_config { uint8_t tap[16]; };"));
     }
 
     void functionAttributeBefore() {
@@ -5861,6 +5869,15 @@ private:
 
     void multipleAssignment() {
         ASSERT_EQUALS("a = b = 0 ;", tokenizeAndStringify("a=b=0;"));
+    }
+
+    void sizeOfCharLiteral() { // #7490 sizeof('a') should be 4 in C mode
+        std::stringstream expected;
+        expected << "unsigned long a ; a = " << settings1.sizeof_int << " ;";
+        ASSERT_EQUALS(expected.str(),
+                      tokenizeAndStringify("unsigned long a = sizeof('x');", true, true, Settings::Native, "test.c", false));
+        ASSERT_EQUALS("unsigned long a ; a = 1 ;",
+                      tokenizeAndStringify("unsigned long a = sizeof('x');", true, true, Settings::Native, "test.cpp", true));
     }
 
     void platformWin() {

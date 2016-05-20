@@ -98,6 +98,7 @@ private:
         TEST_CASE(return2);
         TEST_CASE(return3);
         TEST_CASE(return4);
+        TEST_CASE(return5);
 
         // General tests: variable type, allocation type, etc
         TEST_CASE(test1);
@@ -108,6 +109,7 @@ private:
 
         // Execution reaches a 'throw'
         TEST_CASE(throw1);
+        TEST_CASE(throw2);
 
         // Possible leak => Further configuration is needed for complete analysis
         TEST_CASE(configuration1);
@@ -760,6 +762,13 @@ private:
             "    }\n"
             "};", true);
         ASSERT_EQUALS("", errout.str());
+
+        // #7401
+        check("void pCodeLabelDestruct(pCode *pc) {\n"
+              "    free(PCL(pc)->label);\n"
+              "    free(pc);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void doublefree2() {  // #3891
@@ -1035,6 +1044,20 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void return5() { // ticket #6397 - conditional allocation/deallocation and conditional return
+        // avoid false positives
+        check("void f(int *p, int x) {\n"
+              "    if (x != 0) {\n"
+              "        free(p);\n"
+              "    }\n"
+              "    if (x != 0) {\n"
+              "        return;\n"
+              "    }\n"
+              "    *p = 0;\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
+    }
+
     void test1() { // 3809
         check("void f(double*&p) {\n"
               "    p = malloc(0x100);\n"
@@ -1092,6 +1115,23 @@ private:
               "        throw 123;\n"
               "    } catch (...) { }\n"
               "    free(p);\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void throw2() { // do not miss ::NS::Except()
+        check("namespace NS {\n"
+              "    class Except {\n"
+              "    };\n"
+              "}\n"
+              "void foo(int i)\n"
+              "{\n"
+              "    int *pi = new int;\n"
+              "    if (i == 42) {\n"
+              "        delete pi;\n"
+              "        throw ::NS::Except();\n"
+              "    }\n"
+              "    delete pi;\n"
               "}", true);
         ASSERT_EQUALS("", errout.str());
     }
