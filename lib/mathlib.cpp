@@ -49,7 +49,7 @@ MathLib::value::value(const std::string &s) :
     }
 
     if (!MathLib::isInt(s))
-        throw InternalError(0, "Invalid value");
+        throw InternalError(0, "Invalid value: " + s);
 
     type = MathLib::value::INT;
     intValue = MathLib::toLongNumber(s);
@@ -68,7 +68,8 @@ MathLib::value::value(const std::string &s) :
                     type = MathLib::value::LONG;
                 else if (type == MathLib::value::LONG)
                     type = MathLib::value::LONGLONG;
-            }
+            } else if (i > 2U && c == '4' && s[i-1] == '6' && s[i-2] == 'i')
+                type = MathLib::value::LONGLONG;
         }
     }
 }
@@ -356,8 +357,6 @@ MathLib::bigint MathLib::characterLiteralToLongNumber(const std::string& str)
     // is implementation-defined.
     // clang and gcc seem to use the following encoding: 'AB' as (('A' << 8) | 'B')
     const std::string& normStr = normalizeCharacterLiteral(str);
-    if (normStr.empty())
-        throw InternalError(0, "Internal Error. MathLib::characterLiteralToLongNumber: Unhandled char constant '" + str + "'.");
     return encodeMultiChar(normStr);
 }
 
@@ -372,14 +371,14 @@ std::string MathLib::normalizeCharacterLiteral(const std::string& iLiteral)
         }
         ++idx;
         if (idx == iLiteralLen) {
-            throw InternalError(0, "Internal Error. MathLib::toLongNumber: Unhandled char constant '" + iLiteral + "'.");
+            throw InternalError(0, "Internal Error. MathLib::normalizeCharacterLiteral: Unhandled char constant '" + iLiteral + "'.");
         }
         switch (iLiteral[idx]) {
         case 'x':
             // Hexa-decimal number: skip \x and interpret the next two characters
         {
             if (++idx == iLiteralLen)
-                throw InternalError(0, "Internal Error. MathLib::toLongNumber: Unhandled char constant '" + iLiteral + "'.");
+                throw InternalError(0, "Internal Error. MathLib::normalizeCharacterLiteral: Unhandled char constant '" + iLiteral + "'.");
             std::string tempBuf;
             tempBuf.push_back(iLiteral[idx]);
             if (++idx != iLiteralLen)
@@ -390,10 +389,12 @@ std::string MathLib::normalizeCharacterLiteral(const std::string& iLiteral)
         case 'u':
         case 'U':
             // Unicode string; just skip the \u or \U
+            if (idx + 1 == iLiteralLen)
+                throw InternalError(0, "Internal Error. MathLib::characterLiteralToLongNumber: Unhandled char constant '" + iLiteral + "'.");
             continue;
         }
         // Single digit octal number
-        if (1 == std::min<unsigned>(3, iLiteralLen - idx)) {
+        if (1 == iLiteralLen - idx) {
             switch (iLiteral[idx]) {
             case '0':
             case '1':
@@ -436,13 +437,13 @@ std::string MathLib::normalizeCharacterLiteral(const std::string& iLiteral)
                 normalizedLiteral.push_back(iLiteral[idx]);
                 break;
             default:
-                throw InternalError(0, "Internal Error. MathLib::toLongNumber: Unhandled char constant '" + iLiteral + "'.");
+                throw InternalError(0, "Internal Error. MathLib::normalizeCharacterLiteral: Unhandled char constant '" + iLiteral + "'.");
             }
             continue;
         }
         // 2-3 digit octal number
         if (!MathLib::isOctalDigit(iLiteral[idx]))
-            throw InternalError(0, "Internal Error. MathLib::toLongNumber: Unhandled char constant '" + iLiteral + "'.");
+            throw InternalError(0, "Internal Error. MathLib::normalizeCharacterLiteral: Unhandled char constant '" + iLiteral + "'.");
         std::string tempBuf;
         tempBuf.push_back(iLiteral[idx]);
         ++idx;
@@ -829,7 +830,7 @@ bool MathLib::isFloatHex(const std::string& s)
 
 bool MathLib::isValidIntegerSuffix(std::string::const_iterator it, std::string::const_iterator end)
 {
-    enum {START, SUFFIX_U, SUFFIX_UL, SUFFIX_ULL, SUFFIX_L, SUFFIX_LU, SUFFIX_LL, SUFFIX_LLU, SUFFIX_I, SUFFIX_I6, SUFFIX_I64} state = START;
+    enum {START, SUFFIX_U, SUFFIX_UL, SUFFIX_ULL, SUFFIX_L, SUFFIX_LU, SUFFIX_LL, SUFFIX_LLU, SUFFIX_I, SUFFIX_I6, SUFFIX_I64, SUFFIX_UI, SUFFIX_UI6, SUFFIX_UI64} state = START;
     for (; it != end; ++it) {
         switch (state) {
         case START:
@@ -845,6 +846,8 @@ bool MathLib::isValidIntegerSuffix(std::string::const_iterator it, std::string::
         case SUFFIX_U:
             if (*it == 'l' || *it == 'L')
                 state = SUFFIX_UL; // UL
+            else if (*it == 'i')
+                state = SUFFIX_UI;
             else
                 return false;
             break;
@@ -882,6 +885,18 @@ bool MathLib::isValidIntegerSuffix(std::string::const_iterator it, std::string::
             else
                 return false;
             break;
+        case SUFFIX_UI:
+            if (*it == '6')
+                state = SUFFIX_UI6;
+            else
+                return false;
+            break;
+        case SUFFIX_UI6:
+            if (*it == '4')
+                state = SUFFIX_UI64;
+            else
+                return false;
+            break;
         default:
             return false;
         }
@@ -893,7 +908,8 @@ bool MathLib::isValidIntegerSuffix(std::string::const_iterator it, std::string::
             (state == SUFFIX_LL)  ||
             (state == SUFFIX_ULL) ||
             (state == SUFFIX_LLU) ||
-            (state == SUFFIX_I64));
+            (state == SUFFIX_I64) ||
+            (state == SUFFIX_UI64));
 }
 
 /*! \brief Does the string represent a binary number?
@@ -986,33 +1002,41 @@ bool MathLib::isInt(const std::string & s)
     return isDec(s) || isIntHex(s) || isOct(s) || isBin(s);
 }
 
+static std::string getsuffix(const std::string& value)
+{
+    if (value.size() > 3 && value[value.size() - 3] == 'i' && value[value.size() - 2] == '6' && value[value.size() - 1] == '4') {
+        if (value[value.size() - 4] == 'u')
+            return "ULL";
+        return "LL";
+    }
+    bool isUnsigned = false;
+    unsigned int longState = 0;
+    for (std::size_t i = 1U; i < value.size(); ++i) {
+        char c = value[value.size() - i];
+        if (c == 'u' || c == 'U')
+            isUnsigned = true;
+        else if (c == 'L' || c == 'l')
+            longState++;
+        else break;
+    }
+    if (longState == 0)
+        return isUnsigned ? "U" : "";
+    if (longState == 1)
+        return isUnsigned ? "UL" : "L";
+    if (longState == 2)
+        return isUnsigned ? "ULL" : "LL";
+    else return "";
+}
+
 static std::string intsuffix(const std::string & first, const std::string & second)
 {
-    std::string suffix1, suffix2;
-    for (std::size_t i = 1U; i < first.size(); ++i) {
-        char c = first[first.size() - i];
-        if (c == 'l' || c == 'u')
-            c = c - 'a' + 'A';
-        if (c != 'L' && c != 'U')
-            break;
-        suffix1 = c + suffix1;
-    }
-    for (std::size_t i = 1U; i < second.size(); ++i) {
-        char c = second[second.size() - i];
-        if (c == 'l' || c == 'u')
-            c = c - 'a' + 'A';
-        if (c != 'L' && c != 'U')
-            break;
-        suffix2 = c + suffix2;
-    }
-
-    if (suffix1 == "ULL" || suffix2 == "ULL"
-        || suffix1 == "LLU" || suffix2 == "LLU")
+    std::string suffix1 = getsuffix(first);
+    std::string suffix2 = getsuffix(second);
+    if (suffix1 == "ULL" || suffix2 == "ULL")
         return "ULL";
     if (suffix1 == "LL" || suffix2 == "LL")
         return "LL";
-    if (suffix1 == "UL" || suffix2 == "UL"
-        || suffix1 == "LU" || suffix2 == "LU")
+    if (suffix1 == "UL" || suffix2 == "UL")
         return "UL";
     if (suffix1 == "L" || suffix2 == "L")
         return "L";
@@ -1247,6 +1271,45 @@ bool MathLib::isNullValue(const std::string &str)
 bool MathLib::isOctalDigit(char c)
 {
     return (c >= '0' && c <= '7');
+}
+
+bool MathLib::isDigitSeparator(const std::string& iCode, std::string::size_type iPos)
+{
+    if (iPos == 0 || iPos >= iCode.size() || iCode[iPos] != '\'')
+        return false;
+    std::string::size_type i = iPos - 1;
+    while (std::isxdigit(iCode[i])) {
+        if (i == 0)
+            return true; // Only xdigits before '
+        --i;
+    }
+    if (i == iPos - 1) { // No xdigit before '
+        return false;
+    } else {
+        switch (iCode[i]) {
+        case ' ':
+        case '.':
+        case ',':
+        case 'x':
+        case '(':
+        case '{':
+        case '+':
+        case '-':
+        case '*':
+        case '%':
+        case '/':
+        case '&':
+        case '|':
+        case '^':
+        case '~':
+        case '=':
+            return true;
+        case '\'':
+            return isDigitSeparator(iCode, i);
+        default:
+            return false;
+        }
+    }
 }
 
 MathLib::value operator+(const MathLib::value &v1, const MathLib::value &v2)

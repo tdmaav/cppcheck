@@ -231,6 +231,7 @@ private:
         TEST_CASE(garbageCode180);
         TEST_CASE(garbageCode181);
         TEST_CASE(garbageCode182); // #4195
+        TEST_CASE(garbageCode183); // #7505
         TEST_CASE(garbageValueFlow);
         TEST_CASE(garbageSymbolDatabase);
         TEST_CASE(garbageAST);
@@ -245,7 +246,7 @@ private:
         // run alternate check first. It should only ensure stability - so we catch exceptions here.
         try {
             checkCodeInternal(code, alternatefilename);
-        } catch (InternalError&) {
+        } catch (const InternalError&) {
         }
 
         return checkCodeInternal(code, filename);
@@ -450,7 +451,7 @@ private:
     }
 
     void garbageCode15() { // Ticket #5203
-        checkCode("int f ( int* r ) { {  int s[2] ; f ( s ) ; if ( ) } }");
+        ASSERT_THROW(checkCode("int f ( int* r ) { {  int s[2] ; f ( s ) ; if ( ) } }"), InternalError);
     }
 
     void garbageCode16() {
@@ -479,13 +480,13 @@ private:
 
     void garbageCode21() {
         // Ticket #3486 - Don't crash garbage code
-        checkCode("void f()\n"
-                  "{\n"
-                  "  (\n"
-                  "    x;\n"
-                  "    int a, a2, a2*x; if () ;\n"
-                  "  )\n"
-                  "}");
+        ASSERT_THROW(checkCode("void f()\n"
+                               "{\n"
+                               "  (\n"
+                               "    x;\n"
+                               "    int a, a2, a2*x; if () ;\n"
+                               "  )\n"
+                               "}"), InternalError);
     }
 
     void garbageCode22() {
@@ -764,7 +765,7 @@ private:
     }
 
     void garbageCode76() { // #6754
-        checkCode(" ( ) ( ) { ( ) [ ] } TEST ( ) { ( _broadcast_f32x4 ) ( ) ( ) ( ) ( ) if ( ) ( ) ; } E mask = ( ) [ ] ( ) res1.x =");
+        ASSERT_THROW(checkCode(" ( ) ( ) { ( ) [ ] } TEST ( ) { ( _broadcast_f32x4 ) ( ) ( ) ( ) ( ) if ( ) ( ) ; } E mask = ( ) [ ] ( ) res1.x ="), InternalError);
     }
 
     void garbageCode77() { // #6755
@@ -1072,7 +1073,7 @@ private:
                 tokenizer.tokenize(istr, "test.cpp");
                 assertThrowFail(__FILE__, __LINE__);
             } catch (InternalError& e) {
-                ASSERT_EQUALS("Invalid number of character '(' when these macros are defined: ''.", e.errorMessage);
+                ASSERT_EQUALS("Invalid number of character '(' when no macros are defined.", e.errorMessage);
                 ASSERT_EQUALS("syntaxError", e.id);
                 ASSERT_EQUALS(2, e.token->linenr());
             }
@@ -1315,9 +1316,9 @@ private:
     void garbageAST() {
         checkCode("--"); // don't crash
 
-        checkCode("N 1024 float a[N], b[N + 3], c[N]; void N; (void) i;\n"
-                  "int #define for (i = avx_test i < c[i]; i++)\n"
-                  "b[i + 3] = a[i] * {}"); // Don't hang (#5787)
+        ASSERT_THROW(checkCode("N 1024 float a[N], b[N + 3], c[N]; void N; (void) i;\n"
+                               "int #define for (i = avx_test i < c[i]; i++)\n"
+                               "b[i + 3] = a[i] * {}"), InternalError); // Don't hang (#5787)
 
         checkCode("START_SECTION([EXTRA](bool isValid(const String &filename)))"); // Don't crash (#5991)
     }
@@ -1420,7 +1421,7 @@ private:
 
     void garbageCode164() {
         //7234
-        ASSERT_THROW(checkCode("class d{k p;}(){d::d():B<()}", false), InternalError);
+        checkCode("class d{k p;}(){d::d():B<()}", false);
     }
 
     void garbageCode165() {
@@ -1514,6 +1515,10 @@ private:
     // #4195 - segfault for "enum { int f ( ) { return = } r = f ( ) ; }"
     void garbageCode182() {
         ASSERT_THROW(checkCode("enum { int f ( ) { return = } r = f ( ) ; }"), InternalError);
+    }
+    // #7505 - segfault
+    void garbageCode183() {
+        ASSERT_THROW(checkCode("= { int } enum return { r = f() f(); }"), InternalError);
     }
 
 };

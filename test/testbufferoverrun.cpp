@@ -43,10 +43,11 @@ private:
         Tokenizer tokenizer(&settings0, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, filename);
-        tokenizer.simplifyTokenList2();
 
         // Check for buffer overruns..
         CheckBufferOverrun checkBufferOverrun;
+        checkBufferOverrun.runChecks(&tokenizer, &settings0, this);
+        tokenizer.simplifyTokenList2();
         checkBufferOverrun.runSimplifiedChecks(&tokenizer, &settings0, this);
     }
 
@@ -54,16 +55,15 @@ private:
         Tokenizer tokenizer(&settings, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, filename);
-        tokenizer.simplifyTokenList2();
 
         // Clear the error buffer..
         errout.str("");
 
         // Check for buffer overruns..
         CheckBufferOverrun checkBufferOverrun(&tokenizer, &settings, this);
-        checkBufferOverrun.bufferOverrun();
-        checkBufferOverrun.bufferOverrun2();
-        checkBufferOverrun.arrayIndexThenCheck();
+        checkBufferOverrun.runChecks(&tokenizer, &settings, this);
+        tokenizer.simplifyTokenList2();
+        checkBufferOverrun.runSimplifiedChecks(&tokenizer, &settings, this);
     }
 
     void run() {
@@ -164,6 +164,7 @@ private:
         TEST_CASE(buffer_overrun_26); // #4432 (segmentation fault)
         TEST_CASE(buffer_overrun_27); // #4444 (segmentation fault)
         TEST_CASE(buffer_overrun_28); // Out of bound char array access
+        TEST_CASE(buffer_overrun_29); // #7083: false positive: typedef and initialization with strings
         TEST_CASE(buffer_overrun_bailoutIfSwitch);  // ticket #2378 : bailoutIfSwitch
         TEST_CASE(buffer_overrun_function_array_argument);
         TEST_CASE(possible_buffer_overrun_1); // #3035
@@ -226,8 +227,6 @@ private:
         TEST_CASE(scope);   // handling different scopes
 
         TEST_CASE(getErrorMessages);
-
-        TEST_CASE(unknownMacroNoDecl);    // #2638 - not variable declaration: 'AAA a[0] = 0;'
 
         // Access array and then check if the used index is within bounds
         TEST_CASE(arrayIndexThenCheck);
@@ -2002,6 +2001,13 @@ private:
               "    if ( name[0] == 'U' ? name[1] : 0) {}\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        check("int main(int argc, char **argv) {\n"
+              "    char str[6] = \"\\0\";\n"
+              "    unsigned short port = 65535;\n"
+              "    snprintf(str, sizeof(str), \"%hu\", port);\n"
+              "}", settings0, "test.c");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void array_index_same_struct_and_var_name() {
@@ -2477,6 +2483,19 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+
+    // #7083: false positive: typedef and initialization with strings
+    void buffer_overrun_29() {
+        check("typedef char testChar[10]; \n"
+              "int main(){ \n"
+              "  testChar tc1 = \"\"; \n"
+              "  tc1[5]='a'; \n"
+              "} \n"
+             );
+        ASSERT_EQUALS("", errout.str());
+    }
+
+
     void buffer_overrun_bailoutIfSwitch() {
         // No false positive
         check("void f1(char *s) {\n"
@@ -2895,6 +2914,22 @@ private:
               "  delete [] buf;\n"
               "}");
         ASSERT_EQUALS("[test.cpp:6]: (error) Array 'buf[9]' accessed at index 9, which is out of bounds.\n", errout.str());
+
+        check("void foo()\n"
+              "{\n"
+              "    enum E { Size = 10 };\n"
+              "    char *s; s = new char[Size];\n"
+              "    s[Size] = 0;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:5]: (error) Array 's[10]' accessed at index 10, which is out of bounds.\n", errout.str());
+
+        check("void foo()\n"
+              "{\n"
+              "    enum E { };\n"
+              "    E *e; e = new E[10];\n"
+              "    s[10] = 0;\n"
+              "}");
+        TODO_ASSERT_EQUALS("[test.cpp:5]: (error) Array 's[10]' accessed at index 10, which is out of bounds.\n", "", errout.str());
     }
 
     // data is allocated with malloc
@@ -2939,6 +2974,27 @@ private:
               "  free(tab4);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n"
+              "    enum E { Size = 20 };\n"
+              "    E *tab4 = malloc(Size * 4);\n"
+              "    tab4[Size] = 0;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Array 'tab4[20]' accessed at index 20, which is out of bounds.\n", errout.str());
+
+        check("void f() {\n"
+              "    enum E { Size = 20 };\n"
+              "    E *tab4 = malloc(4 * Size);\n"
+              "    tab4[Size] = 0;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Array 'tab4[20]' accessed at index 20, which is out of bounds.\n", errout.str());
+
+        check("void f() {\n"
+              "    enum E { };\n"
+              "    E *tab4 = malloc(20 * sizeof(E));\n"
+              "    tab4[20] = 0;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Array 'tab4[20]' accessed at index 20, which is out of bounds.\n", errout.str());
     }
 
     // statically allocated buffer
@@ -3747,15 +3803,6 @@ private:
         // Ticket #2292: segmentation fault when using --errorlist
         CheckBufferOverrun c;
         c.getErrorMessages(this, 0);
-    }
-
-    void unknownMacroNoDecl() {
-        check("void f() {\n"
-              "    int a[10];\n"
-              "    AAA a[0] = 0;\n"   // <- not a valid array declaration
-              "    a[1] = 1;\n"
-              "}");
-        ASSERT_EQUALS("", errout.str());
     }
 
     void arrayIndexThenCheck() {

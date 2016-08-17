@@ -90,8 +90,21 @@ void CheckClass::constructors()
     for (std::size_t i = 0; i < classes; ++i) {
         const Scope * scope = symbolDatabase->classAndStructScopes[i];
 
+        bool usedInUnion = false;
+        for (std::list<Scope>::const_iterator it = symbolDatabase->scopeList.begin(); it != symbolDatabase->scopeList.end(); ++it) {
+            if (it->type != Scope::eUnion)
+                continue;
+            const Scope &unionScope = *it;
+            for (std::list<Variable>::const_iterator var = unionScope.varlist.begin(); var != unionScope.varlist.end(); ++var) {
+                if (var->type() && var->type()->classScope == scope) {
+                    usedInUnion = true;
+                    break;
+                }
+            }
+        }
+
         // There are no constructors.
-        if (scope->numConstructors == 0 && printStyle) {
+        if (scope->numConstructors == 0 && printStyle && !usedInUnion) {
             // If there is a private variable, there should be a constructor..
             std::list<Variable>::const_iterator var;
             for (var = scope->varlist.begin(); var != scope->varlist.end(); ++var) {
@@ -789,7 +802,7 @@ void CheckClass::noExplicitConstructorError(const Token *tok, const std::string 
 {
     const std::string message(std::string(isStruct ? "Struct" : "Class") + " '" + classname + "' has a constructor with 1 argument that is not explicit.");
     const std::string verbose(message + " Such constructors should in general be explicit for type safety reasons. Using the explicit keyword in the constructor means some mistakes when using the class can be avoided.");
-    reportError(tok, Severity::style, "noExplicitConstructor", message + "\n" + verbose);
+    reportError(tok, Severity::style, "noExplicitConstructor", message + "\n" + verbose, CWE398, false);
 }
 
 void CheckClass::uninitVarError(const Token *tok, const std::string &classname, const std::string &varname, bool inconclusive)
@@ -1425,15 +1438,17 @@ bool CheckClass::hasAllocation(const Function *func, const Scope* scope) const
             return true;
 
         // check for deallocating memory
-        const Token *var = nullptr;
+        const Token *var;
         if (Token::Match(tok, "free ( %var%"))
             var = tok->tokAt(2);
         else if (Token::Match(tok, "delete [ ] %var%"))
             var = tok->tokAt(3);
         else if (Token::Match(tok, "delete %var%"))
             var = tok->next();
+        else
+            continue;
         // Check for assignment to the deleted pointer (only if its a member of the class)
-        if (var && isMemberVar(scope, var)) {
+        if (isMemberVar(scope, var)) {
             for (const Token *tok1 = var->next(); tok1 && (tok1 != last); tok1 = tok1->next()) {
                 if (Token::Match(tok1, "%varid% =", var->varId()))
                     return true;
@@ -1627,7 +1642,7 @@ void CheckClass::virtualDestructorError(const Token *tok, const std::string &Bas
                     "Class '" + Base + "' which is inherited by class '" + Derived + "' does not have a virtual destructor. "
                     "If you destroy instances of the derived class by deleting a pointer that points to the base class, only "
                     "the destructor of the base class is executed. Thus, dynamic memory that is managed by the derived class "
-                    "could leak. This can be avoided by adding a virtual destructor to the base class.");
+                    "could leak. This can be avoided by adding a virtual destructor to the base class.", CWE404, false);
 }
 
 //---------------------------------------------------------------------------

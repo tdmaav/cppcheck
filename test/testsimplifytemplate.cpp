@@ -88,6 +88,7 @@ private:
         TEST_CASE(template53);  // #4335 - bail out for valid code
         TEST_CASE(template54);  // #6587 - memory corruption upon valid code
         TEST_CASE(template55);  // #6604 - simplify "const const" to "const" in template instantiations
+        TEST_CASE(template56);  // #7117 - const ternary operator simplification as template parameter
         TEST_CASE(template_enum);  // #6299 Syntax error in complex enum declaration (including template)
         TEST_CASE(template_unhandled);
         TEST_CASE(template_default_parameter);
@@ -1011,6 +1012,16 @@ private:
                 "A<int> a(0);"));
     }
 
+    void template56() { // #7117
+        tok("template<bool B> struct Foo { "
+            "  std::array<int, B ? 1 : 2> mfoo; "
+            "}; "
+            "void foo() { "
+            "  Foo<true> myFoo; "
+            "}", /*simplify=*/true, /*debugwarnings=*/true);
+        ASSERT_EQUALS("", errout.str());
+    }
+
     void template_enum() {
         const char code1[] = "template <class T>\n"
                              "struct Unconst {\n"
@@ -1279,7 +1290,7 @@ private:
         Tokenizer tokenizer(&settings, this);
 
         std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp", "", true);
+        tokenizer.tokenize(istr, "test.cpp", "");
 
         return TemplateSimplifier::templateParameters(tokenizer.tokens());
     }
@@ -1309,7 +1320,7 @@ private:
         Tokenizer tokenizer(&settings, this);
 
         std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp", emptyString, true);
+        tokenizer.tokenize(istr, "test.cpp", emptyString);
 
         const Token *_tok = tokenizer.tokens();
         for (unsigned i = 0 ; i < offset ; ++i)

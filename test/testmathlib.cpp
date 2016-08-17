@@ -59,6 +59,7 @@ private:
         TEST_CASE(abs);
         TEST_CASE(toString);
         TEST_CASE(characterLiteralsNormalization);
+        TEST_CASE(CPP14DigitSeparators);
     }
 
     void isGreater() const {
@@ -176,7 +177,9 @@ private:
         ASSERT_EQUALS("2L",   MathLib::add("1L",   "1"));
         ASSERT_EQUALS("2UL",  MathLib::add("1UL",  "1"));
         ASSERT_EQUALS("2LL",  MathLib::add("1LL",  "1"));
+        ASSERT_EQUALS("2LL",  MathLib::add("1i64", "1"));
         ASSERT_EQUALS("2ULL", MathLib::add("1ULL", "1"));
+        ASSERT_EQUALS("2ULL", MathLib::add("1ui64","1"));
 
         ASSERT_EQUALS("2U",   MathLib::add("1",    "1U"));
         ASSERT_EQUALS("2U",   MathLib::add("1U",   "1U"));
@@ -737,6 +740,9 @@ private:
 
         value = "i64";
         ASSERT_EQUALS(true, MathLib::isValidIntegerSuffix(value.begin(), value.end()));
+
+        value = "ui64";
+        ASSERT_EQUALS(true, MathLib::isValidIntegerSuffix(value.begin(), value.end()));
     }
 
     void ispositive() const {
@@ -1142,6 +1148,24 @@ private:
         ASSERT_THROW(MathLib::normalizeCharacterLiteral("\\9"), InternalError);
         // Unsupported single escape sequence
         ASSERT_THROW(MathLib::normalizeCharacterLiteral("\\c"), InternalError);
+    }
+
+    void CPP14DigitSeparators() { // Ticket #7137, #7565
+        ASSERT(MathLib::isDigitSeparator("'", 0) == false);
+        ASSERT(MathLib::isDigitSeparator("123'0;", 3));
+        ASSERT(MathLib::isDigitSeparator("foo(1'2);", 5));
+        ASSERT(MathLib::isDigitSeparator("foo(1,1'2);", 7));
+        ASSERT(MathLib::isDigitSeparator("int a=1'234-1'2-'0';", 7));
+        ASSERT(MathLib::isDigitSeparator("int a=1'234-1'2-'0';", 13));
+        ASSERT(MathLib::isDigitSeparator("int a=1'234-1'2-'0';", 16) == false);
+        ASSERT(MathLib::isDigitSeparator("int b=1+9'8;", 9));
+        ASSERT(MathLib::isDigitSeparator("if (1'2) { char c = 'c'; }", 5));
+        ASSERT(MathLib::isDigitSeparator("if (120%1'2) { char c = 'c'; }", 9));
+        ASSERT(MathLib::isDigitSeparator("if (120&1'2) { char c = 'c'; }", 9));
+        ASSERT(MathLib::isDigitSeparator("if (120|1'2) { char c = 'c'; }", 9));
+        ASSERT(MathLib::isDigitSeparator("if (120%1'2) { char c = 'c'; }", 24) == false);
+        ASSERT(MathLib::isDigitSeparator("if (120%1'2) { char c = 'c'; }", 26) == false);
+        ASSERT(MathLib::isDigitSeparator("0b0000001'0010'01110", 14));
     }
 };
 

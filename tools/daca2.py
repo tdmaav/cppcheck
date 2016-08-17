@@ -122,6 +122,8 @@ def removeLargeFiles(path):
             if path.find('/clang/INPUTS/') > 0 or statinfo.st_size > 1000000:
                 os.remove(g)
 
+def strfCurrTime(fmt):
+    return datetime.time.strftime(datetime.datetime.now().time(), fmt)
 
 def scanarchive(filepath, jobs):
     # remove all files/folders except results.txt
@@ -148,7 +150,7 @@ def scanarchive(filepath, jobs):
 
     removeLargeFiles('')
 
-    print('cppcheck ' + filename)
+    print(strfCurrTime('[%H:%M] cppcheck ') + filename)
 
     p = subprocess.Popen(
         ['nice',
@@ -165,9 +167,9 @@ def scanarchive(filepath, jobs):
 
     results = open('results.txt', 'at')
     if p.returncode == 0:
-        results.write(comm[1])
+        results.write(comm[1] + strfCurrTime('[%H:%M]') + '\n')
     elif comm[0].find('cppcheck: error: could not find or open any of the paths given.') < 0:
-        results.write(comm[1])
+        results.write(comm[1] + strfCurrTime('[%H:%M]') + '\n')
         results.write('Exit code is not zero! Crash?\n')
     results.write('\n')
     results.close()
@@ -175,16 +177,26 @@ def scanarchive(filepath, jobs):
 FOLDER = None
 JOBS = '-j1'
 REV = None
+SKIP = []
+WORKDIR = os.path.expanduser('~/daca2');
 for arg in sys.argv[1:]:
     if arg[:6] == '--rev=':
         REV = arg[6:]
     elif arg[:2] == '-j':
         JOBS = arg
+    elif arg[:7] == '--skip=':
+        SKIP.append(arg[7:])
+    elif arg[:10] == '--workdir=':
+        WORKDIR = arg[10:]
     else:
         FOLDER = arg
 
 if not FOLDER:
     print('no folder given')
+    sys.exit(1)
+
+if not os.path.isdir(WORKDIR):
+    print('workdir \'' + WORKDIR + '\' is not a folder')
     sys.exit(1)
 
 archives = getpackages(FOLDER)
@@ -195,26 +207,34 @@ if len(archives) == 0:
 print('Sleep for 10 seconds..')
 time.sleep(10)
 
-workdir = os.path.expanduser('~/daca2/')
+if not WORKDIR.endswith('/'):
+    WORKDIR = WORKDIR + '/'
 
 print('~/daca2/' + FOLDER)
-if not os.path.isdir(workdir + FOLDER):
-    os.makedirs(workdir + FOLDER)
-os.chdir(workdir + FOLDER)
+if not os.path.isdir(WORKDIR + FOLDER):
+    os.makedirs(WORKDIR + FOLDER)
+os.chdir(WORKDIR + FOLDER)
 
 try:
     results = open('results.txt', 'wt')
     results.write('STARTDATE ' + str(datetime.date.today()) + '\n')
+    results.write('STARTTIME ' + strfCurrTime('%H:%M:%S') + '\n')
     if REV:
         results.write('GIT-REVISION ' + REV + '\n')
     results.write('\n')
     results.close()
 
     for archive in archives:
+        if len(SKIP) > 0:
+            a = archive[:archive.rfind('/')]
+            a = a[a.rfind('/')+1:]
+            if a in SKIP:
+                continue
         scanarchive(archive, JOBS)
 
     results = open('results.txt', 'at')
     results.write('DATE ' + str(datetime.date.today()) + '\n')
+    results.write('TIME ' + strfCurrTime('%H:%M:%S') + '\n')
     results.close()
 
 except EOFError:

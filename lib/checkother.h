@@ -81,14 +81,13 @@ public:
         // Checks
         checkOther.clarifyCalculation();
         checkOther.clarifyStatement();
-        checkOther.checkConstantFunctionParameter();
+        checkOther.checkPassByReference();
         checkOther.checkIncompleteStatement();
         checkOther.checkCastIntToCharAndBack();
 
         checkOther.checkMisusedScopedObject();
         checkOther.checkMemsetZeroBytes();
         checkOther.checkMemsetInvalid2ndParam();
-        checkOther.checkSwitchCaseFallThrough();
         checkOther.checkPipeParameterSize();
 
         checkOther.checkInvalidFree();
@@ -116,8 +115,8 @@ public:
     /** @brief %Check for comma separated statements in return */
     void checkCommaSeparatedReturn();
 
-    /** @brief %Check for constant function parameter */
-    void checkConstantFunctionParameter();
+    /** @brief %Check for function parameters that should be passed by reference */
+    void checkPassByReference();
 
     /** @brief Using char variable as array index / as operand in bit operation */
     void checkCharVariable();
@@ -142,9 +141,6 @@ public:
 
     /** @brief %Check for code like 'case A||B:'*/
     void checkSuspiciousEqualityComparison();
-
-    /** @brief %Check for switch case fall through without comment */
-    void checkSwitchCaseFallThrough();
 
     /** @brief %Check for objects that are destroyed immediately */
     void checkMisusedScopedObject();
@@ -216,7 +212,7 @@ private:
     void clarifyStatementError(const Token* tok);
     void cstyleCastError(const Token *tok);
     void invalidPointerCastError(const Token* tok, const std::string& from, const std::string& to, bool inconclusive);
-    void passedByValueError(const Token *tok, const std::string &parname);
+    void passedByValueError(const Token *tok, const std::string &parname, bool inconclusive);
     void constStatementError(const Token *tok, const std::string &type);
     void signedCharArrayIndexError(const Token *tok);
     void unknownSignCharArrayIndexError(const Token *tok);
@@ -230,7 +226,6 @@ private:
     void redundantCopyError(const Token *tok1, const Token* tok2, const std::string& var);
     void redundantCopyInSwitchError(const Token *tok1, const Token* tok2, const std::string &var);
     void redundantBitwiseOperationInSwitchError(const Token *tok, const std::string &varname);
-    void switchCaseFallThrough(const Token *tok);
     void suspiciousCaseInSwitchError(const Token* tok, const std::string& operatorString);
     void suspiciousEqualityComparisonError(const Token* tok);
     void selfAssignmentError(const Token *tok, const std::string &varname);
@@ -279,7 +274,7 @@ private:
         c.checkComparisonFunctionIsAlwaysTrueOrFalseError(nullptr, "isless","varName",false);
         c.checkCastIntToCharAndBackError(nullptr, "func_name");
         c.cstyleCastError(nullptr);
-        c.passedByValueError(nullptr,  "parametername");
+        c.passedByValueError(nullptr,  "parametername", false);
         c.constStatementError(nullptr,  "type");
         c.signedCharArrayIndexError(nullptr);
         c.unknownSignCharArrayIndexError(nullptr);
@@ -287,7 +282,6 @@ private:
         c.variableScopeError(nullptr,  "varname");
         c.redundantAssignmentInSwitchError(nullptr,  0, "var");
         c.redundantCopyInSwitchError(nullptr,  0, "var");
-        c.switchCaseFallThrough(nullptr);
         c.suspiciousCaseInSwitchError(nullptr,  "||");
         c.suspiciousEqualityComparisonError(nullptr);
         c.selfAssignmentError(nullptr,  "varname");
@@ -341,6 +335,7 @@ private:
                // performance
                "- redundant data copying for const variable\n"
                "- subsequent assignment or copying to a variable or buffer\n"
+               "- passing parameter by value\n"
 
                // portability
                "- memset() with a float as the 2nd parameter\n"
@@ -349,7 +344,6 @@ private:
                // style
                "- C-style pointer cast in C++ code\n"
                "- casting between incompatible pointer types\n"
-               "- passing parameter by value\n"
                "- [Incomplete statement](IncompleteStatement)\n"
                "- [check how signed char variables are used](CharVar)\n"
                "- variable scope can be limited\n"

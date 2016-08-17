@@ -74,25 +74,32 @@ Library::Error Library::load(const char exename[], const char path[])
                 absolute_path = Path::getAbsoluteFilePath(fullfilename);
         }
 
-        if (error == tinyxml2::XML_ERROR_FILE_NOT_FOUND) {
-            // Try to locate the library configuration in the installation folder..
+        std::list<std::string> cfgfolders;
 #ifdef CFGDIR
-            const std::string cfgfolder(CFGDIR);
-#else
-            if (!exename)
-                return Error(FILE_NOT_FOUND);
-            const std::string cfgfolder(Path::fromNativeSeparators(Path::getPathFromFilename(exename)) + "cfg");
+        cfgfolders.push_back(CFGDIR);
 #endif
+        if (exename) {
+            const std::string exepath(Path::fromNativeSeparators(Path::getPathFromFilename(exename)));
+            cfgfolders.push_back(exepath + "cfg");
+            cfgfolders.push_back(exepath);
+        }
+
+        while (error == tinyxml2::XML_ERROR_FILE_NOT_FOUND && !cfgfolders.empty()) {
+            const std::string cfgfolder(cfgfolders.front());
+            cfgfolders.pop_front();
             const char *sep = (!cfgfolder.empty() && cfgfolder[cfgfolder.size()-1U]=='/' ? "" : "/");
             const std::string filename(cfgfolder + sep + fullfilename);
             error = doc.LoadFile(filename.c_str());
             if (error != tinyxml2::XML_ERROR_FILE_NOT_FOUND)
                 absolute_path = Path::getAbsoluteFilePath(filename);
         }
+
+        if (error == tinyxml2::XML_ERROR_FILE_NOT_FOUND)
+            return Error(FILE_NOT_FOUND);
     } else
         absolute_path = Path::getAbsoluteFilePath(path);
 
-    if (error == tinyxml2::XML_NO_ERROR) {
+    if (error == tinyxml2::XML_SUCCESS) {
         if (_files.find(absolute_path) == _files.end()) {
             Error err = load(doc);
             if (err.errorcode == OK)
@@ -109,7 +116,7 @@ Library::Error Library::load(const char exename[], const char path[])
 bool Library::loadxmldata(const char xmldata[], std::size_t len)
 {
     tinyxml2::XMLDocument doc;
-    return (tinyxml2::XML_NO_ERROR == doc.Parse(xmldata, len)) && (load(doc).errorcode == OK);
+    return (tinyxml2::XML_SUCCESS == doc.Parse(xmldata, len)) && (load(doc).errorcode == OK);
 }
 
 Library::Error Library::load(const tinyxml2::XMLDocument &doc)
@@ -139,9 +146,9 @@ Library::Error Library::load(const tinyxml2::XMLDocument &doc)
             int allocationId = 0;
             for (const tinyxml2::XMLElement *memorynode = node->FirstChildElement(); memorynode; memorynode = memorynode->NextSiblingElement()) {
                 if (strcmp(memorynode->Name(),"dealloc")==0) {
-                    const std::map<std::string,int>::const_iterator it = _dealloc.find(memorynode->GetText());
+                    const std::map<std::string, AllocFunc>::const_iterator it = _dealloc.find(memorynode->GetText());
                     if (it != _dealloc.end()) {
-                        allocationId = it->second;
+                        allocationId = it->second.groupId;
                         break;
                     }
                 }
@@ -158,14 +165,28 @@ Library::Error Library::load(const tinyxml2::XMLDocument &doc)
             for (const tinyxml2::XMLElement *memorynode = node->FirstChildElement(); memorynode; memorynode = memorynode->NextSiblingElement()) {
                 const std::string memorynodename = memorynode->Name();
                 if (memorynodename == "alloc") {
-                    _alloc[memorynode->GetText()] = allocationId;
-                    const char *init = memorynode->Attribute("init");
-                    if (init && strcmp(init,"false")==0) {
+                    AllocFunc temp;
+                    temp.groupId = allocationId;
+
+                    if (memorynode->Attribute("init", "false"))
                         returnuninitdata.insert(memorynode->GetText());
-                    }
-                } else if (memorynodename == "dealloc")
-                    _dealloc[memorynode->GetText()] = allocationId;
-                else if (memorynodename == "use")
+
+                    const char *arg = memorynode->Attribute("arg");
+                    if (arg)
+                        temp.arg = atoi(arg);
+                    else
+                        temp.arg = -1;
+                    _alloc[memorynode->GetText()] = temp;
+                } else if (memorynodename == "dealloc") {
+                    AllocFunc temp;
+                    temp.groupId = allocationId;
+                    const char *arg = memorynode->Attribute("arg");
+                    if (arg)
+                        temp.arg = atoi(arg);
+                    else
+                        temp.arg = 1;
+                    _dealloc[memorynode->GetText()] = temp;
+                } else if (memorynodename == "use")
                     use.insert(memorynode->GetText());
                 else
                     unknown_elements.insert(memorynodename);
@@ -219,10 +240,8 @@ Library::Error Library::load(const tinyxml2::XMLDocument &doc)
                 return Error(MISSING_ATTRIBUTE, "ext");
             _markupExtensions.insert(extension);
 
-            const char * const reporterrors = node->Attribute("reporterrors");
-            _reporterrors[extension] = (reporterrors && strcmp(reporterrors, "true") == 0);
-            const char * const aftercode = node->Attribute("aftercode");
-            _processAfterCode[extension] = (aftercode && strcmp(aftercode, "true") == 0);
+            _reporterrors[extension] = (node->Attribute("reporterrors", "true") != nullptr);
+            _processAfterCode[extension] = (node->Attribute("aftercode", "true") != nullptr);
 
             for (const tinyxml2::XMLElement *markupnode = node->FirstChildElement(); markupnode; markupnode = markupnode->NextSiblingElement()) {
                 const std::string markupnodename = markupnode->Name();
@@ -524,9 +543,12 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
             leakignore.insert(name);
         else if (functionnodename == "use-retval")
             _useretval.insert(name);
-        else if (functionnodename == "arg" && functionnode->Attribute("nr") != nullptr) {
-            const bool bAnyArg = strcmp(functionnode->Attribute("nr"),"any")==0;
-            const int nr = (bAnyArg) ? -1 : atoi(functionnode->Attribute("nr"));
+        else if (functionnodename == "arg") {
+            const char* argNrString = functionnode->Attribute("nr");
+            if (!argNrString)
+                return Error(MISSING_ATTRIBUTE, "nr");
+            const bool bAnyArg = strcmp(argNrString, "any")==0;
+            const int nr = (bAnyArg) ? -1 : atoi(argNrString);
             bool notbool = false;
             bool notnull = false;
             bool notuninit = false;
@@ -614,6 +636,7 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
             argumentChecks[name][nr].notuninit = notuninit;
             argumentChecks[name][nr].formatstr = formatstr;
             argumentChecks[name][nr].strz      = strz;
+            argumentChecks[name][nr].optional  = functionnode->Attribute("default") != nullptr;
         } else if (functionnodename == "ignorefunction") {
             _ignorefunction.insert(name);
         } else if (functionnodename == "formatstr") {
@@ -772,18 +795,32 @@ bool Library::isuninitargbad(const Token *ftok, int argnr) const
 }
 
 
-/** get allocation id for function */
-int Library::alloc(const Token *tok) const
+/** get allocation info for function */
+const Library::AllocFunc* Library::alloc(const Token *tok) const
 {
     const std::string funcname = functionName(tok);
-    return isNotLibraryFunction(tok) && argumentChecks.find(funcname) != argumentChecks.end() ? 0 : getid(_alloc, funcname);
+    return isNotLibraryFunction(tok) && argumentChecks.find(funcname) != argumentChecks.end() ? 0 : getAllocDealloc(_alloc, funcname);
+}
+
+/** get deallocation info for function */
+const Library::AllocFunc* Library::dealloc(const Token *tok) const
+{
+    const std::string funcname = functionName(tok);
+    return isNotLibraryFunction(tok) && argumentChecks.find(funcname) != argumentChecks.end() ? 0 : getAllocDealloc(_dealloc, funcname);
+}
+
+/** get allocation id for function */
+int Library::alloc(const Token *tok, int arg) const
+{
+    const Library::AllocFunc* af = alloc(tok);
+    return (af && af->arg == arg) ? af->groupId : 0;
 }
 
 /** get deallocation id for function */
-int Library::dealloc(const Token *tok) const
+int Library::dealloc(const Token *tok, int arg) const
 {
-    const std::string funcname = functionName(tok);
-    return isNotLibraryFunction(tok) && argumentChecks.find(funcname) != argumentChecks.end() ? 0 : getid(_dealloc, funcname);
+    const Library::AllocFunc* af = dealloc(tok);
+    return (af && af->arg == arg) ? af->groupId : 0;
 }
 
 
@@ -874,13 +911,17 @@ bool Library::isNotLibraryFunction(const Token *ftok) const
     if (it == argumentChecks.end())
         return (callargs != 0);
     int args = 0;
+    int firstOptionalArg = -1;
     for (std::map<int, ArgumentChecks>::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
         if (it2->first > args)
             args = it2->first;
+        if (it2->second.optional && (firstOptionalArg == -1 || firstOptionalArg > it2->first))
+            firstOptionalArg = it2->first;
+
         if (it2->second.formatstr)
             return args > callargs;
     }
-    return args != callargs;
+    return (firstOptionalArg < 0) ? args != callargs : !(callargs >= firstOptionalArg-1 && callargs <= args);
 }
 
 const Library::WarnInfo* Library::getWarnInfo(const Token* ftok) const

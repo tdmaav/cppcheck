@@ -250,6 +250,8 @@ private:
         TEST_CASE(allocfunc13); // Ticket #4494 and #4540 - class function
         TEST_CASE(allocfunc14); // Use pointer before returning it
 
+        TEST_CASE(inlineFunction); // #3989 - inline function
+
         TEST_CASE(throw1);
         TEST_CASE(throw2);
 
@@ -2675,6 +2677,19 @@ private:
               "\n"
               "static void f() {\n"
               "    struct ABC *abc = newabc();\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void inlineFunction() { // #3989 - inline function
+        check("int test() {\n"
+              "  char *c;\n"
+              "  int ret() {\n"
+              "        free(c);\n"
+              "        return 0;\n"
+              "    }\n"
+              "    c = malloc(128);\n"
+              "    return ret();\n"
               "}");
         ASSERT_EQUALS("", errout.str());
     }
@@ -5962,6 +5977,8 @@ private:
         LOAD_LIB_2(settings.library, "windows.cfg");
 
         TEST_CASE(openfileNoLeak);
+        TEST_CASE(returnValueNotUsed_tfopen_s);
+        TEST_CASE(sendMessage);
     }
 
     void openfileNoLeak() {
@@ -5976,6 +5993,32 @@ private:
               "  int hFile = OpenFile(\"file\", &OfStr, OF_EXIST);"
               "}");
         TODO_ASSERT_EQUALS("", "[test.c:1]: (error) Resource leak: hFile\n", errout.str());
+    }
+
+    void returnValueNotUsed_tfopen_s() {
+        check("bool LoadFile(LPCTSTR filename) {\n"
+              "  FILE *fp = NULL;\n"
+              "  _tfopen_s(&fp, filename, _T(\"rb\"));\n"
+              "  if (!fp)\n"
+              "      return false;\n"
+              "  fclose(fp);\n"
+              "  return true;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("bool LoadFile(LPCTSTR filename) {\n"
+              "  FILE *fp = NULL;\n"
+              "  _tfopen_s(&fp, filename, _T(\"rb\"));\n"
+              "}");
+        TODO_ASSERT_EQUALS("[test.c:3]: (error) Resource leak: fp\n", "", errout.str());
+    }
+
+    void sendMessage() {
+        check("void SetFont() {\n"
+              "  HFONT hf = CreateFontIndirect(&lf);\n"
+              "  SendMessage(hwnd, WM_SETFONT, (WPARAM)hf, TRUE);\n" // We do not know what the handler for the message will do with 'hf', so it might be closed later
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 };
 

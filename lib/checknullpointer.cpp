@@ -162,6 +162,8 @@ bool CheckNullPointer::isPointerDeRef(const Token *tok, bool &unknown)
     const Token* parent = tok->astParent();
     if (!parent)
         return false;
+    if (parent->str() == "." && parent->astOperand2() == tok)
+        return isPointerDeRef(parent, unknown);
     const bool firstOperand = parent->astOperand1() == tok;
     while (parent->str() == "(" && (parent->astOperand2() == nullptr && parent->strAt(1) != ")")) { // Skip over casts
         parent = parent->astParent();
@@ -280,7 +282,7 @@ void CheckNullPointer::nullPointerLinkedList()
 
                 // Check usage of dereferenced variable in the loop..
                 for (std::list<Scope*>::const_iterator j = i->nestedList.begin(); j != i->nestedList.end(); ++j) {
-                    Scope* scope = *j;
+                    const Scope* const scope = *j;
                     if (scope->type != Scope::eWhile)
                         continue;
 

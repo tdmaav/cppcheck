@@ -34,6 +34,7 @@ private:
         TEST_CASE(function);
         TEST_CASE(function_match_scope);
         TEST_CASE(function_match_args);
+        TEST_CASE(function_match_args_default);
         TEST_CASE(function_match_var);
         TEST_CASE(function_arg);
         TEST_CASE(function_arg_any);
@@ -43,6 +44,7 @@ private:
         TEST_CASE(function_warn);
         TEST_CASE(memory);
         TEST_CASE(memory2); // define extra "free" allocation functions
+        TEST_CASE(memory3);
         TEST_CASE(resource);
         TEST_CASE(podtype);
         TEST_CASE(container);
@@ -125,11 +127,62 @@ private:
         TokenList tokenList(nullptr);
         std::istringstream istr("foo();"); // <- too few arguments, not library function
         tokenList.createTokens(istr);
-        tokenList.front()->next()->astOperand1(tokenList.front());
+        Token::createMutualLinks(tokenList.front()->next(), tokenList.back()->previous());
+        tokenList.createAst();
 
         Library library;
         readLibrary(library, xmldata);
         ASSERT(library.isNotLibraryFunction(tokenList.front()));
+    }
+
+    void function_match_args_default() const {
+        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                               "<def>\n"
+                               "  <function name=\"foo\">\n"
+                               "    <arg nr=\"1\"/>"
+                               "    <arg nr=\"2\" default=\"0\"/>"
+                               "  </function>\n"
+                               "</def>";
+
+        Library library;
+        readLibrary(library, xmldata);
+
+        {
+            TokenList tokenList(nullptr);
+            std::istringstream istr("foo();"); // <- too few arguments, not library function
+            tokenList.createTokens(istr);
+            Token::createMutualLinks(tokenList.front()->next(), tokenList.back()->previous());
+            tokenList.createAst();
+
+            ASSERT(library.isNotLibraryFunction(tokenList.front()));
+        }
+        {
+            TokenList tokenList(nullptr);
+            std::istringstream istr("foo(a);"); // <- library function
+            tokenList.createTokens(istr);
+            Token::createMutualLinks(tokenList.front()->next(), tokenList.back()->previous());
+            tokenList.createAst();
+
+            ASSERT(!library.isNotLibraryFunction(tokenList.front()));
+        }
+        {
+            TokenList tokenList(nullptr);
+            std::istringstream istr("foo(a, b);"); // <- library function
+            tokenList.createTokens(istr);
+            Token::createMutualLinks(tokenList.front()->next(), tokenList.back()->previous());
+            tokenList.createAst();
+
+            ASSERT(!library.isNotLibraryFunction(tokenList.front()));
+        }
+        {
+            TokenList tokenList(nullptr);
+            std::istringstream istr("foo(a, b, c);"); // <- too much arguments, not library function
+            tokenList.createTokens(istr);
+            Token::createMutualLinks(tokenList.front()->next(), tokenList.back()->previous());
+            tokenList.createAst();
+
+            ASSERT(library.isNotLibraryFunction(tokenList.front()));
+        }
     }
 
     void function_match_var() const {
@@ -159,7 +212,7 @@ private:
                                "    <arg nr=\"2\"><not-null/></arg>\n"
                                "    <arg nr=\"3\"><formatstr/></arg>\n"
                                "    <arg nr=\"4\"><strz/></arg>\n"
-                               "    <arg nr=\"5\"><not-bool/></arg>\n"
+                               "    <arg nr=\"5\" default=\"0\"><not-bool/></arg>\n"
                                "  </function>\n"
                                "</def>";
 
@@ -169,7 +222,9 @@ private:
         ASSERT_EQUALS(true, library.argumentChecks["foo"][2].notnull);
         ASSERT_EQUALS(true, library.argumentChecks["foo"][3].formatstr);
         ASSERT_EQUALS(true, library.argumentChecks["foo"][4].strz);
+        ASSERT_EQUALS(false, library.argumentChecks["foo"][4].optional);
         ASSERT_EQUALS(true, library.argumentChecks["foo"][5].notbool);
+        ASSERT_EQUALS(true, library.argumentChecks["foo"][5].optional);
     }
 
     void function_arg_any() const {
@@ -358,7 +413,11 @@ private:
         ASSERT(library.argumentChecks.empty());
 
         ASSERT(Library::ismemory(library.alloc("CreateX")));
-        ASSERT_EQUALS(library.alloc("CreateX"), library.dealloc("DeleteX"));
+        ASSERT_EQUALS(library.allocId("CreateX"), library.deallocId("DeleteX"));
+        const Library::AllocFunc* af = library.alloc("CreateX");
+        ASSERT(af && af->arg == -1);
+        const Library::AllocFunc* df = library.dealloc("DeleteX");
+        ASSERT(df && df->arg == 1);
     }
     void memory2() const {
         const char xmldata1[] = "<?xml version=\"1.0\"?>\n"
@@ -380,8 +439,30 @@ private:
         library.loadxmldata(xmldata1, sizeof(xmldata1));
         library.loadxmldata(xmldata2, sizeof(xmldata2));
 
-        ASSERT_EQUALS(library.dealloc("free"), library.alloc("malloc"));
-        ASSERT_EQUALS(library.dealloc("free"), library.alloc("foo"));
+        ASSERT_EQUALS(library.deallocId("free"), library.allocId("malloc"));
+        ASSERT_EQUALS(library.deallocId("free"), library.allocId("foo"));
+    }
+    void memory3() const {
+        const char xmldata[] = "<?xml version=\"1.0\"?>\n"
+                               "<def>\n"
+                               "  <memory>\n"
+                               "    <alloc arg=\"5\" init=\"false\">CreateX</alloc>\n"
+                               "    <dealloc arg=\"2\">DeleteX</dealloc>\n"
+                               "  </memory>\n"
+                               "</def>";
+
+        Library library;
+        readLibrary(library, xmldata);
+        ASSERT(library.use.empty());
+        ASSERT(library.leakignore.empty());
+        ASSERT(library.argumentChecks.empty());
+
+        const Library::AllocFunc* af = library.alloc("CreateX");
+        ASSERT(af && af->arg == 5);
+        const Library::AllocFunc* df = library.dealloc("DeleteX");
+        ASSERT(df && df->arg == 2);
+
+        ASSERT(library.returnuninitdata.find("CreateX") != library.returnuninitdata.cend());
     }
 
     void resource() const {
@@ -399,8 +480,8 @@ private:
         ASSERT(library.leakignore.empty());
         ASSERT(library.argumentChecks.empty());
 
-        ASSERT(Library::isresource(library.alloc("CreateX")));
-        ASSERT_EQUALS(library.alloc("CreateX"), library.dealloc("DeleteX"));
+        ASSERT(Library::isresource(library.allocId("CreateX")));
+        ASSERT_EQUALS(library.allocId("CreateX"), library.deallocId("DeleteX"));
     }
 
     void podtype() const {

@@ -86,7 +86,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                              tok2->next()->link()->strAt(1) == ";")
                         tok = tok2->next()->link()->next();
                     // skip variable declaration
-                    else if (Token::Match(tok2, "*|&"))
+                    else if (Token::Match(tok2, "*|&|>"))
                         continue;
                     else
                         break; // bail
@@ -333,6 +333,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
             else if (scope->type == Scope::eClass || scope->type == Scope::eStruct) {
                 const Token *funcStart = nullptr;
                 const Token *argStart = nullptr;
+                const Token *declEnd = nullptr;
 
                 // What section are we in..
                 if (tok->str() == "private:")
@@ -353,7 +354,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                 }
 
                 // class function?
-                else if (isFunction(tok, scope, &funcStart, &argStart)) {
+                else if (isFunction(tok, scope, &funcStart, &argStart, &declEnd)) {
                     if (tok->previous()->str() != "::") {
                         Function function;
 
@@ -440,11 +441,15 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
 
                         // find the return type
                         if (!function.isConstructor() && !function.isDestructor()) {
-                            while (tok1 && Token::Match(tok1->next(), "virtual|static|friend|const|struct|union|enum"))
-                                tok1 = tok1->next();
+                            if (argStart->link()->strAt(1) == ".") // Trailing return type
+                                function.retDef = argStart->link()->tokAt(2);
+                            else {
+                                while (tok1 && Token::Match(tok1->next(), "virtual|static|friend|const|struct|union|enum"))
+                                    tok1 = tok1->next();
 
-                            if (tok1)
-                                function.retDef = tok1;
+                                if (tok1)
+                                    function.retDef = tok1;
+                            }
                         }
 
                         const Token *end = function.argDef->link();
@@ -620,21 +625,12 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
             } else if (scope->type == Scope::eNamespace || scope->type == Scope::eGlobal) {
                 const Token *funcStart = nullptr;
                 const Token *argStart = nullptr;
+                const Token *declEnd = nullptr;
 
                 // function?
-                if (isFunction(tok, scope, &funcStart, &argStart)) {
-                    const Token* scopeBegin = argStart->link()->next();
-                    if (scopeBegin->isName()) { // Jump behind 'const' or unknown Macro
-                        scopeBegin = scopeBegin->next();
-                        if (_tokenizer->isCPP() && scopeBegin->str() == "throw")
-                            scopeBegin = scopeBegin->next();
-
-                        if (scopeBegin->link() && scopeBegin->str() == "(") // Jump behind unknown macro of type THROW(...)
-                            scopeBegin = scopeBegin->link()->next();
-                    }
-
+                if (isFunction(tok, scope, &funcStart, &argStart, &declEnd)) {
                     // has body?
-                    if (Token::Match(scopeBegin, "&|&&| {|:")) {
+                    if (declEnd && declEnd->str() == "{") {
                         tok = funcStart;
 
                         // class function
@@ -702,7 +698,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                             _tokenizer->syntaxError(tok);
                     }
                     // function prototype?
-                    else if (scopeBegin->str() == ";") {
+                    else if (declEnd && declEnd->str() == ";") {
                         bool newFunc = true; // Is this function already in the database?
                         for (std::multimap<std::string, const Function *>::const_iterator i = scope->functionMap.find(tok->str()); i != scope->functionMap.end() && i->first == tok->str(); ++i) {
                             if (Function::argsMatch(scope, i->second->argDef->next(), argStart->next(), "", 0)) {
@@ -751,7 +747,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                             }
                         }
 
-                        tok = scopeBegin;
+                        tok = declEnd;
                         continue;
                     }
                 }
@@ -892,8 +888,11 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                 const Token *type = func->retDef;
                 while (Token::Match(type, "static|const|struct|union|enum"))
                     type = type->next();
-                if (type)
-                    func->retType = findTypeInNested(type, func->nestedIn);
+                if (type) {
+                    func->retType = findVariableTypeInBase(&*it, type);
+                    if (!func->retType)
+                        func->retType = findTypeInNested(type, func->nestedIn);
+                }
             }
         }
     }
@@ -1074,19 +1073,19 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
         if (start != end && start->next() != end) {
             for (Token* tok = start->next(); tok != end; tok = tok->next()) {
                 if (tok->str() == "{") {
-                    bool break2 = false;
+                    bool isEndOfScope = false;
                     for (std::list<Scope*>::const_iterator innerScope = it->nestedList.begin(); innerScope != it->nestedList.end(); ++innerScope) {
                         if (tok == (*innerScope)->classStart) { // Is begin of inner scope
                             tok = tok->link();
                             if (!tok || tok->next() == end || !tok->next()) {
-                                break2 = true;
+                                isEndOfScope = true;
                                 break;
                             }
                             tok = tok->next();
                             break;
                         }
                     }
-                    if (break2)
+                    if (isEndOfScope)
                         break;
                 }
                 tok->scope(&*it);
@@ -1206,9 +1205,64 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
         }
     }
 
+    // fill in enumerators in enum
+    for (std::list<Scope>::iterator it = scopeList.begin(); it != scopeList.end(); ++it) {
+        if (it->type != Scope::eEnum)
+            continue;
+
+        // add enumerators to enumerator tokens
+        for (std::size_t i = 0, end = it->enumeratorList.size(); i < end; ++i)
+            const_cast<Token *>(it->enumeratorList[i].name)->enumerator(&it->enumeratorList[i]);
+    }
+
+    // fill in enumerator values
+    for (std::list<Scope>::iterator it = scopeList.begin(); it != scopeList.end(); ++it) {
+        if (it->type != Scope::eEnum)
+            continue;
+
+        MathLib::bigint value = 0;
+
+        for (std::size_t i = 0, end = it->enumeratorList.size(); i < end; ++i) {
+            Enumerator & enumerator = it->enumeratorList[i];
+
+            // look for initialization tokens that can be converted to enumerators and convert them
+            if (enumerator.start) {
+                for (const Token * tok3 = enumerator.start; tok3 && tok3 != enumerator.end->next(); tok3 = tok3->next()) {
+                    if (tok3->tokType() == Token::eName) {
+                        const Enumerator * e = findEnumerator(tok3);
+                        if (e)
+                            const_cast<Token *>(tok3)->enumerator(e);
+                    }
+                }
+
+                // look for possible constant folding expressions
+                if (enumerator.start) {
+                    // rhs of operator:
+                    const Token *rhs = enumerator.start->previous()->astOperand2();
+
+                    // constant folding of expression:
+                    ValueFlow::valueFlowConstantFoldAST(rhs, _settings);
+
+                    // get constant folded value:
+                    if (rhs && rhs->values.size() == 1U && rhs->values.front().isKnown()) {
+                        enumerator.value = rhs->values.front().intvalue;
+                        enumerator.value_known = true;
+                        value = enumerator.value + 1;
+                    }
+                }
+            }
+
+            // not initialized so use default value
+            else {
+                enumerator.value = value++;
+                enumerator.value_known = true;
+            }
+        }
+    }
+
     // find enumerators
     for (const Token* tok = _tokenizer->list.front(); tok != _tokenizer->list.back(); tok = tok->next()) {
-        if (!tok->isName() || tok->varId() || tok->function() || tok->type() || tok->enumerator())
+        if (tok->tokType() != Token::eName)
             continue;
         const Enumerator * enumerator = findEnumerator(tok);
         if (enumerator)
@@ -1284,25 +1338,16 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                     }
                     // check for qualified enumerator
                     else if (dimension.end) {
-                        if (dimension.end->enumerator()) {
-                            if (dimension.end->enumerator()->value_known) {
-                                dimension.num = dimension.end->enumerator()->value;
-                                dimension.known = true;
-                            }
-                        } else {
-                            // rhs of [
-                            const Token *rhs = dimension.start->previous()->astOperand2();
+                        // rhs of [
+                        const Token *rhs = dimension.start->previous()->astOperand2();
 
-                            if (rhs) {
-                                // constant folding of expression:
-                                ValueFlow::valueFlowConstantFoldAST(rhs);
+                        // constant folding of expression:
+                        ValueFlow::valueFlowConstantFoldAST(rhs, _settings);
 
-                                // get constant folded value:
-                                if (rhs->values.size() == 1U && rhs->values.front().isKnown()) {
-                                    dimension.num = rhs->values.front().intvalue;
-                                    dimension.known = true;
-                                }
-                            }
+                        // get constant folded value:
+                        if (rhs && rhs->values.size() == 1U && rhs->values.front().isKnown()) {
+                            dimension.num = rhs->values.front().intvalue;
+                            dimension.known = true;
                         }
                     }
                 }
@@ -1324,19 +1369,20 @@ SymbolDatabase::~SymbolDatabase()
     }
 }
 
-bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const Token **funcStart, const Token **argStart) const
+bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const Token **funcStart, const Token **argStart, const Token** declEnd) const
 {
     if (tok->varId())
         return false;
 
     // function returning function pointer? '... ( ... %name% ( ... ))( ... ) {'
-    if (tok->str() == "(" &&
+    if (tok->str() == "(" && tok->strAt(1) != "*" &&
         tok->link()->previous()->str() == ")") {
         const Token* tok2 = tok->link()->next();
         if (tok2 && tok2->str() == "(" && Token::Match(tok2->link()->next(), "{|;|const|=")) {
             const Token* argStartTok = tok->link()->previous()->link();
             *funcStart = argStartTok->previous();
             *argStart = argStartTok;
+            *declEnd = Token::findmatch(tok2->link()->next(), "{|;");
             return true;
         }
     }
@@ -1347,6 +1393,7 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
               tok->strAt(-1) == "::" || tok->strAt(-1) == "~" || // or a scope qualifier in front of tok
               outerScope->isClassOrStruct())) { // or a ctor/dtor
         const Token* tok1 = tok->previous();
+        const Token* tok2 = tok->next()->link()->next();
 
         // skip over destructor "~"
         if (tok1->str() == "~")
@@ -1360,6 +1407,22 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
                 tok1 = tok1->linkAt(-1)->tokAt(-2);
             else
                 tok1 = tok1->tokAt(-1);
+        }
+
+        // skip over const, noexcept, throw and override specifiers
+        while (Token::Match(tok2, "const|noexcept|throw|override")) {
+            tok2 = tok2->next();
+            if (tok2 && tok2->str() == "(")
+                tok2 = tok2->link()->next();
+        }
+
+        if (tok2 && tok2->str() == ".") {
+            for (tok2 = tok2->next(); tok2; tok2 = tok2->next()) {
+                if (Token::Match(tok2, ";|{|="))
+                    break;
+                if (tok2->link() && Token::Match(tok2, "<|[|("))
+                    tok2 = tok2->link();
+            }
         }
 
         // done if constructor or destructor
@@ -1404,21 +1467,16 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
                 return false;
         }
 
-        const Token* tok2 = tok->next()->link()->next();
         if (tok2 &&
-            (Token::Match(tok2, "const| ;|{|=") ||
+            (Token::Match(tok2, ";|{|=") ||
              (tok2->isUpperCaseName() && Token::Match(tok2, "%name% ;|{")) ||
              (tok2->isUpperCaseName() && Token::Match(tok2, "%name% (") && tok2->next()->link()->strAt(1) == "{") ||
              Token::Match(tok2, ": ::| %name% (|::|<|{") ||
-             Token::Match(tok2, "const| &|&&| ;|{") ||
-             Token::Match(tok2, "const| override ;|{") ||
-             Token::Match(tok2, "= delete|default ;") ||
-             Token::Match(tok2, "const| noexcept {|:|;|=") ||
-             (Token::Match(tok2, "const| noexcept|throw (") &&
-              tok2->str() == "const" ? (tok2->tokAt(2) && Token::Match(tok2->linkAt(2), ") const| {|:|;|=")) :
-              (tok2->next() && Token::Match(tok2->next()->link(), ") {|:|;|="))))) {
+             Token::Match(tok2, "&|&&| ;|{") ||
+             Token::Match(tok2, "= delete|default ;"))) {
             *funcStart = tok;
             *argStart = tok->next();
+            *declEnd = Token::findmatch(tok2, "{|;");
             return true;
         }
     }
@@ -1431,6 +1489,7 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
              (!tok->previous() || Token::Match(tok->previous(), "[;{}]"))) {
         *funcStart = tok;
         *argStart = tok->next();
+        *declEnd = tok->linkAt(1)->next();
         return true;
     }
 
@@ -1442,6 +1501,7 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
             Token::Match(tok->next()->link()->next()->link(), ") const| noexcept {|;|(")) {
             *funcStart = tok;
             *argStart = tok2->link();
+            *declEnd = Token::findmatch(tok2->next(), "{|;");
             return true;
         }
     }
@@ -1538,6 +1598,8 @@ void Variable::evaluate(const Library* lib)
             setFlag(fIsStatic, true);
         else if (tok->str() == "extern")
             setFlag(fIsExtern, true);
+        else if (tok->str() == "volatile")
+            setFlag(fIsVolatile, true);
         else if (tok->str() == "mutable")
             setFlag(fIsMutable, true);
         else if (tok->str() == "const")
@@ -1648,7 +1710,7 @@ bool Function::argsMatch(const Scope *scope, const Token *first, const Token *se
                     return !first && !second;
                 }
             } else if (!first) { // End of argument list (first)
-                return second->next() && second->next()->str() == ")";
+                return !second->nextArgument(); // End of argument list (second)
             }
         } else if (second->next()->str() == "=") {
             second = second->nextArgument();
@@ -1690,8 +1752,8 @@ bool Function::argsMatch(const Scope *scope, const Token *first, const Token *se
             break;
 
         // variable names are different
-        else if ((Token::Match(first->next(), "%name% ,|)|=") &&
-                  Token::Match(second->next(), "%name% ,|)")) &&
+        else if ((Token::Match(first->next(), "%name% ,|)|=|[") &&
+                  Token::Match(second->next(), "%name% ,|)|[")) &&
                  (first->next()->str() != second->next()->str())) {
             // skip variable names
             first = first->next();
@@ -1740,9 +1802,9 @@ bool Function::argsMatch(const Scope *scope, const Token *first, const Token *se
         second = second->next();
 
         // skip "struct"
-        if (first->str() == "struct")
+        if (first->str() == "struct" || first->str() == "enum")
             first = first->next();
-        if (second->str() == "struct")
+        if (second->str() == "struct" || second->str() == "enum")
             second = second->next();
 
         // skip const on type passed by value
@@ -1816,7 +1878,9 @@ Function* SymbolDatabase::addGlobalFunctionDecl(Scope*& scope, const Token *tok,
         tok1 = tok1->next();
     }
 
-    if (tok1)
+    if (function.argDef->link()->strAt(1) == ".")
+        function.retDef = function.argDef->link()->tokAt(2);
+    else if (tok1)
         function.retDef = tok1;
 
     scope->addFunction(function);
@@ -2112,7 +2176,7 @@ const Token *Type::initBaseInfo(const Token *tok, const Token *tok1)
 const std::string& Type::name() const
 {
     const Token* next = classDef->next();
-    if (isEnumType() && classScope && classScope->enumClass)
+    if (classScope && classScope->enumClass && isEnumType())
         return next->strAt(1);
     else if (next->isName())
         return next->str();
@@ -2323,7 +2387,7 @@ void SymbolDatabase::printVariable(const Variable *var, const char *indent) cons
     std::cout << indent << "    isStlType: " << var->isStlType() << std::endl;
     std::cout << indent << "_type: ";
     if (var->type()) {
-        std::cout << var->type()->name();
+        std::cout << var->type()->type() << " " << var->type()->name();
         std::cout << " " << _tokenizer->list.fileLine(var->type()->classDef);
         std::cout << " " << var->type() << std::endl;
     } else
@@ -2387,6 +2451,7 @@ void SymbolDatabase::printOut(const char *title) const
             std::cout << "        isOperator: " << func->isOperator() << std::endl;
             std::cout << "        hasLvalRefQual: " << func->hasLvalRefQualifier() << std::endl;
             std::cout << "        hasRvalRefQual: " << func->hasRvalRefQualifier() << std::endl;
+            std::cout << "        isVariadic: " << func->isVariadic() << std::endl;
             std::cout << "        attributes:";
             if (func->isAttributeConst())
                 std::cout << " const ";
@@ -2701,10 +2766,12 @@ void Function::addArguments(const SymbolDatabase *symbolDatabase, const Scope *s
                     return;
             } while (tok->str() != "," && tok->str() != ")" && tok->str() != "=");
 
-            const Token *typeTok = startTok->tokAt(startTok->str() == "const" ? 1 : 0);
-            if (typeTok->str() == "struct" || typeTok->str() == "enum")
+            const Token *typeTok = startTok;
+            // skip over stuff to get to type
+            while (Token::Match(typeTok, "const|enum|struct|::"))
                 typeTok = typeTok->next();
-            if (Token::Match(typeTok, "%type% ::"))
+            // skip over qualification
+            while (Token::Match(typeTok, "%type% ::"))
                 typeTok = typeTok->tokAt(2);
 
             // check for argument with no name or missing varid
@@ -2739,10 +2806,19 @@ void Function::addArguments(const SymbolDatabase *symbolDatabase, const Scope *s
                 } while (tok->str() != "," && tok->str() != ")");
             }
 
+            // skip over stuff before type
+            while (Token::Match(startTok, "enum|struct|const"))
+                startTok = startTok->next();
+
             argumentList.push_back(Variable(nameTok, startTok, endTok, count++, Argument, argType, functionScope, &symbolDatabase->_settings->library));
 
-            if (tok->str() == ")")
+            if (tok->str() == ")") {
+                // check for a variadic function
+                if (Token::simpleMatch(startTok, ". . ."))
+                    isVariadic(true);
+
                 break;
+            }
         }
 
         // count default arguments
@@ -2789,7 +2865,9 @@ bool Function::isImplicitlyVirtual_rec(const ::Type* baseType, bool& safe) const
 
                     // check for matching return parameters
                     while (temp1->str() != "virtual") {
-                        if (temp1->str() != temp2->str()) {
+                        if (temp1->str() != temp2->str() &&
+                            !(temp1->str() == derivedFromType->name() &&
+                              temp2->str() == baseType->name())) {
                             returnMatch = false;
                             break;
                         }
@@ -3096,6 +3174,10 @@ const Token *Scope::checkVariable(const Token *tok, AccessControl varaccess, con
             const_cast<Token *>(typetok)->type(vType);
         }
 
+        // skip "enum" or "struct"
+        if (Token::Match(typestart, "enum|struct"))
+            typestart = typestart->next();
+
         addVariable(vartok, typestart, vartok->previous(), varaccess, vType, this, lib);
     }
 
@@ -3256,79 +3338,12 @@ const Token * Scope::addEnum(const Token * tok, bool isCpp)
         if (tok2 == end) {
             tok2 = tok2->next();
 
-            if (tok2->str() != ";")
+            if (tok2 && tok2->str() != ";")
                 tok2 = nullptr;
         } else
             tok2 = nullptr;
     } else
         tok2 = nullptr;
-
-    if (tok2) {
-        // add enumerators to enumerator tokens
-        for (std::size_t i = 0, end = enumeratorList.size(); i < end; ++i)
-            const_cast<Token *>(enumeratorList[i].name)->enumerator(&enumeratorList[i]);
-
-        MathLib::bigint value = 0;
-
-        // fill in enumerator values
-        for (std::size_t i = 0, end = enumeratorList.size(); i < end; ++i) {
-            Enumerator & enumerator = enumeratorList[i];
-
-            // look for initialization tokens that can be converted to enumerators and convert them
-            if (enumerator.start) {
-                for (const Token * tok3 = enumerator.start; tok3 && tok3 != enumerator.end->next(); tok3 = tok3->next()) {
-                    if (tok3->tokType() == Token::eName) {
-                        const Enumerator * e = findEnumerator(tok3->str());
-                        if (e)
-                            const_cast<Token *>(tok3)->enumerator(e);
-                    }
-                }
-
-                // look for single token enumerators
-                if (enumerator.start == enumerator.end) {
-                    // check if token is a number
-                    if (enumerator.start->isNumber()) {
-                        enumerator.value = MathLib::toLongNumber(enumerator.start->str());
-                        enumerator.value_known = true;
-                        value = enumerator.value + 1;
-                    }
-
-                    // check if token is an enumerator
-                    else if (enumerator.start->isEnumerator()) {
-                        if (enumerator.start->enumerator()->value_known) {
-                            enumerator.value = enumerator.start->enumerator()->value;
-                            enumerator.value_known = true;
-                            value = enumerator.value + 1;
-                        }
-                    }
-                }
-
-                // look for possible constant folding expressions
-                else if (enumerator.start) {
-                    // rhs of operator:
-                    const Token *rhs = enumerator.start->previous()->astOperand2();
-
-                    if (rhs) {
-                        // constant folding of expression:
-                        ValueFlow::valueFlowConstantFoldAST(rhs);
-
-                        // get constant folded value:
-                        if (rhs->values.size() == 1U && rhs->values.front().isKnown()) {
-                            enumerator.value = rhs->values.front().intvalue;
-                            enumerator.value_known = true;
-                            value = enumerator.value + 1;
-                        }
-                    }
-                }
-            }
-
-            // not initialized so use default value
-            else {
-                enumerator.value = value++;
-                enumerator.value_known = true;
-            }
-        }
-    }
 
     return tok2;
 }
@@ -3432,7 +3447,7 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok) const
 
 //---------------------------------------------------------------------------
 
-static const Type* findVariableTypeInBase(const Scope* scope, const Token* typeTok)
+const Type* SymbolDatabase::findVariableTypeInBase(const Scope* scope, const Token* typeTok) const
 {
     if (scope && scope->definedType && !scope->definedType->derivedFrom.empty()) {
         for (std::size_t i = 0; i < scope->definedType->derivedFrom.size(); ++i) {
@@ -3441,87 +3456,129 @@ static const Type* findVariableTypeInBase(const Scope* scope, const Token* typeT
                 const Type * type = base->classScope->findType(typeTok->str());
                 if (type)
                     return type;
+                type = findVariableTypeInBase(base->classScope, typeTok);
+                if (type)
+                    return type;
             }
         }
     }
-    return nullptr;
-}
-
-const Type* SymbolDatabase::findVariableType(const Scope *start, const Token *typeTok) const
-{
-    // check if type does not have a namespace
-    if (typeTok->strAt(-1) != "::" && typeTok->strAt(1) != "::") {
-        const Scope *scope = start;
-
-        // check if in member function class to see if it's present in base class
-        while (scope && scope->isExecutable() && scope->type != Scope::eFunction) {
-            scope = scope->nestedIn;
-
-            if (scope && scope->type == Scope::eFunction && scope->functionOf) {
-                scope = scope->functionOf;
-                break;
-            }
-        }
-
-        const Type * type = findVariableTypeInBase(scope, typeTok);
-
-        if (type)
-            return type;
-    }
-
-    std::list<Type>::const_iterator type;
-
-    for (type = typeList.begin(); type != typeList.end(); ++type) {
-        // do the names match?
-        if (type->name() != typeTok->str())
-            continue;
-
-        // check if type does not have a namespace
-        if (typeTok->strAt(-1) != "::") {
-            const Scope *parent = start;
-
-            // check if in same namespace
-            while (parent) {
-                // out of line class function belongs to class
-                if (parent->type == Scope::eFunction && parent->functionOf)
-                    parent = parent->functionOf;
-                else if (parent != type->enclosingScope)
-                    parent = parent->nestedIn;
-                else
-                    break;
-            }
-
-            if (type->enclosingScope == parent)
-                return &(*type);
-        }
-
-        // type has a namespace
-        else {
-            bool match = true;
-            const Scope *scope = type->enclosingScope;
-            const Token *typeTok2 = typeTok->tokAt(-2);
-            while (match && scope && Token::Match(typeTok2, "%any% ::")) {
-                // A::B..
-                if (typeTok2->isName() && typeTok2->str().find(":") == std::string::npos) {
-                    match &= bool(scope->className == typeTok2->str());
-                    typeTok2 = typeTok2->tokAt(-2);
-                    scope = scope->nestedIn;
-                } else {
-                    // ::A..
-                    match &= bool(scope->type == Scope::eGlobal);
-                    break;
-                }
-            }
-
-            if (match)
-                return &(*type);
-        }
-    }
-
     return nullptr;
 }
 
 //---------------------------------------------------------------------------
+
+const Type* SymbolDatabase::findVariableType(const Scope *start, const Token *typeTok) const
+{
+    const Scope *scope = start;
+
+    // check if type does not have a namespace
+    if (typeTok->strAt(-1) != "::" && typeTok->strAt(1) != "::") {
+        while (scope) {
+            // look for type in this scope
+            const Type * type = scope->findType(typeTok->str());
+
+            if (type)
+                return type;
+
+            // look for type in base classes if possible
+            if (scope->isClassOrStruct()) {
+                type = findVariableTypeInBase(scope, typeTok);
+
+                if (type)
+                    return type;
+            }
+
+            // check if in member function class to see if it's present in class
+            if (scope->type == Scope::eFunction && scope->functionOf) {
+                const Scope *scope1 = scope->functionOf;
+
+                type = scope1->findType(typeTok->str());
+
+                if (type)
+                    return type;
+
+                type = findVariableTypeInBase(scope1, typeTok);
+
+                if (type)
+                    return type;
+            }
+
+            scope = scope->nestedIn;
+        }
+    }
+
+    // check for a qualified name and use it when given
+    else if (typeTok->strAt(-1) == "::") {
+        // check if type is not part of qualification
+        if (typeTok->strAt(1) == "::")
+            return nullptr;
+
+        // find start of qualified function name
+        const Token *tok1 = typeTok;
+
+        while (Token::Match(tok1->tokAt(-2), "%type% ::"))
+            tok1 = tok1->tokAt(-2);
+
+        // check for global scope
+        if (tok1->strAt(-1) == "::") {
+            scope = &scopeList.front();
+
+            scope = scope->findRecordInNestedList(tok1->str());
+        }
+
+        // find start of qualification
+        else {
+            while (scope) {
+                if (scope->className == tok1->str())
+                    break;
+                else {
+                    const Scope *scope1 = scope->findRecordInNestedList(tok1->str());
+
+                    if (scope1) {
+                        scope = scope1;
+                        break;
+                    } else
+                        scope = scope->nestedIn;
+                }
+            }
+        }
+
+        if (scope) {
+            // follow qualification
+            while (scope && Token::Match(tok1, "%type% ::")) {
+                tok1 = tok1->tokAt(2);
+                const Scope * temp = scope->findRecordInNestedList(tok1->str());
+                if (!temp) {
+                    // look in base classes
+                    const Type * type = findVariableTypeInBase(scope, tok1);
+
+                    if (type)
+                        return type;
+                }
+                scope = temp;
+            }
+
+            if (scope && scope->definedType)
+                return scope->definedType;
+        }
+    }
+
+    return nullptr;
+}
+
+bool Scope::hasInlineOrLambdaFunction() const
+{
+    for (std::list<Scope*>::const_iterator it = nestedList.begin(); it != nestedList.end(); ++it) {
+        const Scope *s = *it;
+        // Inline function
+        if (s->type == Scope::eUnconditional && Token::simpleMatch(s->classStart->previous(), ") {"))
+            return true;
+        // Lambda function
+        if (s->type == Scope::eLambda)
+            return true;
+    }
+    return false;
+}
 
 void Scope::findFunctionInBase(const std::string & name, size_t args, std::vector<const Function *> & matches) const
 {
@@ -3573,7 +3630,9 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst) const
     const std::size_t args = arguments.size();
     for (std::multimap<std::string, const Function *>::const_iterator it = functionMap.find(tok->str()); it != functionMap.end() && it->first == tok->str(); ++it) {
         const Function *func = it->second;
-        if (args == func->argCount() || (args < func->argCount() && args >= func->minArgCount())) {
+        if (args == func->argCount() ||
+            (func->isVariadic() && args >= (func->argCount() - 1)) ||
+            (args < func->argCount() && args >= func->minArgCount())) {
             matches.push_back(func);
         }
     }
@@ -3587,6 +3646,10 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst) const
         const Function * func = matches[i];
         size_t same = 0;
         for (std::size_t j = 0; j < args; ++j) {
+            // don't check variadic arguments
+            if (func->isVariadic() && j > (func->argCount() - 1)) {
+                break;
+            }
             const Variable *funcarg = func->getArgumentVar(j);
             // check for a match with a variable
             if (Token::Match(arguments[j], "%var% ,|)")) {
@@ -3596,6 +3659,25 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst) const
                     callarg->typeStartToken()->isUnsigned() == funcarg->typeStartToken()->isUnsigned() &&
                     callarg->typeStartToken()->isLong() == funcarg->typeStartToken()->isLong()) {
                     same++;
+                }
+            }
+
+            // check for a match with address of a variable
+            else if (Token::Match(arguments[j], "& %var% ,|)")) {
+                const Variable * callarg = check->getVariableFromVarId(arguments[j]->next()->varId());
+                if (callarg) {
+                    if (funcarg->typeEndToken()->str() == "*" &&
+                        (funcarg->typeStartToken()->str() == "void" ||
+                         (callarg->typeStartToken()->str() == funcarg->typeStartToken()->str() &&
+                          callarg->typeStartToken()->isUnsigned() == funcarg->typeStartToken()->isUnsigned() &&
+                          callarg->typeStartToken()->isLong() == funcarg->typeStartToken()->isLong()))) {
+                        same++;
+                    } else {
+                        // can't match so remove this function from possible matches
+                        matches.erase(matches.begin() + i);
+                        erased = true;
+                        break;
+                    }
                 }
             }
 
@@ -3671,6 +3753,14 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst) const
                 }
             }
 
+            // check for a match with a string literal
+            else if (Token::Match(arguments[j], "%str% ,|)") &&
+                     funcarg->typeStartToken() != funcarg->typeEndToken() &&
+                     ((!arguments[j]->isLong() && Token::simpleMatch(funcarg->typeStartToken(), "char *")) ||
+                      (arguments[j]->isLong() && Token::simpleMatch(funcarg->typeStartToken(), "wchar_t *")))) {
+                same++;
+            }
+
             // check that function argument type is not mismatching
             else if (arguments[j]->str() == "&" && funcarg && funcarg->isReference()) {
                 // can't match so remove this function from possible matches
@@ -3681,7 +3771,8 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst) const
         }
 
         // check if all arguments matched
-        if (same == args) {
+        if ((func->isVariadic() && same == (func->argCount() - 1)) ||
+            (!func->isVariadic() && same == args)) {
             if (requireConst && func->isConst())
                 return func;
 
@@ -4074,19 +4165,35 @@ bool SymbolDatabase::isReservedName(const std::string& iName) const
         return c_keywords.find(iName) != c_keywords.cend();
 }
 
-static const Token * parsedecl(const Token *type, ValueType * const valuetype, ValueType::Sign defaultSignedness, const Library* lib);
-static void setValueType(Token *tok, const ValueType &valuetype, bool cpp, ValueType::Sign defaultSignedness, const Library* lib);
-
-static void setValueType(Token *tok, const Variable &var, bool cpp, ValueType::Sign defaultSignedness, const Library* lib)
+unsigned int SymbolDatabase::sizeOfType(const Token *type) const
 {
+    unsigned int size = _tokenizer->sizeOfType(type);
+
+    if (size == 0 && type->type() && type->type()->isEnumType() && type->type()->classScope) {
+        size = _settings->sizeof_int;
+        const Token * enum_type = type->type()->classScope->enumType;
+        if (enum_type)
+            size = _tokenizer->sizeOfType(enum_type);
+    }
+
+    return size;
+}
+
+static const Token * parsedecl(const Token *type, ValueType * const valuetype, ValueType::Sign defaultSignedness, const Settings* settings);
+static void setValueType(Token *tok, const ValueType &valuetype, bool cpp, ValueType::Sign defaultSignedness, const Settings* settings);
+
+static void setValueType(Token *tok, const Variable &var, bool cpp, ValueType::Sign defaultSignedness, const Settings* settings)
+{
+    if (var.isStlType())
+        return;
     ValueType valuetype;
     valuetype.pointer = var.dimensions().size();
     valuetype.typeScope = var.typeScope();
-    if (parsedecl(var.typeStartToken(), &valuetype, defaultSignedness, lib))
-        setValueType(tok, valuetype, cpp, defaultSignedness, lib);
+    if (parsedecl(var.typeStartToken(), &valuetype, defaultSignedness, settings))
+        setValueType(tok, valuetype, cpp, defaultSignedness, settings);
 }
 
-static void setValueType(Token *tok, const Enumerator &enumerator, bool cpp, ValueType::Sign defaultSignedness, const Library* lib)
+static void setValueType(Token *tok, const Enumerator &enumerator, bool cpp, ValueType::Sign defaultSignedness, const Settings* settings)
 {
     ValueType valuetype;
     valuetype.typeScope = enumerator.scope;
@@ -4108,22 +4215,18 @@ static void setValueType(Token *tok, const Enumerator &enumerator, bool cpp, Val
         else if (type->str() == "long")
             valuetype.type = type->isLong() ? ValueType::Type::LONGLONG : ValueType::Type::LONG;
         else if (type->isStandardType()) {
-            const Library::PodType* podtype = lib->podtype(type->str());
-            if (podtype && (podtype->sign == 's' || podtype->sign == 'u')) {
-                valuetype.type = ValueType::Type::UNKNOWN_INT;
-                valuetype.sign = (podtype->sign == 'u') ? ValueType::UNSIGNED : ValueType::SIGNED;
-            }
+            valuetype.fromLibraryType(type->str(), settings);
         }
 
-        setValueType(tok, valuetype, cpp, defaultSignedness, lib);
+        setValueType(tok, valuetype, cpp, defaultSignedness, settings);
     } else {
         valuetype.sign = ValueType::SIGNED;
         valuetype.type = ValueType::INT;
-        setValueType(tok, valuetype, cpp, defaultSignedness, lib);
+        setValueType(tok, valuetype, cpp, defaultSignedness, settings);
     }
 }
 
-static void setValueType(Token *tok, const ValueType &valuetype, bool cpp, ValueType::Sign defaultSignedness, const Library* lib)
+static void setValueType(Token *tok, const ValueType &valuetype, bool cpp, ValueType::Sign defaultSignedness, const Settings* settings)
 {
     tok->setValueType(new ValueType(valuetype));
     Token *parent = const_cast<Token *>(tok->astParent());
@@ -4137,32 +4240,32 @@ static void setValueType(Token *tok, const ValueType &valuetype, bool cpp, Value
 
     if (vt1 && Token::Match(parent, "<<|>>")) {
         if (!cpp || (vt2 && vt2->isIntegral()))
-            setValueType(parent, *vt1, cpp, defaultSignedness, lib);
+            setValueType(parent, *vt1, cpp, defaultSignedness, settings);
         return;
     }
 
     if (parent->isAssignmentOp()) {
         if (vt1)
-            setValueType(parent, *vt1, cpp, defaultSignedness, lib);
+            setValueType(parent, *vt1, cpp, defaultSignedness, settings);
         return;
     }
 
-    if (parent->str() == "[" && valuetype.pointer > 0U) {
+    if (parent->str() == "[" && (!cpp || parent->astOperand1() == tok) && valuetype.pointer > 0U) {
         ValueType vt(valuetype);
         vt.pointer -= 1U;
-        setValueType(parent, vt, cpp, defaultSignedness, lib);
+        setValueType(parent, vt, cpp, defaultSignedness, settings);
         return;
     }
     if (parent->str() == "*" && !parent->astOperand2() && valuetype.pointer > 0U) {
         ValueType vt(valuetype);
         vt.pointer -= 1U;
-        setValueType(parent, vt, cpp, defaultSignedness, lib);
+        setValueType(parent, vt, cpp, defaultSignedness, settings);
         return;
     }
     if (parent->str() == "&" && !parent->astOperand2()) {
         ValueType vt(valuetype);
         vt.pointer += 1U;
-        setValueType(parent, vt, cpp, defaultSignedness, lib);
+        setValueType(parent, vt, cpp, defaultSignedness, settings);
         return;
     }
 
@@ -4182,7 +4285,7 @@ static void setValueType(Token *tok, const ValueType &valuetype, bool cpp, Value
             }
         }
         if (var)
-            setValueType(parent, *var, cpp, defaultSignedness, lib);
+            setValueType(parent, *var, cpp, defaultSignedness, settings);
         return;
     }
 
@@ -4197,33 +4300,33 @@ static void setValueType(Token *tok, const ValueType &valuetype, bool cpp, Value
 
     if (ternary || parent->isArithmeticalOp() || parent->tokType() == Token::eIncDecOp) {
         if (vt1->pointer != 0U && vt2 && vt2->pointer == 0U) {
-            setValueType(parent, *vt1, cpp, defaultSignedness, lib);
+            setValueType(parent, *vt1, cpp, defaultSignedness, settings);
             return;
         }
 
         if (vt1->pointer == 0U && vt2 && vt2->pointer != 0U) {
-            setValueType(parent, *vt2, cpp, defaultSignedness, lib);
+            setValueType(parent, *vt2, cpp, defaultSignedness, settings);
             return;
         }
 
         if (vt1->pointer != 0U) {
             if (ternary || parent->tokType() == Token::eIncDecOp) // result is pointer
-                setValueType(parent, *vt1, cpp, defaultSignedness, lib);
+                setValueType(parent, *vt1, cpp, defaultSignedness, settings);
             else // result is pointer diff
-                setValueType(parent, ValueType(ValueType::Sign::SIGNED, ValueType::Type::INT, 0U, 0U, "ptrdiff_t"), cpp, defaultSignedness, lib);
+                setValueType(parent, ValueType(ValueType::Sign::SIGNED, ValueType::Type::INT, 0U, 0U, "ptrdiff_t"), cpp, defaultSignedness, settings);
             return;
         }
 
         if (vt1->type == ValueType::Type::LONGDOUBLE || (vt2 && vt2->type == ValueType::Type::LONGDOUBLE)) {
-            setValueType(parent, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::LONGDOUBLE, 0U), cpp, defaultSignedness, lib);
+            setValueType(parent, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::LONGDOUBLE, 0U), cpp, defaultSignedness, settings);
             return;
         }
         if (vt1->type == ValueType::Type::DOUBLE || (vt2 && vt2->type == ValueType::Type::DOUBLE)) {
-            setValueType(parent, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::DOUBLE, 0U), cpp, defaultSignedness, lib);
+            setValueType(parent, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::DOUBLE, 0U), cpp, defaultSignedness, settings);
             return;
         }
         if (vt1->type == ValueType::Type::FLOAT || (vt2 && vt2->type == ValueType::Type::FLOAT)) {
-            setValueType(parent, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::FLOAT, 0U), cpp, defaultSignedness, lib);
+            setValueType(parent, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::FLOAT, 0U), cpp, defaultSignedness, settings);
             return;
         }
     }
@@ -4257,12 +4360,12 @@ static void setValueType(Token *tok, const ValueType &valuetype, bool cpp, Value
             vt.originalTypeName.clear();
         }
 
-        setValueType(parent, vt, cpp, defaultSignedness, lib);
+        setValueType(parent, vt, cpp, defaultSignedness, settings);
         return;
     }
 }
 
-static const Token * parsedecl(const Token *type, ValueType * const valuetype, ValueType::Sign defaultSignedness, const Library* lib)
+static const Token * parsedecl(const Token *type, ValueType * const valuetype, ValueType::Sign defaultSignedness, const Settings* settings)
 {
     const unsigned int pointer0 = valuetype->pointer;
     while (Token::Match(type->previous(), "%name%"))
@@ -4299,17 +4402,15 @@ static const Token * parsedecl(const Token *type, ValueType * const valuetype, V
             valuetype->type = type->isLong() ? ValueType::Type::LONGDOUBLE : ValueType::Type::DOUBLE;
         else if (!valuetype->typeScope && (type->str() == "struct" || type->str() == "enum"))
             valuetype->type = ValueType::Type::NONSTD;
-        else if (type->isName() && valuetype->sign != ValueType::Sign::UNKNOWN_SIGN && valuetype->pointer == 0U)
+        else if (!valuetype->typeScope && type->type() && type->type()->classScope) {
+            valuetype->type = ValueType::Type::NONSTD;
+            valuetype->typeScope = type->type()->classScope;
+        } else if (type->isName() && valuetype->sign != ValueType::Sign::UNKNOWN_SIGN && valuetype->pointer == 0U)
             return nullptr;
         else if (type->str() == "*")
             valuetype->pointer++;
-        else if (type->isStandardType()) {
-            const Library::PodType* podtype = lib->podtype(type->str());
-            if (podtype && (podtype->sign == 's' || podtype->sign == 'u')) {
-                valuetype->type = ValueType::Type::UNKNOWN_INT;
-                valuetype->sign = (podtype->sign == 'u') ? ValueType::UNSIGNED : ValueType::SIGNED;
-            }
-        }
+        else if (type->isStandardType())
+            valuetype->fromLibraryType(type->str(), settings);
         if (!type->originalName().empty())
             valuetype->originalTypeName = type->originalName();
         type = type->next();
@@ -4326,12 +4427,42 @@ static const Token * parsedecl(const Token *type, ValueType * const valuetype, V
     return (type && (valuetype->type != ValueType::Type::UNKNOWN_TYPE || valuetype->pointer > 0)) ? type : nullptr;
 }
 
-void SymbolDatabase::setValueTypeInTokenList(Token *tokens, bool cpp, char defaultSignedness, const Library* lib)
+static const Scope *getClassScope(const Token *tok)
+{
+    return tok && tok->valueType() && tok->valueType()->typeScope && tok->valueType()->typeScope->isClassOrStruct() ?
+           tok->valueType()->typeScope :
+           nullptr;
+}
+
+static const Function *getOperatorFunction(const Token * const tok)
+{
+    const std::string functionName("operator" + tok->str());
+    std::multimap<std::string, const Function *>::const_iterator it;
+    const Scope *classScope;
+
+    classScope = getClassScope(tok->astOperand1());
+    if (classScope) {
+        it = classScope->functionMap.find(functionName);
+        if (it != classScope->functionMap.end())
+            return it->second;
+    }
+
+    classScope = getClassScope(tok->astOperand2());
+    if (classScope) {
+        it = classScope->functionMap.find(functionName);
+        if (it != classScope->functionMap.end())
+            return it->second;
+    }
+
+    return nullptr;
+}
+
+void SymbolDatabase::setValueTypeInTokenList(Token *tokens, bool cpp, const Settings* settings)
 {
     ValueType::Sign defsign;
-    if (defaultSignedness == 's' || defaultSignedness == 'S')
+    if (settings->defaultSign == 's' || settings->defaultSign == 'S')
         defsign = ValueType::SIGNED;
-    else if (defaultSignedness == 'u' || defaultSignedness == 'U')
+    else if (settings->defaultSign == 'u' || settings->defaultSign == 'U')
         defsign = ValueType::UNSIGNED;
     else
         defsign = ValueType::UNKNOWN_SIGN;
@@ -4346,66 +4477,132 @@ void SymbolDatabase::setValueTypeInTokenList(Token *tokens, bool cpp, char defau
                 const char suffix = tok->str()[tok->str().size() - 1U];
                 if (suffix == 'f' || suffix == 'F')
                     type = ValueType::Type::FLOAT;
-                ::setValueType(tok, ValueType(ValueType::Sign::UNKNOWN_SIGN, type, 0U), cpp, defsign, lib);
+                ::setValueType(tok, ValueType(ValueType::Sign::UNKNOWN_SIGN, type, 0U), cpp, defsign, settings);
             } else if (MathLib::isInt(tok->str())) {
                 ValueType::Sign sign = ValueType::Sign::SIGNED;
                 ValueType::Type type = ValueType::Type::INT;
                 if (MathLib::isIntHex(tok->str()))
                     sign = ValueType::Sign::UNSIGNED;
-                for (unsigned int pos = tok->str().size() - 1U; pos > 0U && std::isalpha(tok->str()[pos]); --pos) {
+                for (std::size_t pos = tok->str().size() - 1U; pos > 0U; --pos) {
                     const char suffix = tok->str()[pos];
                     if (suffix == 'u' || suffix == 'U')
                         sign = ValueType::Sign::UNSIGNED;
-                    if (suffix == 'l' || suffix == 'L')
+                    else if (suffix == 'l' || suffix == 'L')
                         type = (type == ValueType::Type::INT) ? ValueType::Type::LONG : ValueType::Type::LONGLONG;
+                    else if (pos > 2U && suffix == '4' && tok->str()[pos - 1] == '6' && tok->str()[pos - 2] == 'i') {
+                        type = ValueType::Type::LONGLONG;
+                        pos -= 2;
+                    } else break;
                 }
-                ::setValueType(tok, ValueType(sign, type, 0U), cpp, defsign, lib);
+                ::setValueType(tok, ValueType(sign, type, 0U), cpp, defsign, settings);
             }
-        } else if (tok->isComparisonOp() || tok->tokType() == Token::eLogicalOp)
-            ::setValueType(tok, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::BOOL, 0U), cpp, defsign, lib);
-        else if (tok->tokType() == Token::eChar)
-            ::setValueType(tok, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::CHAR, 0U), cpp, defsign, lib);
+        } else if (tok->isComparisonOp() || tok->tokType() == Token::eLogicalOp) {
+            if (cpp && tok->isComparisonOp() && (getClassScope(tok->astOperand1()) || getClassScope(tok->astOperand2()))) {
+                const Function *function = getOperatorFunction(tok);
+                if (function) {
+                    ValueType vt;
+                    parsedecl(function->retDef, &vt, defsign, settings);
+                    ::setValueType(tok, vt, cpp, defsign, settings);
+                    continue;
+                }
+            }
+            ::setValueType(tok, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::BOOL, 0U), cpp, defsign, settings);
+        } else if (tok->tokType() == Token::eChar)
+            ::setValueType(tok, ValueType(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::CHAR, 0U), cpp, defsign, settings);
         else if (tok->tokType() == Token::eString) {
             ValueType valuetype(ValueType::Sign::UNKNOWN_SIGN, ValueType::Type::CHAR, 1U, 1U);
             if (tok->isLong()) {
                 valuetype.originalTypeName = "wchar_t";
                 valuetype.type = ValueType::Type::SHORT;
             }
-            ::setValueType(tok, valuetype, cpp, defsign, lib);
+            ::setValueType(tok, valuetype, cpp, defsign, settings);
         } else if (tok->str() == "(") {
             // cast
             if (!tok->astOperand2() && Token::Match(tok, "( %name%")) {
                 ValueType valuetype;
-                if (Token::simpleMatch(parsedecl(tok->next(), &valuetype, defsign, lib), ")"))
-                    ::setValueType(tok, valuetype, cpp, defsign, lib);
+                if (Token::simpleMatch(parsedecl(tok->next(), &valuetype, defsign, settings), ")"))
+                    ::setValueType(tok, valuetype, cpp, defsign, settings);
             }
 
             // C++ cast
             if (tok->astOperand2() && Token::Match(tok->astOperand1(), "static_cast|const_cast|dynamic_cast|reinterpret_cast < %name%") && tok->astOperand1()->linkAt(1)) {
                 ValueType valuetype;
-                if (Token::simpleMatch(parsedecl(tok->astOperand1()->tokAt(2), &valuetype, defsign, lib), ">"))
-                    ::setValueType(tok, valuetype, cpp, defsign, lib);
+                if (Token::simpleMatch(parsedecl(tok->astOperand1()->tokAt(2), &valuetype, defsign, settings), ">"))
+                    ::setValueType(tok, valuetype, cpp, defsign, settings);
             }
 
             // function
             else if (tok->previous() && tok->previous()->function() && tok->previous()->function()->retDef) {
                 ValueType valuetype;
-                if (Token::simpleMatch(parsedecl(tok->previous()->function()->retDef, &valuetype, defsign, lib), "("))
-                    ::setValueType(tok, valuetype, cpp, defsign, lib);
+                if (parsedecl(tok->previous()->function()->retDef, &valuetype, defsign, settings))
+                    ::setValueType(tok, valuetype, cpp, defsign, settings);
             }
 
             else if (Token::simpleMatch(tok->previous(), "sizeof (")) {
                 // TODO: use specified size_t type
                 ValueType valuetype(ValueType::Sign::UNSIGNED, ValueType::Type::LONG, 0U);
                 valuetype.originalTypeName = "size_t";
-                setValueType(tok, valuetype, cpp, defsign, lib);
+                setValueType(tok, valuetype, cpp, defsign, settings);
+
+                if (Token::Match(tok, "( %type% %type%| *| *| )")) {
+                    ValueType vt;
+                    if (parsedecl(tok->next(), &vt, defsign, settings)) {
+                        setValueType(tok->next(), vt, cpp, defsign, settings);
+                    }
+                }
             }
         } else if (tok->variable()) {
-            setValueType(tok, *tok->variable(), cpp, defsign, lib);
+            setValueType(tok, *tok->variable(), cpp, defsign, settings);
         } else if (tok->enumerator()) {
-            setValueType(tok, *tok->enumerator(), cpp, defsign, lib);
+            setValueType(tok, *tok->enumerator(), cpp, defsign, settings);
         }
     }
+}
+
+bool ValueType::fromLibraryType(const std::string &typestr, const Settings *settings)
+{
+    const Library::PodType* podtype = settings->library.podtype(typestr);
+    if (podtype && (podtype->sign == 's' || podtype->sign == 'u')) {
+        if (podtype->size == 1)
+            type = ValueType::Type::CHAR;
+        else if (podtype->size == settings->sizeof_int)
+            type = ValueType::Type::INT;
+        else if (podtype->size == settings->sizeof_short)
+            type = ValueType::Type::SHORT;
+        else if (podtype->size == settings->sizeof_long)
+            type = ValueType::Type::LONG;
+        else if (podtype->size == settings->sizeof_long_long)
+            type = ValueType::Type::LONGLONG;
+        else
+            type = ValueType::Type::UNKNOWN_INT;
+        sign = (podtype->sign == 'u') ? ValueType::UNSIGNED : ValueType::SIGNED;
+        return true;
+    }
+
+    const Library::PlatformType *platformType = settings->library.platform_type(typestr, settings->platformString());
+    if (platformType) {
+        if (platformType->_type == "char")
+            type = ValueType::Type::CHAR;
+        else if (platformType->_type == "short")
+            type = ValueType::Type::SHORT;
+        else if (platformType->_type == "int")
+            type = platformType->_long ? ValueType::Type::LONG : ValueType::Type::INT;
+        else if (platformType->_type == "long")
+            type = platformType->_long ? ValueType::Type::LONGLONG : ValueType::Type::LONG;
+        if (platformType->_signed)
+            sign = ValueType::SIGNED;
+        else if (platformType->_unsigned)
+            sign = ValueType::UNSIGNED;
+        if (platformType->_pointer)
+            pointer = 1;
+        if (platformType->_ptr_ptr)
+            pointer = 2;
+        if (platformType->_const_ptr)
+            constness = 1;
+        return true;
+    }
+
+    return false;
 }
 
 std::string ValueType::str() const

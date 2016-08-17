@@ -47,7 +47,7 @@ private:
 
         TEST_CASE(assignAndCompare);   // assignment and comparison don't match
         TEST_CASE(mismatchingBitAnd);  // overlapping bitmasks
-        TEST_CASE(compare);            // mismatching LHS/RHS in comparison
+        TEST_CASE(comparison);         // CheckCondition::comparison test cases
         TEST_CASE(multicompare);       // mismatching comparisons
         TEST_CASE(duplicateIf);        // duplicate conditions in if and else-if
 
@@ -78,15 +78,18 @@ private:
         TEST_CASE(clarifyCondition5);     // #3609 CWinTraits<WS_CHILD|WS_VISIBLE>..
         TEST_CASE(clarifyCondition6);     // #3818
         TEST_CASE(clarifyCondition7);
+        TEST_CASE(clarifyCondition8);
 
         TEST_CASE(alwaysTrue);
 
         TEST_CASE(checkInvalidTestForOverflow);
     }
 
-    void check(const char code[], const char* filename = "test.cpp") {
+    void check(const char code[], const char* filename = "test.cpp", bool inconclusive = false) {
         // Clear the error buffer..
         errout.str("");
+
+        settings0.inconclusive = inconclusive;
 
         CheckCondition checkCondition;
 
@@ -315,30 +318,64 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
-    void compare() {
-        check("void foo(int x)\n"
-              "{\n"
-              "    if ((x & 4) == 3);\n"
-              "}");
-        ASSERT_EQUALS("[test.cpp:3]: (style) Expression '(X & 0x4) == 0x3' is always false.\n", errout.str());
-
-        check("void foo(int x)\n"
-              "{\n"
-              "    if ((x | 4) == 3);\n"
-              "}");
-        ASSERT_EQUALS("[test.cpp:3]: (style) Expression '(X | 0x4) == 0x3' is always false.\n", errout.str());
-
-        check("void foo(int x)\n"
-              "{\n"
-              "    if ((x | 4) != 3);\n"
-              "}");
-        ASSERT_EQUALS("[test.cpp:3]: (style) Expression '(X | 0x4) != 0x3' is always true.\n", errout.str());
-
-        check("void foo(int x)\n"
-              "{\n"
-              "    if ((x & y & 4 & z ) == 3);\n"
-              "}");
-        ASSERT_EQUALS("[test.cpp:3]: (style) Expression '(X & 0x4) == 0x3' is always false.\n", errout.str());
+    void comparison() {
+        // CheckCondition::comparison test cases
+        // '=='
+        check("void f(int a) {\n assert( (a & 0x07) == 8U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X & 0x7) == 0x8' is always false.\n",errout.str());
+        check("void f(int a) {\n assert( (a & b & 4 & c ) == 3 );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X & 0x4) == 0x3' is always false.\n", errout.str());
+        check("void f(int a) {\n assert( (a | 0x07) == 8U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X | 0x7) == 0x8' is always false.\n",errout.str());
+        check("void f(int a) {\n assert( (a & 0x07) == 7U );\n}");
+        ASSERT_EQUALS("", errout.str());
+        check("void f(int a) {\n assert( (a | 0x01) == -15 );\n}");
+        ASSERT_EQUALS("", errout.str());
+        // '!='
+        check("void f(int a) {\n assert( (a & 0x07) != 8U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X & 0x7) != 0x8' is always true.\n",errout.str());
+        check("void f(int a) {\n assert( (a | 0x07) != 8U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X | 0x7) != 0x8' is always true.\n",errout.str());
+        check("void f(int a) {\n assert( (a & 0x07) != 7U );\n}");
+        ASSERT_EQUALS("", errout.str());
+        check("void f(int a) {\n assert( (a | 0x07) != 7U );\n}");
+        ASSERT_EQUALS("", errout.str());
+        // '>='
+        check("void f(int a) {\n assert( (a & 0x07) >= 8U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X & 0x7) >= 0x8' is always false.\n",errout.str());
+        check("void f(unsigned int a) {\n assert( (a | 0x7) >= 7U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X | 0x7) >= 0x7' is always true.\n",errout.str());
+        check("void f(int a) {\n assert( (a & 0x07) >= 7U );\n}");
+        ASSERT_EQUALS("",errout.str());
+        check("void f(int a) {\n assert( (a | 0x07) >= 8U );\n}");
+        ASSERT_EQUALS("",errout.str()); //correct for negative 'a'
+        // '>'
+        check("void f(int a) {\n assert( (a & 0x07) > 7U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X & 0x7) > 0x7' is always false.\n",errout.str());
+        check("void f(unsigned int a) {\n assert( (a | 0x7) > 6U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X | 0x7) > 0x6' is always true.\n",errout.str());
+        check("void f(int a) {\n assert( (a & 0x07) > 6U );\n}");
+        ASSERT_EQUALS("",errout.str());
+        check("void f(int a) {\n assert( (a | 0x07) > 7U );\n}");
+        ASSERT_EQUALS("",errout.str()); //correct for negative 'a'
+        // '<='
+        check("void f(int a) {\n assert( (a & 0x07) <= 7U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X & 0x7) <= 0x7' is always true.\n",errout.str());
+        check("void f(unsigned int a) {\n assert( (a | 0x08) <= 7U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X | 0x8) <= 0x7' is always false.\n",errout.str());
+        check("void f(int a) {\n assert( (a & 0x07) <= 6U );\n}");
+        ASSERT_EQUALS("",errout.str());
+        check("void f(int a) {\n assert( (a | 0x08) <= 7U );\n}");
+        ASSERT_EQUALS("",errout.str()); //correct for negative 'a'
+        // '<'
+        check("void f(int a) {\n assert( (a & 0x07) < 8U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X & 0x7) < 0x8' is always true.\n",errout.str());
+        check("void f(unsigned int a) {\n assert( (a | 0x07) < 7U );\n}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X | 0x7) < 0x7' is always false.\n",errout.str());
+        check("void f(int a) {\n assert( (a & 0x07) < 3U );\n}");
+        ASSERT_EQUALS("",errout.str());
+        check("void f(int a) {\n assert( (a | 0x07) < 7U );\n}");
+        ASSERT_EQUALS("",errout.str()); //correct for negative 'a'
     }
 
     void multicompare() {
@@ -946,13 +983,28 @@ private:
     void incorrectLogicOperator6() { // char literals
         check("void f(char x) {\n"
               "  if (x == '1' || x == '2') {}\n"
-              "}");
+              "}", "test.cpp", true);
         ASSERT_EQUALS("", errout.str());
 
         check("void f(char x) {\n"
               "  if (x == '1' && x == '2') {}\n"
-              "}");
-        TODO_ASSERT_EQUALS("error", "", errout.str());
+              "}", "test.cpp", true);
+        ASSERT_EQUALS("[test.cpp:2]: (warning) Logical conjunction always evaluates to false: x == '1' && x == '2'.\n", errout.str());
+
+        check("int f(char c) {\n"
+              "  return (c >= 'a' && c <= 'z');\n"
+              "}", "test.cpp", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check("int f(char c) {\n"
+              "  return (c <= 'a' && c >= 'z');\n"
+              "}", "test.cpp", true);
+        ASSERT_EQUALS("[test.cpp:2]: (warning, inconclusive) Logical conjunction always evaluates to false: c <= 'a' && c >= 'z'.\n", errout.str());
+
+        check("int f(char c) {\n"
+              "  return (c <= 'a' && c >= 'z');\n"
+              "}", "test.cpp", false);
+        ASSERT_EQUALS("", errout.str());
     }
 
     void incorrectLogicOperator7() { // opposite expressions
@@ -1510,17 +1562,32 @@ private:
                       "[test.cpp:2]: (style) Boolean result is used in bitwise operation. Clarify expression with parentheses.\n", errout.str());
     }
 
-// clarify condition that uses ! operator and then bitwise operator
+    // clarify condition that uses ! operator and then bitwise operator
     void clarifyCondition3() {
         check("void f(int w) {\n"
               "    if(!w & 0x8000) {}\n"
               "}");
         ASSERT_EQUALS("[test.cpp:2]: (style) Boolean result is used in bitwise operation. Clarify expression with parentheses.\n", errout.str());
 
+        check("void f(int w) {\n"
+              "    if((!w) & 0x8000) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
         check("void f() {\n"
               "    if (x == foo() & 2) {}\n"
               "}");
         ASSERT_EQUALS("[test.cpp:2]: (style) Boolean result is used in bitwise operation. Clarify expression with parentheses.\n", errout.str());
+
+        check("void f() {\n"
+              "    if (2 & x == foo()) {}\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Boolean result is used in bitwise operation. Clarify expression with parentheses.\n", errout.str());
+
+        check("void f() {\n"
+              "    if (2 & (x == foo())) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
 
         check("void f(std::list<int> &ints) { }");
         ASSERT_EQUALS("", errout.str());
@@ -1574,6 +1641,33 @@ private:
         check("void f(bool error) {\n"
               "    bool & withoutSideEffects=found.first->second;\n" // Declaring a reference to a boolean; & is no operator at all
               "    execute(secondExpression, &programMemory, &result, &error);\n" // Unary &
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void clarifyCondition8() {
+        // don't warn when boolean result comes from function call, array index, etc
+        // the operator precedence is not unknown then
+        check("bool a();\n"
+              "bool f(bool b) {\n"
+              "    return (a() & b);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("bool f(bool *a, bool b) {\n"
+              "    return (a[10] & b);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct A { bool a; };\n"
+              "bool f(struct A a, bool b) {\n"
+              "    return (a.a & b);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct A { bool a; };\n"
+              "bool f(struct A a, bool b) {\n"
+              "    return (A::a & b);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
     }
@@ -1634,29 +1728,6 @@ private:
               "  assert(x == 0);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
-
-        //TRAC #7428 false negative: Statement is always false
-        check("void f() {\n"
-              "assert( (a & 0x07) == 8U );\n" // statement always false, because 7 == 8 is false
-              "assert( (a & 0x07) >  7U );\n" // statement always false, because 7 > 7 is false
-              "assert( (a | 0x07) <  7U );\n" // statement always false, because 7 < 7 is false
-              "assert( (a & 0x07) >  8U );\n" // statement always false, because 7 > 8 is false
-              "assert( (a | 0x07) <  6U );\n" // statement always false, because 7 < 6 is false
-              "assert( (a & 0x07) >= 7U );\n" // statement correct
-              "assert( (a | 0x07) <= 7U );\n" // statement correct
-              "assert( (a & 0x07) >= 8U );\n" // statement always false, because 7 >= 8 is false
-              "assert( (a | 0x07) <= 6U );\n" // statement always false, because 7 <= 6 is false
-              "assert( (a & 0x07) >  3U );\n" // statement correct
-              "assert( (a | 0x07) <  9U );\n" // statement correct
-              "}");
-        ASSERT_EQUALS("[test.cpp:2]: (style) Expression '(X & 0x7) == 0x8' is always false.\n"
-                      "[test.cpp:3]: (style) Expression '(X & 0x7) > 0x7' is always false.\n"
-                      "[test.cpp:4]: (style) Expression '(X | 0x7) < 0x7' is always false.\n"
-                      "[test.cpp:5]: (style) Expression '(X & 0x7) > 0x8' is always false.\n"
-                      "[test.cpp:6]: (style) Expression '(X | 0x7) < 0x6' is always false.\n"
-                      "[test.cpp:9]: (style) Expression '(X & 0x7) >= 0x8' is always false.\n"
-                      "[test.cpp:10]: (style) Expression '(X | 0x7) <= 0x6' is always false.\n",
-                      errout.str());
     }
 
     void checkInvalidTestForOverflow() {

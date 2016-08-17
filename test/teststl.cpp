@@ -201,6 +201,40 @@ private:
               "    l2.insert(it, 0);\n"
               "}");
         ASSERT_EQUALS("[test.cpp:6]: (error) Same iterator is used with different containers 'l1' and 'l2'.\n", errout.str());
+
+        check("void foo() {\n" // #5803
+              "    list<int> l1;\n"
+              "    list<int> l2;\n"
+              "    list<int>::iterator it = l1.begin();\n"
+              "    l2.insert(it, l1.end());\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void foo() {\n" // #7658
+              "    list<int> l1;\n"
+              "    list<int> l2;\n"
+              "    list<int>::iterator it = l1.begin();\n"
+              "    list<int>::iterator end = l1.end();\n"
+              "    l2.insert(it, end);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        // only warn for insert when there are preciself 2 arguments.
+        check("void foo() {\n"
+              "    list<int> l1;\n"
+              "    list<int> l2;\n"
+              "    list<int>::iterator it = l1.begin();\n"
+              "    l2.insert(it);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+        check("void foo() {\n"
+              "    list<int> l1;\n"
+              "    list<int> l2;\n"
+              "    list<int>::iterator it = l1.begin();\n"
+              "    l2.insert(it,0,1);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
     }
 
     void iterator4() {
@@ -1417,7 +1451,7 @@ private:
                   "        ;\n"
                   "}");
 
-            ASSERT_EQUALS("[test.cpp:4]: (error) Dangerous comparison using operator< on iterator.\n", errout.str());
+            ASSERT_EQUALS_MSG("[test.cpp:4]: (error) Dangerous comparison using operator< on iterator.\n", errout.str(), stlCont[i]);
         }
 
         check("void f() {\n"
@@ -2885,8 +2919,7 @@ private:
               "    for(auto i = v.cbegin();\n"
               "        i != v.cend(); ++i) {}\n"
               "}", true);
-        ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'v'\n"
-                      "[test.cpp:4]: (style, inconclusive) Reading from empty STL container 'v'\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:4]: (style, inconclusive) Reading from empty STL container 'v'\n", errout.str());
 
         check("void f(std::set<int> v) {\n"
               "    v.clear();\n"
@@ -2961,6 +2994,15 @@ private:
               "    std::vector<int> vec;\n"
               "};", true);
         ASSERT_EQUALS("[test.cpp:6]: (style, inconclusive) Reading from empty STL container 'vec'\n", errout.str());
+
+        // #7560
+        check("std::vector<int> test;\n"
+              "std::vector<int>::iterator it;\n"
+              "void Reset() {\n"
+              "    test.clear();\n"
+              "    it = test.end();\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 };
 
