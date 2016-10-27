@@ -24,11 +24,11 @@
 #include <stdexcept>
 
 #define GET_SYMBOL_DB(code) \
-    Tokenizer tokenizer(&settings, this); \
+    Tokenizer tokenizer(&settings1, this); \
     const SymbolDatabase *db = getSymbolDB_inner(tokenizer, code, "test.cpp");
 
 #define GET_SYMBOL_DB_C(code) \
-    Tokenizer tokenizer(&settings, this); \
+    Tokenizer tokenizer(&settings1, this); \
     const SymbolDatabase *db = getSymbolDB_inner(tokenizer, code, "test.c");
 
 class TestSymbolDatabase: public TestFixture {
@@ -48,7 +48,7 @@ private:
     const Token* typetok;
     const Token* t;
     bool found;
-    Settings settings;
+    Settings settings1;
     Settings settings2;
 
     void reset() {
@@ -96,7 +96,7 @@ private:
     }
 
     void run() {
-        LOAD_LIB_2(settings.library, "std.cfg");
+        LOAD_LIB_2(settings1.library, "std.cfg");
         settings2.platform(Settings::Unspecified);
 
         TEST_CASE(array);
@@ -190,6 +190,7 @@ private:
         TEST_CASE(functionArgs10);
         TEST_CASE(functionArgs11);
         TEST_CASE(functionArgs12); // #7661
+        TEST_CASE(functionArgs13); // #7697
 
         TEST_CASE(namespaces1);
         TEST_CASE(namespaces2);
@@ -252,6 +253,7 @@ private:
         TEST_CASE(symboldatabase52); // #6581
         TEST_CASE(symboldatabase53); // #7124 (library podtype)
         TEST_CASE(symboldatabase54); // #7257
+        TEST_CASE(symboldatabase55); // #7767 (return unknown macro)
 
         TEST_CASE(enum1);
         TEST_CASE(enum2);
@@ -276,6 +278,9 @@ private:
         TEST_CASE(findFunction6);
         TEST_CASE(findFunction7); // #6700
         TEST_CASE(findFunction8);
+        TEST_CASE(findFunction9);
+        TEST_CASE(findFunction10); // #7673
+        TEST_CASE(findFunction11);
 
         TEST_CASE(noexceptFunction1);
         TEST_CASE(noexceptFunction2);
@@ -328,7 +333,7 @@ private:
         TokenList list(nullptr);
         list.createTokens(code, "test.c");
         list.front()->tokAt(3)->link(list.front()->tokAt(7));
-        Variable v(list.front()->next(), list.front(), list.back(), 0, Public, nullptr, nullptr, &settings.library);
+        Variable v(list.front()->next(), list.front(), list.back(), 0, Public, nullptr, nullptr, &settings1.library);
         ASSERT(v.isArray());
         ASSERT_EQUALS(1U, v.dimensions().size());
         ASSERT_EQUALS(20U, v.dimension(0));
@@ -340,7 +345,7 @@ private:
         ASSERT_EQUALS(false, result);
         ASSERT(nullptr == vartok);
         ASSERT(nullptr == typetok);
-        Variable v(nullptr, nullptr, nullptr, 0, Public, 0, 0, &settings.library);
+        Variable v(nullptr, nullptr, nullptr, 0, Public, 0, 0, &settings1.library);
     }
 
     void test_isVariableDeclarationIdentifiesSimpleDeclaration() {
@@ -350,7 +355,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("x", vartok->str());
         ASSERT_EQUALS("int", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -363,7 +368,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("x", vartok->str());
         ASSERT_EQUALS("int", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -376,7 +381,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("x", vartok->str());
         ASSERT_EQUALS("int", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -389,7 +394,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("x", vartok->str());
         ASSERT_EQUALS("int", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -402,7 +407,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("x", vartok->str());
         ASSERT_EQUALS("string", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -415,7 +420,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("x", vartok->str());
         ASSERT_EQUALS("string", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -428,7 +433,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("x", vartok->str());
         ASSERT_EQUALS("EE", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -441,14 +446,14 @@ private:
         ASSERT_EQUALS(true, result1);
         ASSERT_EQUALS("p", vartok->str());
         ASSERT_EQUALS("int", typetok->str());
-        Variable v1(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v1(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v1.isArray());
         ASSERT(true == v1.isPointer());
         ASSERT(false == v1.isReference());
 
         reset();
         givenACodeSampleToTokenize constpointer("const int* p;");
-        Variable v2(constpointer.tokens()->tokAt(3), constpointer.tokens()->next(), constpointer.tokens()->tokAt(2), 0, Public, 0, 0, &settings.library);
+        Variable v2(constpointer.tokens()->tokAt(3), constpointer.tokens()->next(), constpointer.tokens()->tokAt(2), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v2.isArray());
         ASSERT(true == v2.isPointer());
         ASSERT(false == v2.isConst());
@@ -460,7 +465,7 @@ private:
         ASSERT_EQUALS(true, result2);
         ASSERT_EQUALS("p", vartok->str());
         ASSERT_EQUALS("int", typetok->str());
-        Variable v3(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v3(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v3.isArray());
         ASSERT(true == v3.isPointer());
         ASSERT(true == v3.isConst());
@@ -483,7 +488,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("first", vartok->str());
         ASSERT_EQUALS("int", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -496,7 +501,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("p", vartok->str());
         ASSERT_EQUALS("EE", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(true == v.isPointer());
         ASSERT(false == v.isReference());
@@ -509,7 +514,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("pp", vartok->str());
         ASSERT_EQUALS("int", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(true == v.isPointer());
         ASSERT(false == v.isReference());
@@ -522,7 +527,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("p", vartok->str());
         ASSERT_EQUALS("int", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(true == v.isPointer());
         ASSERT(false == v.isReference());
@@ -535,7 +540,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("v", vartok->str());
         ASSERT_EQUALS("string", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(true == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isPointerArray());
@@ -549,7 +554,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("a", vartok->str());
         ASSERT_EQUALS("A", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isPointer());
         ASSERT(true == v.isArray());
         ASSERT(false == v.isPointerToArray());
@@ -564,7 +569,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("a", vartok->str());
         ASSERT_EQUALS("A", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(true == v.isPointer());
         ASSERT(false == v.isArray());
         ASSERT(true == v.isPointerToArray());
@@ -579,7 +584,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("chars", vartok->str());
         ASSERT_EQUALS("set", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(true == v.isPointer());
         ASSERT(false == v.isReference());
@@ -592,7 +597,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("ints", vartok->str());
         ASSERT_EQUALS("deque", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(true == v.isPointer());
         ASSERT(false == v.isReference());
@@ -605,7 +610,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("ints", vartok->str());
         ASSERT_EQUALS("deque", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(true == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -618,7 +623,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("ints", vartok->str());
         ASSERT_EQUALS("vector", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -631,7 +636,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("floats", vartok->str());
         ASSERT_EQUALS("const_iterator", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -644,7 +649,7 @@ private:
         ASSERT_EQUALS(true, result);
         ASSERT_EQUALS("intsets", vartok->str());
         ASSERT_EQUALS("deque", typetok->str());
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(false == v.isReference());
@@ -655,7 +660,7 @@ private:
         givenACodeSampleToTokenize var1("int& foo;");
         bool result1 = si.isVariableDeclaration(var1.tokens(), vartok, typetok);
         ASSERT_EQUALS(true, result1);
-        Variable v1(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v1(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v1.isArray());
         ASSERT(false == v1.isPointer());
         ASSERT(true == v1.isReference());
@@ -664,7 +669,7 @@ private:
         givenACodeSampleToTokenize var2("foo*& bar;");
         bool result2 = si.isVariableDeclaration(var2.tokens(), vartok, typetok);
         ASSERT_EQUALS(true, result2);
-        Variable v2(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v2(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v2.isArray());
         ASSERT(true == v2.isPointer());
         ASSERT(true == v2.isReference());
@@ -673,7 +678,7 @@ private:
         givenACodeSampleToTokenize var3("std::vector<int>& foo;");
         bool result3 = si.isVariableDeclaration(var3.tokens(), vartok, typetok);
         ASSERT_EQUALS(true, result3);
-        Variable v3(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v3(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v3.isArray());
         ASSERT(false == v3.isPointer());
         ASSERT(true == v3.isReference());
@@ -698,7 +703,7 @@ private:
         givenACodeSampleToTokenize var("std::string const* s;");
         bool result = si.isVariableDeclaration(var.tokens()->next(), vartok, typetok);
         ASSERT_EQUALS(true, result);
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(true == v.isPointer());
         ASSERT(false == v.isReference());
@@ -709,7 +714,7 @@ private:
         givenACodeSampleToTokenize var("int&& i;");
         bool result = si.isVariableDeclaration(var.tokens(), vartok, typetok);
         ASSERT_EQUALS(true, result);
-        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings.library);
+        Variable v(vartok, typetok, vartok->previous(), 0, Public, 0, 0, &settings1.library);
         ASSERT(false == v.isArray());
         ASSERT(false == v.isPointer());
         ASSERT(true == v.isReference());
@@ -741,7 +746,7 @@ private:
             list.createTokens(code, "test.cpp");
             bool result = si.isVariableDeclaration(list.front(), vartok, typetok);
             ASSERT_EQUALS(true, result);
-            Variable v(vartok, list.front(), list.back(), 0, Public, 0, 0, &settings.library);
+            Variable v(vartok, list.front(), list.back(), 0, Public, 0, 0, &settings1.library);
             static const std::set<std::string> types = make_container< std::set<std::string> >() <<
                     "string" << "wstring" ;
             static const std::set<std::string> no_types = make_container< std::set<std::string> >() <<
@@ -759,7 +764,7 @@ private:
             list.front()->tokAt(3)->link(list.front()->tokAt(5));
             bool result = si.isVariableDeclaration(list.front(), vartok, typetok);
             ASSERT_EQUALS(true, result);
-            Variable v(vartok, list.front(), list.back(), 0, Public, 0, 0, &settings.library);
+            Variable v(vartok, list.front(), list.back(), 0, Public, 0, 0, &settings1.library);
             static const std::set<std::string> types = make_container< std::set<std::string> >() <<
                     "bitset" << "set" << "vector" << "wstring" ;
             static const std::set<std::string> no_types = make_container< std::set<std::string> >() <<
@@ -776,7 +781,7 @@ private:
             list.createTokens(code, "test.cpp");
             bool result = si.isVariableDeclaration(list.front(), vartok, typetok);
             ASSERT_EQUALS(true, result);
-            Variable v(vartok, list.front(), list.back(), 0, Public, 0, 0, &settings.library);
+            Variable v(vartok, list.front(), list.back(), 0, Public, 0, 0, &settings1.library);
             static const std::set<std::string> types = make_container< std::set<std::string> >() <<
                     "bitset" << "set" << "vector" ;
             ASSERT_EQUALS(false, v.isStlType());
@@ -1494,10 +1499,10 @@ private:
         errout.str("");
 
         // Check..
-        settings.debugwarnings = debug;
+        settings1.debugwarnings = debug;
 
         // Tokenize..
-        Tokenizer tokenizer(&settings, this);
+        Tokenizer tokenizer(&settings1, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, "test.cpp");
         tokenizer.simplifyTokenList2();
@@ -1505,7 +1510,7 @@ private:
         // force symbol database creation
         tokenizer.createSymbolDatabase();
 
-        settings.debugwarnings = false;
+        settings1.debugwarnings = false;
     }
 
     void functionArgs1() {
@@ -1825,6 +1830,43 @@ private:
                 if (func->argumentList.size() == 1 && func->argumentList.front().type()) {
                     const Type * type = func->argumentList.front().type();
                     ASSERT_EQUALS(true, type->isEnumType());
+                }
+            }
+        }
+    }
+
+    void functionArgs13() { // #7697
+        GET_SYMBOL_DB("struct A {\n"
+                      "    enum E { };\n"
+                      "    struct S { };\n"
+                      "};\n"
+                      "struct B : public A {\n"
+                      "    B(E e);\n"
+                      "    B(S s);\n"
+                      "};\n"
+                      "B::B(A::E e) { }\n"
+                      "B::B(A::S s) { }");
+
+        ASSERT_EQUALS(true, db != nullptr);
+        if (db) {
+            const Token *f = Token::findsimplematch(tokenizer.tokens(), "B ( A :: E");
+            ASSERT_EQUALS(true, f && f->function());
+            if (f && f->function()) {
+                const Function *func = f->function();
+                ASSERT_EQUALS(true, func->argumentList.size() == 1 && func->argumentList.front().type());
+                if (func->argumentList.size() == 1 && func->argumentList.front().type()) {
+                    const Type * type = func->argumentList.front().type();
+                    ASSERT_EQUALS(true, type->isEnumType() && type->name() == "E");
+                }
+            }
+            f = Token::findsimplematch(tokenizer.tokens(), "B ( A :: S");
+            ASSERT_EQUALS(true, f && f->function());
+            if (f && f->function()) {
+                const Function *func = f->function();
+                ASSERT_EQUALS(true, func->argumentList.size() == 1 && func->argumentList.front().type());
+                if (func->argumentList.size() == 1 && func->argumentList.front().type()) {
+                    const Type * type = func->argumentList.front().type();
+                    ASSERT_EQUALS(true, type->isStructType() && type->name() == "S");
                 }
             }
         }
@@ -2611,6 +2653,18 @@ private:
         }
     }
 
+    void symboldatabase55() { // #7767
+        GET_SYMBOL_DB("PRIVATE S32 testfunc(void) {\n"
+                      "    return 0;\n"
+                      "}");
+
+        ASSERT(db != nullptr);
+        if (db) {
+            ASSERT_EQUALS(1U, db->functionScopes.size());
+            ASSERT_EQUALS("testfunc", db->functionScopes.front()->className);
+        }
+    }
+
     void enum1() {
         GET_SYMBOL_DB("enum BOOL { FALSE, TRUE }; enum BOOL b;");
 
@@ -2852,18 +2906,18 @@ private:
         ASSERT(db->getVariableListSize() == 13); // the first one is not used
         const Variable * v;
         unsigned int id = 1;
-        TEST(settings.sizeof_int);
-        TEST(settings.sizeof_int);
+        TEST(settings1.sizeof_int);
+        TEST(settings1.sizeof_int);
         TEST(1);
         TEST(1);
-        TEST(settings.sizeof_short);
-        TEST(settings.sizeof_short);
-        TEST(settings.sizeof_int);
-        TEST(settings.sizeof_int);
-        TEST(settings.sizeof_long);
-        TEST(settings.sizeof_long);
-        TEST(settings.sizeof_long_long);
-        TEST(settings.sizeof_long_long);
+        TEST(settings1.sizeof_short);
+        TEST(settings1.sizeof_short);
+        TEST(settings1.sizeof_int);
+        TEST(settings1.sizeof_int);
+        TEST(settings1.sizeof_long);
+        TEST(settings1.sizeof_long);
+        TEST(settings1.sizeof_long_long);
+        TEST(settings1.sizeof_long_long);
     }
 
     void sizeOfType() {
@@ -3355,6 +3409,40 @@ private:
         ASSERT_EQUALS(true, db && f && f->tokAt(2)->function() && f->tokAt(2)->function()->tokenDef->linenr() == 13 && f->tokAt(2)->function()->token->linenr() == 20);
     }
 
+    void findFunction9() {
+        GET_SYMBOL_DB("struct Fred {\n"
+                      "    void foo(const int * p);\n"
+                      "};\n"
+                      "void Fred::foo(const int * const p) { }");
+        ASSERT_EQUALS("", errout.str());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "foo ( const int * const p ) {");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 2);
+    }
+
+    void findFunction10() { // #7673
+        GET_SYMBOL_DB("struct Fred {\n"
+                      "    void foo(const int * p);\n"
+                      "};\n"
+                      "void Fred::foo(const int p []) { }");
+        ASSERT_EQUALS("", errout.str());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "foo ( const int p [ ] ) {");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 2);
+    }
+
+    void findFunction11() {
+        GET_SYMBOL_DB("class Fred : public QObject {\n"
+                      "    Q_OBJECT\n"
+                      "private slots:\n"
+                      "    void foo();\n"
+                      "};\n"
+                      "void Fred::foo() { }");
+        ASSERT_EQUALS("", errout.str());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "foo ( ) {");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 4);
+    }
 
 #define FUNC(x) const Function *x = findFunctionByName(#x, &db->scopeList.front()); \
                 ASSERT_EQUALS(true, x != nullptr);                                  \
@@ -3771,8 +3859,8 @@ private:
         }
     }
 
-    std::string typeOf(const char code[], const char pattern[], const char filename[] = "test.cpp") {
-        Tokenizer tokenizer(&settings2, this);
+    std::string typeOf(const char code[], const char pattern[], const char filename[] = "test.cpp", const Settings *settings = nullptr) {
+        Tokenizer tokenizer(settings ? settings : &settings2, this);
         std::istringstream istr(code);
         tokenizer.tokenize(istr, filename);
         const Token* tok;
@@ -3786,13 +3874,22 @@ private:
         // stringification
         ASSERT_EQUALS("", ValueType().str());
 
+        Settings s;
+        s.int_bit = 16;
+        s.long_bit = 32;
+        s.long_long_bit = 64;
+
         // numbers
-        ASSERT_EQUALS("signed int", typeOf("1", "1"));
+        ASSERT_EQUALS("signed int", typeOf("1", "1", "test.c", &s));
+        ASSERT_EQUALS("signed int", typeOf("32767", "32767", "test.c", &s));
+        ASSERT_EQUALS("signed long", typeOf("32768", "32768", "test.c", &s));
+        ASSERT_EQUALS("signed long long", typeOf("2147483648", "2147483648", "test.c", &s));
         ASSERT_EQUALS("unsigned int", typeOf("1U", "1U"));
         ASSERT_EQUALS("signed long", typeOf("1L", "1L"));
         ASSERT_EQUALS("unsigned long", typeOf("1UL", "1UL"));
         ASSERT_EQUALS("signed long long", typeOf("1LL", "1LL"));
         ASSERT_EQUALS("unsigned long long", typeOf("1ULL", "1ULL"));
+        ASSERT_EQUALS("unsigned long long", typeOf("1LLU", "1LLU"));
         ASSERT_EQUALS("signed long long", typeOf("1i64", "1i64"));
         ASSERT_EQUALS("unsigned long long", typeOf("1ui64", "1ui64"));
         ASSERT_EQUALS("unsigned int", typeOf("1u", "1u"));
@@ -3800,9 +3897,12 @@ private:
         ASSERT_EQUALS("unsigned long", typeOf("1ul", "1ul"));
         ASSERT_EQUALS("signed long long", typeOf("1ll", "1ll"));
         ASSERT_EQUALS("unsigned long long", typeOf("1ull", "1ull"));
+        ASSERT_EQUALS("unsigned long long", typeOf("1llu", "1llu"));
         ASSERT_EQUALS("float", typeOf("1.0F", "1.0F"));
         ASSERT_EQUALS("float", typeOf("1.0f", "1.0f"));
         ASSERT_EQUALS("double", typeOf("1.0", "1.0"));
+        ASSERT_EQUALS("double", typeOf("1E3", "1E3"));
+        ASSERT_EQUALS("long double", typeOf("1.23L", "1.23L"));
 
         // Constant calculations
         ASSERT_EQUALS("signed int", typeOf("1 + 2", "+"));
@@ -3930,26 +4030,39 @@ private:
         // Pointer to unknown type
         ASSERT_EQUALS("*", typeOf("Bar* b;", "b"));
 
+        // Enum
+        ASSERT_EQUALS("char", typeOf("enum E : char { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("signed char", typeOf("enum E : signed char { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("unsigned char", typeOf("enum E : unsigned char { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("signed short", typeOf("enum E : short { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("unsigned short", typeOf("enum E : unsigned short { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("signed int", typeOf("enum E : int { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("unsigned int", typeOf("enum E : unsigned int { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("signed long", typeOf("enum E : long { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("unsigned long", typeOf("enum E : unsigned long { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("signed long long", typeOf("enum E : long long { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+        ASSERT_EQUALS("unsigned long long", typeOf("enum E : unsigned long long { }; void foo() { E e[3]; bar(e[0]); }", "[ 0"));
+
         // Library types
         {
             // PodType
-            Settings s;
-            s.platformType = Settings::Win64;
+            Settings settingsWin64;
+            settingsWin64.platformType = Settings::Win64;
             const Library::PodType u32 = { 4, 'u' };
-            s.library.podtypes["u32"] = u32;
+            settingsWin64.library.podtypes["u32"] = u32;
             ValueType vt;
-            ASSERT_EQUALS(true, vt.fromLibraryType("u32", &s));
+            ASSERT_EQUALS(true, vt.fromLibraryType("u32", &settingsWin64));
             ASSERT_EQUALS(ValueType::Type::INT, vt.type);
         }
         {
             // PlatformType
-            Settings s;
-            s.platformType = Settings::Unix32;
+            Settings settingsUnix32;
+            settingsUnix32.platformType = Settings::Unix32;
             Library::PlatformType s32;
             s32._type = "int";
-            s.library.platforms[s.platformString()]._platform_types["s32"] = s32;
+            settingsUnix32.library.platforms[settingsUnix32.platformString()]._platform_types["s32"] = s32;
             ValueType vt;
-            ASSERT_EQUALS(true, vt.fromLibraryType("s32", &s));
+            ASSERT_EQUALS(true, vt.fromLibraryType("s32", &settingsUnix32));
             ASSERT_EQUALS(ValueType::Type::INT, vt.type);
         }
     }

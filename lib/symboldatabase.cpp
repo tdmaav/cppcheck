@@ -1459,7 +1459,7 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
             }
 
             // skip over modifiers and other stuff
-            while (Token::Match(tok1, "const|static|extern|template|virtual|struct|class|enum"))
+            while (Token::Match(tok1, "const|static|extern|template|virtual|struct|class|enum|%name%"))
                 tok1 = tok1->previous();
 
             // should be at a sequence point if this is a function
@@ -1751,6 +1751,24 @@ bool Function::argsMatch(const Scope *scope, const Token *first, const Token *se
         else if (second->str() == ")")
             break;
 
+        // ckeck for type * x == type x[]
+        else if (Token::Match(first->next(), "* %name%| ,|)|=") &&
+                 Token::Match(second->next(), "%name%| [ ] ,|)")) {
+            do {
+                first = first->next();
+            } while (!Token::Match(first->next(), ",|)"));
+            do {
+                second = second->next();
+            } while (!Token::Match(second->next(), ",|)"));
+        }
+
+        // const after *
+        else if (first->next()->str() == "*" && first->strAt(2) != "const" &&
+                 second->next()->str() == "*" && second->strAt(2) == "const") {
+            first = first->next();
+            second = second->tokAt(2);
+        }
+
         // variable names are different
         else if ((Token::Match(first->next(), "%name% ,|)|=|[") &&
                   Token::Match(second->next(), "%name% ,|)|[")) &&
@@ -1791,10 +1809,12 @@ bool Function::argsMatch(const Scope *scope, const Token *first, const Token *se
             }
         }
 
-        // nested class variable
+        // nested or base class variable
         else if (depth == 0 && Token::Match(first->next(), "%name%") &&
-                 second->next()->str() == scope->className && second->strAt(2) == "::" &&
-                 first->next()->str() == second->strAt(3)) {
+                 Token::Match(second->next(), "%name% :: %name%") &&
+                 ((second->next()->str() == scope->className) ||
+                  (scope->definedType && scope->definedType->isDerivedFrom(second->next()->str()))) &&
+                 (first->next()->str() == second->strAt(3))) {
             second = second->tokAt(2);
         }
 
@@ -1808,9 +1828,11 @@ bool Function::argsMatch(const Scope *scope, const Token *first, const Token *se
             second = second->next();
 
         // skip const on type passed by value
-        if (Token::Match(first, "const %type% %name%|,|)"))
+        if (Token::Match(first, "const %type% %name%|,|)") &&
+            !Token::Match(first, "const %type% %name%| ["))
             first = first->next();
-        if (Token::Match(second, "const %type% %name%|,|)"))
+        if (Token::Match(second, "const %type% %name%|,|)") &&
+            !Token::Match(second, "const %type% %name%| ["))
             second = second->next();
     }
 
@@ -2244,6 +2266,17 @@ bool Type::findDependency(const Type* ancestor) const
         return true;
     for (std::vector<BaseInfo>::const_iterator parent=derivedFrom.begin(); parent!=derivedFrom.end(); ++parent) {
         if (parent->type && parent->type->findDependency(ancestor))
+            return true;
+    }
+    return false;
+}
+
+bool Type::isDerivedFrom(const std::string & ancestor) const
+{
+    for (std::vector<BaseInfo>::const_iterator parent=derivedFrom.begin(); parent!=derivedFrom.end(); ++parent) {
+        if (parent->name == ancestor)
+            return true;
+        if (parent->type && parent->type->isDerivedFrom(ancestor))
             return true;
     }
     return false;
@@ -4004,7 +4037,7 @@ const Type* SymbolDatabase::findType(const Token *startTok, const Scope *startSc
         startTok = startTok->next();
 
     // type same as scope
-    if (startTok->str() == startScope->className && startScope->isClassOrStruct())
+    if (startTok->str() == startScope->className && startScope->isClassOrStruct() && startTok->strAt(1) != "::")
         return startScope->definedType;
 
     // absolute path - directly start in global scope
@@ -4373,9 +4406,29 @@ static const Token * parsedecl(const Token *type, ValueType * const valuetype, V
     valuetype->sign = ValueType::Sign::UNKNOWN_SIGN;
     if (!valuetype->typeScope)
         valuetype->type = ValueType::Type::UNKNOWN_TYPE;
-    else if (valuetype->typeScope->type == Scope::eEnum)
-        valuetype->type = ValueType::Type::INT;
-    else
+    else if (valuetype->typeScope->type == Scope::eEnum) {
+        const Token * enum_type = valuetype->typeScope->enumType;
+        if (enum_type) {
+            if (enum_type->isSigned())
+                valuetype->sign = ValueType::Sign::SIGNED;
+            else if (enum_type->isUnsigned())
+                valuetype->sign = ValueType::Sign::UNSIGNED;
+            else
+                valuetype->sign = defaultSignedness;
+            if (enum_type->str() == "char")
+                valuetype->type = ValueType::Type::CHAR;
+            else if (enum_type->str() == "short")
+                valuetype->type = ValueType::Type::SHORT;
+            else if (enum_type->str() == "int")
+                valuetype->type = ValueType::Type::INT;
+            else if (enum_type->str() == "long")
+                valuetype->type = enum_type->isLong() ? ValueType::Type::LONGLONG : ValueType::Type::LONG;
+            else if (enum_type->isStandardType()) {
+                valuetype->fromLibraryType(enum_type->str(), settings);
+            }
+        } else
+            valuetype->type = ValueType::Type::INT;
+    } else
         valuetype->type = ValueType::Type::NONSTD;
     while (Token::Match(type, "%name%|*|&|::") && !type->variable()) {
         if (type->isSigned())
@@ -4477,10 +4530,21 @@ void SymbolDatabase::setValueTypeInTokenList(Token *tokens, bool cpp, const Sett
                 const char suffix = tok->str()[tok->str().size() - 1U];
                 if (suffix == 'f' || suffix == 'F')
                     type = ValueType::Type::FLOAT;
+                else if (suffix == 'L' || suffix == 'l')
+                    type = ValueType::Type::LONGDOUBLE;
                 ::setValueType(tok, ValueType(ValueType::Sign::UNKNOWN_SIGN, type, 0U), cpp, defsign, settings);
             } else if (MathLib::isInt(tok->str())) {
                 ValueType::Sign sign = ValueType::Sign::SIGNED;
-                ValueType::Type type = ValueType::Type::INT;
+                ValueType::Type type;
+                const MathLib::bigint value = MathLib::toLongNumber(tok->str());
+                if (settings->platformType == cppcheck::Platform::Unspecified)
+                    type = ValueType::Type::INT;
+                else if (settings->isIntValue(value))
+                    type = ValueType::Type::INT;
+                else if (settings->isLongValue(value))
+                    type = ValueType::Type::LONG;
+                else
+                    type = ValueType::Type::LONGLONG;
                 if (MathLib::isIntHex(tok->str()))
                     sign = ValueType::Sign::UNSIGNED;
                 for (std::size_t pos = tok->str().size() - 1U; pos > 0U; --pos) {
@@ -4548,6 +4612,21 @@ void SymbolDatabase::setValueTypeInTokenList(Token *tokens, bool cpp, const Sett
                     ValueType vt;
                     if (parsedecl(tok->next(), &vt, defsign, settings)) {
                         setValueType(tok->next(), vt, cpp, defsign, settings);
+                    }
+                }
+            }
+
+            // library function
+            else if (tok->previous()) {
+                const std::string typestr(settings->library.returnValueType(tok->previous()));
+                if (typestr.empty())
+                    continue;
+                TokenList tokenList(settings);
+                std::istringstream istr(typestr+";");
+                if (tokenList.createTokens(istr)) {
+                    ValueType vt;
+                    if (parsedecl(tokenList.front(), &vt, defsign, settings)) {
+                        setValueType(tok, vt, cpp, defsign, settings);
                     }
                 }
             }

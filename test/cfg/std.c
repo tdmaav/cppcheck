@@ -3579,6 +3579,7 @@ void ignoredReturnValue_abs(int i)
     // cppcheck-suppress ignoredReturnValue
     abs(i);
     // cppcheck-suppress constStatement
+    // cppcheck-suppress ignoredReturnValue
     abs(-100);
 }
 
@@ -3683,4 +3684,41 @@ void invalidPrintfArgType_printf(void)
     uint8_t n = 7;
     // cppcheck-suppress invalidPrintfArgType_uint
     printf("%"PRIi16"\n", n);
+}
+
+
+#define AssertAlwaysTrue(C)  if (C) {}
+
+void valueFlow(void)
+{
+    const char abc[] = "abc";
+    int three = 3, minusThree = -3;
+    int c0='0', ca='a', blank=' ', tab='\t';
+
+    // When adding functions below, please sort alphabetically.
+
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(strlen(abc) == 3);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(abs(three) == 3);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(abs(minusThree) == 3);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(isblank(blank) == 1);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(isblank(tab) == 1);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(isblank(c0) == 0);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(isdigit(c0) == 1);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(isdigit(ca) == 0);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(labs(three) == 3);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(labs(minusThree) == 3);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(llabs(three) == 3);
+    // cppcheck-suppress knownConditionTrueFalse
+    AssertAlwaysTrue(llabs(minusThree) == 3);
 }

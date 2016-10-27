@@ -275,6 +275,9 @@ private:
 
         // from char
         ASSERT_EQUALS((int)('A'),    MathLib::toLongNumber("'A'"));
+        ASSERT_EQUALS((int)('\x10'), MathLib::toLongNumber("'\\x10'"));
+        ASSERT_EQUALS((int)('\100'), MathLib::toLongNumber("'\\100'"));
+        ASSERT_EQUALS((int)('\200'), MathLib::toLongNumber("'\\200'"));
 #ifdef __GNUC__
         // BEGIN Implementation-specific results
         ASSERT_EQUALS((int)('AB'),    MathLib::toLongNumber("'AB'"));
@@ -292,6 +295,7 @@ private:
         ASSERT_EQUALS((int)('\3'),  MathLib::toLongNumber("'\\3'"));
         ASSERT_EQUALS((int)('\34'),  MathLib::toLongNumber("'\\34'"));
         ASSERT_EQUALS((int)('\034'), MathLib::toLongNumber("'\\034'"));
+        ASSERT_EQUALS((int)('\x34'), MathLib::toLongNumber("'\\x34'"));
         ASSERT_EQUALS((int)('\134'), MathLib::toLongNumber("'\\134'"));
         ASSERT_EQUALS((int)('\134t'), MathLib::toLongNumber("'\\134t'")); // Ticket #7452
         ASSERT_THROW(MathLib::toLongNumber("'\\9'"), InternalError);

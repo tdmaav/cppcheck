@@ -35,11 +35,11 @@ namespace {
     CheckClass instance;
 }
 
-static const CWE CWE398(398U);
-static const CWE CWE404(404U);
-static const CWE CWE665(665U);
-static const CWE CWE758(758U);
-static const CWE CWE762(762U);
+static const CWE CWE398(398U);  // Indicator of Poor Code Quality
+static const CWE CWE404(404U);  // Improper Resource Shutdown or Release
+static const CWE CWE665(665U);  // Improper Initialization
+static const CWE CWE758(758U);  // Reliance on Undefined, Unspecified, or Implementation-Defined Behavior
+static const CWE CWE762(762U);  // Mismatched Memory Management Routines
 
 static const char * getFunctionTypeName(Function::Type type)
 {
@@ -384,7 +384,7 @@ void CheckClass::noCopyConstructorError(const Token *tok, const std::string &cla
 {
     // The constructor might be intentionally missing. Therefore this is not a "warning"
     reportError(tok, Severity::style, "noCopyConstructor",
-                "'" + std::string(isStruct ? "struct" : "class") + " " + classname +
+                std::string(isStruct ? "struct" : "class") + " '" + classname +
                 "' does not have a copy constructor which is recommended since the class contains a pointer to allocated memory.", CWE398, false);
 }
 
@@ -626,6 +626,18 @@ void CheckClass::initializeVarList(const Function &func, std::list<const Functio
         if (Token::Match(ftok, "::| memset ( this ,")) {
             assignAllVar(usage);
             return;
+        }
+
+        // Ticket #7068
+        else if (Token::Match(ftok, "::| memset ( &| this . %name%")) {
+            if (ftok->str() == "::")
+                ftok = ftok->next();
+            int offsetToMember = 4;
+            if (ftok->strAt(2) == "&")
+                ++offsetToMember;
+            assignVar(ftok->tokAt(offsetToMember)->varId(), scope, usage);
+            ftok = ftok->linkAt(1);
+            continue;
         }
 
         // Clearing array..
@@ -1692,71 +1704,74 @@ void CheckClass::checkConst()
 
         for (func = scope->functionList.begin(); func != scope->functionList.end(); ++func) {
             // does the function have a body?
-            if (func->type == Function::eFunction && func->hasBody() && !func->isFriend() && !func->isStatic() && !func->isVirtual()) {
-                // get last token of return type
-                const Token *previous = func->tokenDef->previous();
+            if (func->type != Function::eFunction || !func->hasBody())
+                continue;
+            // don't warn for friend/static/virtual methods
+            if (func->isFriend() || func->isStatic() || func->isVirtual())
+                continue;
+            // get last token of return type
+            const Token *previous = func->tokenDef->previous();
 
-                // does the function return a pointer or reference?
-                if (Token::Match(previous, "*|&")) {
-                    if (func->retDef->str() != "const")
-                        continue;
-                } else if (Token::Match(previous->previous(), "*|& >")) {
-                    const Token *temp = previous->previous();
+            // does the function return a pointer or reference?
+            if (Token::Match(previous, "*|&")) {
+                if (func->retDef->str() != "const")
+                    continue;
+            } else if (Token::Match(previous->previous(), "*|& >")) {
+                const Token *temp = previous->previous();
 
-                    bool foundConst = false;
-                    while (!Token::Match(temp->previous(), ";|}|{|public:|protected:|private:")) {
-                        temp = temp->previous();
-                        if (temp->str() == "const") {
-                            foundConst = true;
-                            break;
-                        }
-                    }
-
-                    if (!foundConst)
-                        continue;
-                } else if (func->isOperator() && Token::Match(previous, ";|{|}|public:|private:|protected:")) { // Operator without return type: conversion operator
-                    const std::string& opName = func->tokenDef->str();
-                    if (opName.compare(8, 5, "const") != 0 && opName.back() == '&')
-                        continue;
-                } else {
-                    // don't warn for unknown types..
-                    // LPVOID, HDC, etc
-                    if (previous->str().size() > 2 && !previous->type() && previous->isUpperCaseName())
-                        continue;
-                }
-
-                // check if base class function is virtual
-                if (!scope->definedType->derivedFrom.empty()) {
-                    if (func->isImplicitlyVirtual(true))
-                        continue;
-                }
-
-                bool memberAccessed = false;
-                // if nothing non-const was found. write error..
-                if (checkConstFunc(scope, &*func, memberAccessed)) {
-                    std::string classname = scope->className;
-                    const Scope *nest = scope->nestedIn;
-                    while (nest && nest->type != Scope::eGlobal) {
-                        classname = std::string(nest->className + "::" + classname);
-                        nest = nest->nestedIn;
-                    }
-
-                    // get function name
-                    std::string functionName = (func->tokenDef->isName() ? "" : "operator") + func->tokenDef->str();
-
-                    if (func->tokenDef->str() == "(")
-                        functionName += ")";
-                    else if (func->tokenDef->str() == "[")
-                        functionName += "]";
-
-                    if (!func->isConst() || (!memberAccessed && !func->isOperator())) {
-                        if (func->isInline())
-                            checkConstError(func->token, classname, functionName, !memberAccessed && !func->isOperator());
-                        else // not inline
-                            checkConstError2(func->token, func->tokenDef, classname, functionName, !memberAccessed && !func->isOperator());
+                bool foundConst = false;
+                while (!Token::Match(temp->previous(), ";|}|{|public:|protected:|private:")) {
+                    temp = temp->previous();
+                    if (temp->str() == "const") {
+                        foundConst = true;
+                        break;
                     }
                 }
+
+                if (!foundConst)
+                    continue;
+            } else if (func->isOperator() && Token::Match(previous, ";|{|}|public:|private:|protected:")) { // Operator without return type: conversion operator
+                const std::string& opName = func->tokenDef->str();
+                if (opName.compare(8, 5, "const") != 0 && opName.back() == '&')
+                    continue;
+            } else {
+                // don't warn for unknown types..
+                // LPVOID, HDC, etc
+                if (previous->str().size() > 2 && !previous->type() && previous->isUpperCaseName())
+                    continue;
             }
+
+            // check if base class function is virtual
+            if (!scope->definedType->derivedFrom.empty() && func->isImplicitlyVirtual(true))
+                continue;
+
+            bool memberAccessed = false;
+            // if nothing non-const was found. write error..
+            if (!checkConstFunc(scope, &*func, memberAccessed))
+                continue;
+
+            if (func->isConst() && (memberAccessed || func->isOperator()))
+                continue;
+
+            std::string classname = scope->className;
+            const Scope *nest = scope->nestedIn;
+            while (nest && nest->type != Scope::eGlobal) {
+                classname = std::string(nest->className + "::" + classname);
+                nest = nest->nestedIn;
+            }
+
+            // get function name
+            std::string functionName = (func->tokenDef->isName() ? "" : "operator") + func->tokenDef->str();
+
+            if (func->tokenDef->str() == "(")
+                functionName += ")";
+            else if (func->tokenDef->str() == "[")
+                functionName += "]";
+
+            if (func->isInline())
+                checkConstError(func->token, classname, functionName, !memberAccessed && !func->isOperator());
+            else // not inline
+                checkConstError2(func->token, func->tokenDef, classname, functionName, !memberAccessed && !func->isOperator());
         }
     }
 }
@@ -1975,7 +1990,10 @@ bool CheckClass::checkConstFunc(const Scope *scope, const Function *func, bool& 
                 memberAccessed = true;
             }
             // Member variable given as parameter
-            for (const Token* tok2 = tok1->tokAt(2); tok2 && tok2 != tok1->next()->link(); tok2 = tok2->next()) {
+            const Token *lpar = tok1->next();
+            if (Token::simpleMatch(lpar, "( ) ("))
+                lpar = lpar->tokAt(2);
+            for (const Token* tok2 = lpar->next(); tok2 && tok2 != tok1->next()->link(); tok2 = tok2->next()) {
                 if (tok2->str() == "(")
                     tok2 = tok2->link();
                 else if (tok2->isName() && isMemberVar(scope, tok2)) {
@@ -2010,7 +2028,7 @@ void CheckClass::checkConstError2(const Token *tok1, const Token *tok2, const st
                     "function. Making this function 'const' should not cause compiler errors. "
                     "Even though the function can be made const function technically it may not make "
                     "sense conceptually. Think about your design and the task of the function first - is "
-                    "it a function that must not change object internal state?", CWE(0U), true);
+                    "it a function that must not change object internal state?", CWE398, true);
     else
         reportError(toks, Severity::performance, "functionStatic",
                     "Technically the member function '" + classname + "::" + funcname + "' can be static.\n"
@@ -2018,7 +2036,7 @@ void CheckClass::checkConstError2(const Token *tok1, const Token *tok2, const st
                     "function. Making a function static can bring a performance benefit since no 'this' instance is "
                     "passed to the function. This change should not cause compiler errors but it does not "
                     "necessarily make sense conceptually. Think about your design and the task of the function first - "
-                    "is it a function that must not access members of class instances?", CWE(0U), true);
+                    "is it a function that must not access members of class instances?", CWE398, true);
 }
 
 //---------------------------------------------------------------------------
@@ -2105,7 +2123,7 @@ void CheckClass::initializerListError(const Token *tok1, const Token *tok2, cons
                 "Members are initialized in the order they are declared, not in the "
                 "order they are in the initializer list.  Keeping the initializer list "
                 "in the same order that the members were declared prevents order dependent "
-                "initialization errors.", CWE(0U), true);
+                "initialization errors.", CWE398, true);
 }
 
 

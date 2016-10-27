@@ -77,6 +77,8 @@ private:
         TEST_CASE(valueFlowFunctionDefaultParameter);
 
         TEST_CASE(knownValue);
+
+        TEST_CASE(valueFlowSizeofForwardDeclaredEnum);
     }
 
     bool testValueOfX(const char code[], unsigned int linenr, int value) {
@@ -331,6 +333,11 @@ private:
         values = tokenValues(code, "?");
         ASSERT_EQUALS(1U, values.size());
         ASSERT_EQUALS(2, values.front().intvalue);
+
+        code = "x = 123 ? : 456;\n";
+        values = tokenValues(code, "?");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(123, values.empty() ? 0 : values.front().intvalue);
 
         // !
         code  = "void f(int x) {\n"
@@ -607,6 +614,12 @@ private:
                "}";
         ASSERT_EQUALS(true, testValueOfX(code, 2U, 123));
 
+        code = "void f(const s *x) {\n"
+               "  x->a = 0;\n"
+               "  if (x ? x->a : 0) {}\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 2U, 0));
+
         code = "void f(int x, int y) {\n"
                "    a = x;\n"
                "    if (y){}\n"
@@ -766,6 +779,13 @@ private:
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 4U, 9));
         ASSERT_EQUALS(true, testValueOfX(code, 4U, 8));
+
+        code = "void x() {\n"
+               "    int x = value ? 6 : 0;\n"
+               "    x =\n"
+               "        1 + x;\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 4U, 7));
 
         code = "void f() {\n"
                "    int x = 0;\n"
@@ -1743,21 +1763,37 @@ private:
     void valueFlowFunctionReturn() {
         const char *code;
 
-        code = "void f1(int x) {\n"
+        code = "int f1(int x) {\n"
                "  return x+1;\n"
                "}\n"
                "void f2() {\n"
                "    x = 10 - f1(2);\n"
                "}";
         ASSERT_EQUALS(7, valueOfTok(code, "-").intvalue);
+        ASSERT_EQUALS(true, valueOfTok(code, "-").isKnown());
 
-        code = "void add(int x, int y) {\n"
+        code = "int add(int x, int y) {\n"
                "  return x+y;\n"
                "}\n"
                "void f2() {\n"
                "    x = 1 * add(10+1,4);\n"
                "}";
         ASSERT_EQUALS(15, valueOfTok(code, "*").intvalue);
+        ASSERT_EQUALS(true, valueOfTok(code, "*").isKnown());
+
+        code = "int one() { return 1; }\n"
+               "void f() { x = 1 * one(); }";
+        ASSERT_EQUALS(1, valueOfTok(code, "*").intvalue);
+        ASSERT_EQUALS(true, valueOfTok(code, "*").isKnown());
+
+        code = "int add(int x, int y) {\n"
+               "  return x+y;\n"
+               "}\n"
+               "void f2() {\n"
+               "    x = 1 * add(1,add(2,3));\n"
+               "}";
+        ASSERT_EQUALS(6, valueOfTok(code, "*").intvalue);
+        ASSERT_EQUALS(true, valueOfTok(code, "*").isKnown());
     }
 
     void valueFlowFunctionDefaultParameter() {
@@ -1963,6 +1999,24 @@ private:
         value = valueOfTok(code, "&");
         ASSERT_EQUALS(0, value.intvalue);
         ASSERT(value.isKnown());
+
+        // Ticket #7139
+        // "<<" in third expression of for
+        code = "void f(void) {\n"
+               "    int bit, x;\n"
+               "    for (bit = 1, x = 0; bit < 128; bit = bit << 1, x++) {\n"
+               "        z = x;\n"       // <- known value [0..6]
+               "    }\n"
+               "}\n";
+        ASSERT_EQUALS(true, testValueOfX(code, 4U, 0));
+        ASSERT_EQUALS(true, testValueOfX(code, 4U, 6));
+        ASSERT_EQUALS(false, testValueOfX(code, 4U, 7));
+        ASSERT(value.isKnown());
+    }
+
+    void valueFlowSizeofForwardDeclaredEnum() {
+        const char *code = "enum E; sz=sizeof(E);";
+        valueOfTok(code, "="); // Don't crash (#7775)
     }
 };
 

@@ -27,6 +27,7 @@
 static const char ProjectElementName[] = "project";
 static const char ProjectVersionAttrib[] = "version";
 static const char ProjectFileVersion[] = "1";
+static const char ImportProjectElementName[] = "importproject";
 static const char IncludeDirElementName[] = "includedir";
 static const char DirElementName[] = "dir";
 static const char DirNameAttrib[] = "name";
@@ -87,6 +88,9 @@ bool ProjectFile::Read(const QString &filename)
             if (insideProject && xmlReader.name() == PathsElementName)
                 ReadCheckPaths(xmlReader);
 
+            if (insideProject && xmlReader.name() == ImportProjectElementName)
+                ReadImportProject(xmlReader);
+
             // Find include directory from inside project element
             if (insideProject && xmlReader.name() == IncludeDirElementName)
                 ReadIncludeDirs(xmlReader);
@@ -140,62 +144,37 @@ bool ProjectFile::Read(const QString &filename)
         return false;
 }
 
-QStringList ProjectFile::GetIncludeDirs() const
-{
-    QStringList dirs;
-    foreach (QString path, mIncludeDirs) {
-        dirs << QDir::fromNativeSeparators(path);
-    }
-    return dirs;
-}
-
-QStringList ProjectFile::GetDefines() const
-{
-    return mDefines;
-}
-
-QStringList ProjectFile::GetCheckPaths() const
-{
-    QStringList paths;
-    foreach (QString path, mPaths) {
-        paths << QDir::fromNativeSeparators(path);
-    }
-    return paths;
-}
-
-QStringList ProjectFile::GetExcludedPaths() const
-{
-    QStringList paths;
-    foreach (QString path, mExcludedPaths) {
-        paths << QDir::fromNativeSeparators(path);
-    }
-    return paths;
-}
-
-QStringList ProjectFile::GetLibraries() const
-{
-    QStringList libraries;
-    foreach (QString library, mLibraries) {
-        libraries << library;
-    }
-    return libraries;
-}
-
-QStringList ProjectFile::GetSuppressions() const
-{
-    QStringList suppressions;
-    foreach (QString suppression, mSuppressions) {
-        suppressions << suppression;
-    }
-    return suppressions;
-}
-
 void ProjectFile::ReadRootPath(QXmlStreamReader &reader)
 {
     QXmlStreamAttributes attribs = reader.attributes();
     QString name = attribs.value("", RootPathNameAttrib).toString();
     if (!name.isEmpty())
         mRootPath = name;
+}
+
+void ProjectFile::ReadImportProject(QXmlStreamReader &reader)
+{
+    mImportProject.clear();
+    do {
+        const QXmlStreamReader::TokenType type = reader.readNext();
+        switch (type) {
+        case QXmlStreamReader::Characters:
+            mImportProject = reader.text().toString();
+        case QXmlStreamReader::EndElement:
+            return;
+        // Not handled
+        case QXmlStreamReader::StartElement:
+        case QXmlStreamReader::NoToken:
+        case QXmlStreamReader::Invalid:
+        case QXmlStreamReader::StartDocument:
+        case QXmlStreamReader::EndDocument:
+        case QXmlStreamReader::Comment:
+        case QXmlStreamReader::DTD:
+        case QXmlStreamReader::EntityReference:
+        case QXmlStreamReader::ProcessingInstruction:
+            break;
+        }
+    } while (1);
 }
 
 void ProjectFile::ReadIncludeDirs(QXmlStreamReader &reader)
@@ -447,6 +426,12 @@ bool ProjectFile::Write(const QString &filename)
         xmlWriter.writeEndElement();
     }
 
+    if (!mImportProject.isEmpty()) {
+        xmlWriter.writeStartElement(ImportProjectElementName);
+        xmlWriter.writeCharacters(mImportProject);
+        xmlWriter.writeEndElement();
+    }
+
     if (!mIncludeDirs.isEmpty()) {
         xmlWriter.writeStartElement(IncludeDirElementName);
         foreach (QString incdir, mIncludeDirs) {
@@ -514,4 +499,12 @@ void ProjectFile::WriteStringList(QXmlStreamWriter &xmlWriter, const QStringList
         xmlWriter.writeEndElement();
     }
     xmlWriter.writeEndElement();
+}
+
+QStringList ProjectFile::fromNativeSeparators(const QStringList &paths)
+{
+    QStringList ret;
+    foreach (const QString &path, paths)
+        ret << QDir::fromNativeSeparators(path);
+    return ret;
 }

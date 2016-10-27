@@ -574,7 +574,7 @@ private:
                              "      d=(char*)malloc(100);\n"
                              "   }\n"
                              "};");
-        ASSERT_EQUALS("[test.cpp:1]: (style) 'class F' does not have a copy constructor which is recommended since the class contains a pointer to allocated memory.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:1]: (style) class 'F' does not have a copy constructor which is recommended since the class contains a pointer to allocated memory.\n", errout.str());
 
         checkCopyConstructor("class F\n"
                              "{\n"
@@ -639,7 +639,7 @@ private:
                              "   char *p;\n"
                              "   F() : p(malloc(100)) {}\n"
                              "};");
-        ASSERT_EQUALS("[test.cpp:1]: (style) 'class F' does not have a copy constructor which is recommended since the class contains a pointer to allocated memory.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:1]: (style) class 'F' does not have a copy constructor which is recommended since the class contains a pointer to allocated memory.\n", errout.str());
 
         // #7198
         checkCopyConstructor("struct F {\n"
@@ -5179,6 +5179,17 @@ private:
                    "    }\n"
                    "};");
         ASSERT_EQUALS("[test.cpp:2]: (performance, inconclusive) Technically the member function 'Foo::foo' can be static.\n", errout.str());
+
+        checkConst("struct A;\n" // #5839 - operator()
+                   "struct B {\n"
+                   "    void operator()(A *a);\n"
+                   "};\n"
+                   "struct A {\n"
+                   "    void dostuff() {\n"
+                   "        B()(this);\n"
+                   "    }\n"
+                   "};");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void assigningPointerToPointerIsNotAConstOperation() {

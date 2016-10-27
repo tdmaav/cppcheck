@@ -466,9 +466,7 @@ public:
 
     void combineOperators();
 
-    void combineStrings();
-
-    void simplifyNull();
+    void combineStringAndCharLiterals();
 
     void concatenateNegativeNumberAndAnyPositive();
 

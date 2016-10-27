@@ -170,6 +170,8 @@ private:
         TEST_CASE(testEvaluationOrderSequencePointsFunctionCall);
         TEST_CASE(testEvaluationOrderSequencePointsComma);
         TEST_CASE(testEvaluationOrderSizeof);
+
+        TEST_CASE(testUnsignedLessThanZero);
     }
 
     void check(const char code[], const char *filename = nullptr, bool experimental = false, bool inconclusive = true, bool runSimpleChecks=true, Settings* settings = 0) {
@@ -5041,7 +5043,7 @@ private:
               "    if (memptr)\n"
               "        memptr = 0;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (style) Variable 'memptr' is reassigned a value before the old one has been used.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (style, inconclusive) Variable 'memptr' is reassigned a value before the old one has been used if variable is no semaphore variable.\n", errout.str());
     }
 
     void redundantVarAssignment_7133() {
@@ -5067,7 +5069,7 @@ private:
         ASSERT_EQUALS("", errout.str());
 
         check("void ConvertBitmapData(sal_uInt16 nDestBits) {\n"
-              "BitmapBuffer aSrcBuf;\n"
+              "    BitmapBuffer aSrcBuf;\n"
               "    aSrcBuf.mnBitCount = nSrcBits;\n"
               "    BitmapBuffer aDstBuf;\n"
               "    aSrcBuf.mnBitCount = nDestBits;\n"
@@ -5075,15 +5077,14 @@ private:
               "}", "test.c");
         ASSERT_EQUALS("[test.c:3] -> [test.c:5]: (style) Variable 'aSrcBuf.mnBitCount' is reassigned a value before the old one has been used.\n", errout.str());
         check("void ConvertBitmapData(sal_uInt16 nDestBits) {\n"
-              "BitmapBuffer aSrcBuf;\n"
+              "    BitmapBuffer aSrcBuf;\n"
               "    aSrcBuf.mnBitCount = nSrcBits;\n"
               "    BitmapBuffer aDstBuf;\n"
               "    aSrcBuf.mnBitCount = nDestBits;\n"
               "    bConverted = ::ImplFastBitmapConversion( aDstBuf, aSrcBuf, aTwoRects );\n"
               "}");
-        TODO_ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:5]: (style, inconclusive) Variable 'aSrcBuf.mnBitCount' is reassigned a value before the old one has been used.\n",
-                           "[test.cpp:3] -> [test.cpp:5]: (style) Variable 'aSrcBuf.mnBitCount' is reassigned a value before the old one has been used.\n",
-                           errout.str());
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:5]: (style, inconclusive) Variable 'aSrcBuf.mnBitCount' is reassigned a value before the old one has been used if variable is no semaphore variable.\n",
+                      errout.str());
 
     }
 
@@ -5584,12 +5585,12 @@ private:
         check("int *f(int *x) {\n"
               "    return &*x;\n"
               "}\n", nullptr, false, true);
-        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on x - it's already a pointer.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on 'x' - it's already a pointer.\n", errout.str());
 
         check("int *f(int *y) {\n"
               "    return &(*y);\n"
               "}\n", nullptr, false, true);
-        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on y - it's already a pointer.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on 'y' - it's already a pointer.\n", errout.str());
 
         // no warning for bitwise AND
         check("void f(int *b) {\n"
@@ -5619,14 +5620,14 @@ private:
         check("void f(Mutex *mut) {\n"
               "    pthread_mutex_lock(&*mut);\n"
               "}\n", nullptr, false, false);
-        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on mut - it's already a pointer.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on 'mut' - it's already a pointer.\n", errout.str());
 
         // make sure we got the AST match for "(" right
         check("void f(char *ptr) {\n"
               "    if (&*ptr == NULL)\n"
               "        return;\n"
               "}\n", nullptr, false, true);
-        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on ptr - it's already a pointer.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant pointer operation on 'ptr' - it's already a pointer.\n", errout.str());
 
         // no warning for macros
         check("#define MUTEX_LOCK(m) pthread_mutex_lock(&(m))\n"
@@ -6053,6 +6054,27 @@ private:
               "  dostuff(buf++, sizeof(*buf));"
               "}", "test.c");
         ASSERT_EQUALS("", errout.str());
+    }
+
+    void testUnsignedLessThanZero() {
+        check("struct d {\n"
+              "  unsigned n;\n"
+              "};\n"
+              "void f(void) {\n"
+              "  struct d d;\n"
+              "  d.n = 3;\n"
+              "\n"
+              "  if (d.n < 0) {\n"
+              "    return;\n"
+              "  }\n"
+              "\n"
+              "  if (0 > d.n) {\n"
+              "    return;\n"
+              "  }\n"
+              "}", "test.c");
+        ASSERT_EQUALS("[test.c:8]: (style) Checking if unsigned variable 'd.n' is less than zero.\n"
+                      "[test.c:12]: (style) Checking if unsigned variable 'd.n' is less than zero.\n",
+                      errout.str());
     }
 };
 

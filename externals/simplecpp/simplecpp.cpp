@@ -33,6 +33,15 @@
 #include <iostream>
 #include <stack>
 
+#if defined(_WIN32) || defined(__CYGWIN__) || defined(__MINGW32__)
+#include <windows.h>
+#undef min
+#undef max
+#undef ERROR
+#undef TRUE
+#define SIMPLECPP_WINDOWS
+#endif
+
 namespace {
 const simplecpp::TokenString DEFINE("define");
 const simplecpp::TokenString UNDEF("undef");
@@ -287,7 +296,7 @@ static unsigned char peekChar(std::istream &istr, unsigned int bom) {
 
 static void ungetChar(std::istream &istr, unsigned int bom) {
     istr.unget();
-    if (bom != 0)
+    if (bom == 0xfeff || bom == 0xfffe)
         istr.unget();
 }
 
@@ -333,6 +342,16 @@ static std::string escapeString(const std::string &str) {
     return ostr.str();
 }
 
+static void portabilityBackslash(simplecpp::OutputList *outputList, const std::vector<std::string> &files, const simplecpp::Location &location) {
+    if (!outputList)
+        return;
+    simplecpp::Output err(files);
+    err.type = simplecpp::Output::PORTABILITY_BACKSLASH;
+    err.location = location;
+    err.msg = "Combination 'backslash space newline' is not portable.";
+    outputList->push_back(err);
+}
+
 void simplecpp::TokenList::readfile(std::istream &istr, const std::string &filename, OutputList *outputList)
 {
     std::stack<simplecpp::Location> loc;
@@ -354,6 +373,8 @@ void simplecpp::TokenList::readfile(std::istream &istr, const std::string &filen
 
         if (ch == '\n') {
             if (cback() && cback()->op == '\\') {
+                if (location.col > cback()->location.col + 1U)
+                    portabilityBackslash(outputList, files, cback()->location);
                 ++multiline;
                 deleteToken(back());
             } else {
@@ -406,6 +427,9 @@ void simplecpp::TokenList::readfile(std::istream &istr, const std::string &filen
                 currentToken += ch;
                 ch = readChar(istr, bom);
             }
+            const std::string::size_type pos = currentToken.find_last_not_of(" \t");
+            if (pos < currentToken.size() - 1U && currentToken[pos] == '\\')
+                portabilityBackslash(outputList, files, location);
             if (currentToken[currentToken.size() - 1U] == '\\') {
                 ++multiline;
                 currentToken.erase(currentToken.size() - 1U);
@@ -1137,8 +1161,20 @@ private:
             } else if (tok->op == '#' && sameline(tok, tok->next) && tok->next->op != '#') {
                 tok = expandHash(tokens, tok->location, tok, macros, expandedmacros, parametertokens);
             } else {
-                if (!expandArg(tokens, tok, tok->location, macros, expandedmacros, parametertokens))
-                    tokens->push_back(new Token(*tok));
+                if (!expandArg(tokens, tok, tok->location, macros, expandedmacros, parametertokens)) {
+                    bool expanded = false;
+                    if (macros.find(tok->str) != macros.end() && expandedmacros.find(tok->str) == expandedmacros.end()) {
+                        const std::map<TokenString, Macro>::const_iterator it = macros.find(tok->str);
+                        const Macro &m = it->second;
+                        if (!m.functionLike()) {
+                            m.expand(tokens, tok, macros, files);
+                            expanded = true;
+                        }
+                    }
+                    if (!expanded)
+                        tokens->push_back(new Token(*tok));
+                }
+
                 if (tok->op == '(')
                     ++par;
                 else if (tok->op == ')') {
@@ -1234,11 +1270,26 @@ private:
             if (tok->op != '#') {
                 // A##B => AB
                 if (tok->next && tok->next->op == '#' && tok->next->next && tok->next->next->op == '#') {
+                    if (!sameline(tok, tok->next->next->next))
+                        throw invalidHashHash(tok->location, name());
                     output->push_back(newMacroToken(expandArgStr(tok, parametertokens2), loc, isReplaced(expandedmacros)));
                     tok = tok->next;
                 } else {
                     tok = expandToken(output, loc, tok, macros, expandedmacros, parametertokens2);
                 }
+                continue;
+            }
+
+            int numberOfHash = 1;
+            const Token *hashToken = tok->next;
+            while (sameline(tok,hashToken) && hashToken->op == '#') {
+                hashToken = hashToken->next;
+                ++numberOfHash;
+            }
+            if (numberOfHash == 4) {
+                // # ## #  => ##
+                output->push_back(newMacroToken("##", loc, isReplaced(expandedmacros)));
+                tok = hashToken;
                 continue;
             }
 
@@ -1428,26 +1479,52 @@ private:
         Token *A = output->back();
         if (!A)
             throw invalidHashHash(tok->location, name());
-        if (!sameline(tok, tok->next))
+        if (!sameline(tok, tok->next) || !sameline(tok, tok->next->next))
             throw invalidHashHash(tok->location, name());
 
         Token *B = tok->next->next;
-        const std::string strAB = A->str + expandArgStr(B, parametertokens);
+        std::string strAB;
 
-        bool removeComma = false;
-        if (variadic && strAB == "," && tok->previous->str == "," && args.size() >= 1U && B->str == args[args.size()-1U])
-            removeComma = true;
+        const bool varargs = variadic && args.size() >= 1U && B->str == args[args.size()-1U];
 
-        output->deleteToken(A);
-
-        if (!removeComma) {
-            TokenList tokens(files);
-            tokens.push_back(new Token(strAB, tok->location));
-            // TODO: For functionLike macros, push the (...)
-            expandToken(output, loc, tokens.cfront(), macros, expandedmacros, parametertokens);
+        TokenList tokensB(files);
+        if (expandArg(&tokensB, B, parametertokens)) {
+            if (tokensB.empty())
+                strAB = A->str;
+            else if (varargs && A->op == ',') {
+                strAB = ",";
+            } else {
+                strAB = A->str + tokensB.cfront()->str;
+                tokensB.deleteToken(tokensB.front());
+            }
+        } else {
+            strAB = A->str + B->str;
         }
 
-        return B->next;
+        const Token *nextTok = B->next;
+
+        if (varargs && tokensB.empty() && tok->previous->str == ",")
+            output->deleteToken(A);
+        else {
+            output->deleteToken(A);
+            TokenList tokens(files);
+            tokens.push_back(new Token(strAB, tok->location));
+            // for function like macros, push the (...)
+            if (tokensB.empty() && sameline(B,B->next) && B->next->op=='(') {
+                const std::map<TokenString,Macro>::const_iterator it = macros.find(strAB);
+                if (it != macros.end() && expandedmacros.find(strAB) == expandedmacros.end() && it->second.functionLike()) {
+                    const Token *tok2 = appendTokens(&tokens, B->next, macros, expandedmacros, parametertokens);
+                    if (tok2)
+                        nextTok = tok2->next;
+                }
+            }
+            expandToken(output, loc, tokens.cfront(), macros, expandedmacros, parametertokens);
+            for (Token *b = tokensB.front(); b; b = b->next)
+                b->location = loc;
+            output->takeTokens(tokensB);
+        }
+
+        return nextTok;
     }
 
     bool isReplaced(const std::set<std::string> &expandedmacros) const {
@@ -1487,6 +1564,39 @@ private:
 
 
 namespace simplecpp {
+#ifdef SIMPLECPP_WINDOWS
+
+static bool realFileName(const std::vector<TCHAR> &buf, std::ostream &ostr) {
+    WIN32_FIND_DATA FindFileData;
+    HANDLE hFind = FindFirstFile(&buf[0], &FindFileData);
+    if (hFind == INVALID_HANDLE_VALUE)
+        return false;
+    for (const TCHAR *c = FindFileData.cFileName; *c; c++)
+        ostr << (char)*c;
+    FindClose(hFind);
+    return true;
+}
+
+std::string realFilename(const std::string &f) {
+    std::vector<TCHAR> buf(f.size()+1U, 0);
+    for (unsigned int i = 0; i < f.size(); ++i)
+        buf[i] = f[i];
+    std::ostringstream ostr;
+    std::string::size_type sep = 0;
+    while ((sep = f.find_first_of("\\/", sep + 1U)) != std::string::npos) {
+        buf[sep] = 0;
+        if (!realFileName(buf,ostr))
+            return f;
+        ostr << '/';
+        buf[sep] = '/';
+    }
+    if (!realFileName(buf, ostr))
+        return f;
+    return ostr.str();
+}
+#else
+#define realFilename(f)  f
+#endif
 
 /**
  * perform path simplifications for . and ..
@@ -1519,7 +1629,7 @@ std::string simplifyPath(std::string path) {
         }
     }
 
-    return path;
+    return realFilename(path);
 }
 }
 
@@ -1679,20 +1789,22 @@ std::map<std::string, simplecpp::TokenList*> simplecpp::load(const simplecpp::To
 
     // -include files
     for (std::list<std::string>::const_iterator it = dui.includes.begin(); it != dui.includes.end(); ++it) {
-        if (ret.find(*it) != ret.end())
+        const std::string &filename = realFilename(*it);
+
+        if (ret.find(filename) != ret.end())
             continue;
 
-        std::ifstream fin(it->c_str());
+        std::ifstream fin(filename.c_str());
         if (!fin.is_open())
             continue;
 
-        TokenList *tokenlist = new TokenList(fin, fileNumbers, *it, outputList);
+        TokenList *tokenlist = new TokenList(fin, fileNumbers, filename, outputList);
         if (!tokenlist->front()) {
             delete tokenlist;
             continue;
         }
 
-        ret[*it] = tokenlist;
+        ret[filename] = tokenlist;
         filelist.push_back(tokenlist->front());
     }
 
@@ -1717,7 +1829,7 @@ std::map<std::string, simplecpp::TokenList*> simplecpp::load(const simplecpp::To
 
         bool systemheader = (htok->str[0] == '<');
 
-        const std::string header(htok->str.substr(1U, htok->str.size() - 2U));
+        const std::string header(realFilename(htok->str.substr(1U, htok->str.size() - 2U)));
         if (hasFile(ret, sourcefile, header, dui, systemheader))
             continue;
 
@@ -1735,6 +1847,31 @@ std::map<std::string, simplecpp::TokenList*> simplecpp::load(const simplecpp::To
     }
 
     return ret;
+}
+
+static bool preprocessToken(simplecpp::TokenList &output, const simplecpp::Token **tok1, std::map<std::string, simplecpp::Macro> &macros, std::vector<std::string> &files, simplecpp::OutputList *outputList) {
+    const simplecpp::Token *tok = *tok1;
+    const std::map<std::string,simplecpp::Macro>::const_iterator it = macros.find(tok->str);
+    if (it != macros.end()) {
+        simplecpp::TokenList value(files);
+        try {
+            *tok1 = it->second.expand(&value, tok, macros, files);
+        } catch (simplecpp::Macro::Error &err) {
+            simplecpp::Output out(files);
+            out.type = simplecpp::Output::SYNTAX_ERROR;
+            out.location = err.location;
+            out.msg = "failed to expand \'" + tok->str + "\', " + err.what;
+            if (outputList)
+                outputList->push_back(out);
+            return false;
+        }
+        output.takeTokens(value);
+    } else {
+        if (!tok->comment)
+            output.push_back(new simplecpp::Token(*tok));
+        *tok1 = tok->next;
+    }
+    return true;
 }
 
 void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenList &rawtokens, std::vector<std::string> &files, const std::map<std::string, simplecpp::TokenList *> &filedata, const simplecpp::DUI &dui, simplecpp::OutputList *outputList, std::list<simplecpp::MacroUsage> *macroUsage)
@@ -1847,8 +1984,37 @@ void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenL
                 } catch (const std::runtime_error &) {
                 }
             } else if (ifstates.top() == TRUE && rawtok->str == INCLUDE) {
-                const bool systemheader = (rawtok->next->str[0] == '<');
-                const std::string header(rawtok->next->str.substr(1U, rawtok->next->str.size() - 2U));
+                TokenList inc1(files);
+                for (const Token *inctok = rawtok->next; sameline(rawtok,inctok); inctok = inctok->next) {
+                    if (!inctok->comment)
+                        inc1.push_back(new Token(*inctok));
+                }
+                TokenList inc2(files);
+                if (!inc1.empty() && inc1.cfront()->name) {
+                    const Token *inctok = inc1.cfront();
+                    if (!preprocessToken(inc2, &inctok, macros, files, outputList)) {
+                        output.clear();
+                        return;
+                    }
+                } else {
+                    inc2.takeTokens(inc1);
+                }
+
+                if (inc2.empty()) {
+                    simplecpp::Output err(files);
+                    err.type = Output::SYNTAX_ERROR;
+                    err.location = rawtok->location;
+                    err.msg = "No header in #include";
+                    if (outputList)
+                        outputList->push_back(err);
+                    output.clear();
+                    return;
+                }
+
+                const Token *inctok = inc2.cfront();
+
+                const bool systemheader = (inctok->op == '<');
+                const std::string header(realFilename(inctok->str.substr(1U, inctok->str.size() - 2U)));
                 const std::string header2 = getFileName(filedata, rawtok->location.file(), header, dui, systemheader);
                 if (header2.empty()) {
                     simplecpp::Output output(files);
@@ -1913,24 +2079,10 @@ void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenL
                             continue;
                         }
 
-                        const std::map<std::string,Macro>::const_iterator it = macros.find(tok->str);
-                        if (it != macros.end()) {
-                            TokenList value(files);
-                            try {
-                                it->second.expand(&value, tok, macros, files);
-                            } catch (Macro::Error &err) {
-                                Output out(rawtok->location.files);
-                                out.type = Output::SYNTAX_ERROR;
-                                out.location = err.location;
-                                out.msg = "failed to expand \'" + tok->str + "\', " + err.what;
-                                if (outputList)
-                                    outputList->push_back(out);
-                                output.clear();
-                                return;
-                            }
-                            expr.takeTokens(value);
-                        } else {
-                            expr.push_back(new Token(*tok));
+                        const Token *tmp = tok;
+                        if (!preprocessToken(expr, &tmp, macros, files, outputList)) {
+                            output.clear();
+                            return;
                         }
                     }
                     try {
@@ -1998,28 +2150,9 @@ void simplecpp::preprocess(simplecpp::TokenList &output, const simplecpp::TokenL
         const Location loc(rawtok->location);
         TokenList tokens(files);
 
-        if (macros.find(rawtok->str) != macros.end()) {
-            std::map<TokenString,Macro>::const_iterator macro = macros.find(rawtok->str);
-            if (macro != macros.end()) {
-                try {
-                    rawtok = macro->second.expand(&tokens, rawtok, macros, files);
-                } catch (const simplecpp::Macro::Error &err) {
-                    Output out(err.location.files);
-                    out.type = Output::SYNTAX_ERROR;
-                    out.location = err.location;
-                    out.msg = err.what;
-                    if (outputList)
-                        outputList->push_back(out);
-                    output.clear();
-                    return;
-                }
-            }
-        }
-
-        else {
-            if (!rawtok->comment)
-                tokens.push_back(new Token(*rawtok));
-            rawtok = rawtok->next;
+        if (!preprocessToken(tokens, &rawtok, macros, files, outputList)) {
+            output.clear();
+            return;
         }
 
         if (hash || hashhash) {

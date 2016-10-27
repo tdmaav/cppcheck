@@ -151,6 +151,7 @@ private:
         TEST_CASE(simplifyTypedef116); // ticket #5624
         TEST_CASE(simplifyTypedef117); // ticket #6507
         TEST_CASE(simplifyTypedef118); // ticket #5749
+        TEST_CASE(simplifyTypedef119); // ticket #7541
 
         TEST_CASE(simplifyTypedefFunction1);
         TEST_CASE(simplifyTypedefFunction2); // ticket #1685
@@ -960,6 +961,62 @@ private:
                             "A::B::C::INT_C A::B::C::funC() { return c; }"
                             "A::B::C::D::LONG_D A::B::C::D::funD() { return d; }";
 
+        const char codeFullSpecified[] = "class A {\n"
+                                         "public:\n"
+                                         "    typedef char CHAR_A;\n"
+                                         "    A::CHAR_A funA();\n"
+                                         "    class B {\n"
+                                         "    public:\n"
+                                         "        typedef short SHRT_B;\n"
+                                         "        A::B::SHRT_B funB();\n"
+                                         "        class C {\n"
+                                         "        public:\n"
+                                         "            typedef int INT_C;\n"
+                                         "            A::B::C::INT_C funC();\n"
+                                         "            struct D {\n"
+                                         "                typedef long LONG_D;\n"
+                                         "                A::B::C::D::LONG_D funD();\n"
+                                         "                A::B::C::D::LONG_D d;\n"
+                                         "            };\n"
+                                         "            A::B::C::INT_C c;\n"
+                                         "        };\n"
+                                         "        A::B::SHRT_B b;\n"
+                                         "    };\n"
+                                         "    A::CHAR_A a;\n"
+                                         "};\n"
+                                         "A::CHAR_A A::funA() { return a; }\n"
+                                         "A::B::SHRT_B A::B::funB() { return b; }\n"
+                                         "A::B::C::INT_C A::B::C::funC() { return c; }"
+                                         "A::B::C::D::LONG_D A::B::C::D::funD() { return d; }";
+
+        const char codePartialSpecified[] = "class A {\n"
+                                            "public:\n"
+                                            "    typedef char CHAR_A;\n"
+                                            "    CHAR_A funA();\n"
+                                            "    class B {\n"
+                                            "    public:\n"
+                                            "        typedef short SHRT_B;\n"
+                                            "        B::SHRT_B funB();\n"
+                                            "        class C {\n"
+                                            "        public:\n"
+                                            "            typedef int INT_C;\n"
+                                            "            C::INT_C funC();\n"
+                                            "            struct D {\n"
+                                            "                typedef long LONG_D;\n"
+                                            "                D::LONG_D funD();\n"
+                                            "                C::D::LONG_D d;\n"
+                                            "            };\n"
+                                            "            B::C::INT_C c;\n"
+                                            "        };\n"
+                                            "        B::SHRT_B b;\n"
+                                            "    };\n"
+                                            "    CHAR_A a;\n"
+                                            "};\n"
+                                            "A::CHAR_A A::funA() { return a; }\n"
+                                            "A::B::SHRT_B A::B::funB() { return b; }\n"
+                                            "A::B::C::INT_C A::B::C::funC() { return c; }"
+                                            "A::B::C::D::LONG_D A::B::C::D::funD() { return d; }";
+
         const char expected[] =
             "class A { "
             "public: "
@@ -990,6 +1047,8 @@ private:
             "long A :: B :: C :: D :: funD ( ) { return d ; }";
 
         ASSERT_EQUALS(expected, tok(code, false));
+        ASSERT_EQUALS(expected, tok(codePartialSpecified, false));
+        ASSERT_EQUALS(expected, tok(codeFullSpecified, false));
     }
 
     void simplifyTypedef34() {
@@ -1079,7 +1138,7 @@ private:
                                 "}";
 
         ASSERT_EQUALS(expected, tok(code, false));
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS("[test.cpp:28]: (debug) ValueFlow bailout: function return; nontrivial function body\n", errout.str());
     }
 
     void simplifyTypedef36() {
@@ -1648,7 +1707,7 @@ private:
         {
             const char code[] = "typedef int RexxFunctionHandler();\n"
                                 "RexxFunctionHandler *(efuncs[]) = { NULL, NULL };";
-            const char expected[] = "int ( * ( efuncs [ ] ) ) ( ) = { 0 , 0 } ;";
+            const char expected[] = "int ( * ( efuncs [ ] ) ) ( ) = { NULL , NULL } ;";
             ASSERT_EQUALS(expected, tok(code));
             ASSERT_EQUALS("", errout.str());
         }
@@ -2101,7 +2160,7 @@ private:
                             "    return fred;\n"
                             "}";
         tok(code);
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (debug) ValueFlow bailout: function return; nontrivial function body\n", errout.str());
     }
 
     void simplifyTypedef101() { // ticket #3003 (segmentation fault)
@@ -2359,6 +2418,18 @@ private:
                                 "return & ClassyClass :: id ; "
                                 "} }";
         ASSERT_EQUALS(expected, tok(code, false));
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void simplifyTypedef119() { // #7541
+        const char code[] = "namespace Baz {\n"
+                            "  typedef char* T1;\n"
+                            "  typedef T1 XX;\n"
+                            "}\n"
+                            "namespace Baz { }\n"
+                            "enum Bar { XX = 1 };";
+        const char exp [] = "enum Bar { XX = 1 } ;";
+        ASSERT_EQUALS(exp, tok(code, false));
         ASSERT_EQUALS("", errout.str());
     }
 

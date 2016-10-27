@@ -29,9 +29,9 @@
 #include <stack>
 
 // CWE ids used
-static const struct CWE CWE398(398U);
-static const struct CWE CWE570(570U);
-static const struct CWE CWE571(571U);
+static const struct CWE CWE398(398U);   // Indicator of Poor Code Quality
+static const struct CWE CWE570(570U);   // Expression is Always False
+static const struct CWE CWE571(571U);   // Expression is Always True
 
 //---------------------------------------------------------------------------
 
@@ -272,7 +272,7 @@ void CheckCondition::checkBadBitmaskCheck()
 
 void CheckCondition::badBitmaskCheckError(const Token *tok)
 {
-    reportError(tok, Severity::warning, "badBitmaskCheck", "Result of operator '|' is always true if one operand is non-zero. Did you intend to use '&'?");
+    reportError(tok, Severity::warning, "badBitmaskCheck", "Result of operator '|' is always true if one operand is non-zero. Did you intend to use '&'?", CWE571, false);
 }
 
 void CheckCondition::comparison()
@@ -931,9 +931,9 @@ void CheckCondition::clarifyCondition()
                 // using boolean result in bitwise operation ! x [&|^]
                 const ValueType* vt1 = tok->astOperand1() ? tok->astOperand1()->valueType() : nullptr;
                 const ValueType* vt2 = tok->astOperand2() ? tok->astOperand2()->valueType() : nullptr;
-                if (vt1 && vt1->type == ValueType::BOOL && !Token::Match(tok->astOperand1(), "(|[|::|.") && countPar(tok->astOperand1(), tok) == 0)
+                if (vt1 && vt1->type == ValueType::BOOL && !Token::Match(tok->astOperand1(), "%name%|(|[|::|.") && countPar(tok->astOperand1(), tok) == 0)
                     clarifyConditionError(tok, false, true);
-                else if (vt2 && vt2->type == ValueType::BOOL && !Token::Match(tok->astOperand1(), "(|[|::|.") && countPar(tok, tok->astOperand2()) == 0)
+                else if (vt2 && vt2->type == ValueType::BOOL && !Token::Match(tok->astOperand1(), "%name%|(|[|::|.") && countPar(tok, tok->astOperand2()) == 0)
                     clarifyConditionError(tok, false, true);
             }
         }
@@ -975,7 +975,12 @@ void CheckCondition::alwaysTrueFalse()
     for (std::size_t i = 0; i < functions; ++i) {
         const Scope * scope = symbolDatabase->functionScopes[i];
         for (const Token* tok = scope->classStart->next(); tok != scope->classEnd; tok = tok->next()) {
-            if (!Token::Match(tok, "%comp%|!"))
+
+            const bool constValCond = Token::Match(tok->tokAt(-2), "if|while ( %num%|%char% )") && !Token::Match(tok,"0|1"); // just one number or char inside if|while
+            const bool constValExpr = Token::Match(tok, "%num%|%char%") && tok->astParent() && Token::Match(tok->astParent(),"&&|%oror%|?"); // just one number or char in boolean expression
+            const bool compExpr = Token::Match(tok, "%comp%|!"); // a compare expression
+
+            if (!(constValCond || constValExpr || compExpr))
                 continue;
             if (tok->link()) // don't write false positives when templates are used
                 continue;
@@ -983,12 +988,10 @@ void CheckCondition::alwaysTrueFalse()
                 continue;
             if (!tok->values.front().isKnown())
                 continue;
-            if (!tok->astParent() || !Token::Match(tok->astParent()->previous(), "%name% ("))
-                continue;
 
             // Don't warn in assertions. Condition is often 'always true' by intention.
             // If platform,defines,etc cause 'always false' then that is not dangerous neither.
-            const std::string &str = tok->astParent()->previous()->str();
+            const std::string str = tok->astParent() && tok->astParent()->previous() ? tok->astParent()->previous()->str() : "";
             if (str.find("assert")!=std::string::npos || str.find("ASSERT")!=std::string::npos)
                 continue;
 
@@ -1023,7 +1026,8 @@ void CheckCondition::alwaysTrueFalseError(const Token *tok, bool knownResult)
     reportError(tok,
                 Severity::style,
                 "knownConditionTrueFalse",
-                "Condition '" + expr + "' is always " + (knownResult ? "true" : "false"));
+                "Condition '" + expr + "' is always " + (knownResult ? "true" : "false"),
+                (knownResult ? CWE571 : CWE570), false);
 }
 
 void CheckCondition::checkInvalidTestForOverflow()
@@ -1087,5 +1091,5 @@ void CheckCondition::invalidTestForOverflow(const Token* tok, bool result)
              "'. Condition is always " +
              std::string(result ? "true" : "false") +
              " unless there is overflow, and overflow is UB.";
-    reportError(tok, Severity::warning, "invalidTestForOverflow", errmsg);
+    reportError(tok, Severity::warning, "invalidTestForOverflow", errmsg, (result ? CWE571 : CWE570), false);
 }

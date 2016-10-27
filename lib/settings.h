@@ -51,7 +51,7 @@ private:
     std::set<std::string> _enabled;
 
     /** @brief terminate checking */
-    bool _terminated;
+    static bool _terminated;
 
 public:
     Settings();
@@ -97,13 +97,13 @@ public:
     bool verbose;
 
     /** @brief Request termination of checking */
-    void terminate() {
-        _terminated = true;
+    void terminate(bool t = true) {
+        Settings::_terminated = t;
     }
 
     /** @brief termination requested? */
     bool terminated() const {
-        return _terminated;
+        return Settings::_terminated;
     }
 
     /** @brief Force checking the files with "too many" configurations (--force). */
@@ -247,7 +247,7 @@ public:
     ImportProject project;
 
     /**
-     * @brief return true if a file is to be excluded from configuration checking
+     * @brief return true if a included file is to be excluded in Preprocessor::getConfigs
      * @return true for the file to be excluded.
      */
     bool configurationExcluded(const std::string &file) const {

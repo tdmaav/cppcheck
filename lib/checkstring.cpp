@@ -34,7 +34,7 @@ static const struct CWE CWE571(571U);   // Expression is Always True
 static const struct CWE CWE595(595U);   // Comparison of Object References Instead of Object Contents
 static const struct CWE CWE628(628U);   // Function Call with Incorrectly Specified Arguments
 static const struct CWE CWE665(665U);   // Improper Initialization
-
+static const struct CWE CWE758(758U);   // Reliance on Undefined, Unspecified, or Implementation-Defined Behavior
 
 //---------------------------------------------------------------------------
 // Writing string literal is UB
@@ -75,7 +75,7 @@ void CheckString::stringLiteralWriteError(const Token *tok, const Token *strValu
     }
     errmsg += " directly or indirectly is undefined behaviour.";
 
-    reportError(callstack, Severity::error, "stringLiteralWrite", errmsg);
+    reportError(callstack, Severity::error, "stringLiteralWrite", errmsg, CWE758, false);
 }
 
 //---------------------------------------------------------------------------
@@ -166,9 +166,9 @@ void CheckString::checkSuspiciousStringCompare()
             const Token* litTok = tok->astOperand2();
             if (!varTok || !litTok)  // <- failed to create AST for comparison
                 continue;
-            if (varTok->tokType() == Token::eString || varTok->tokType() == Token::eNumber)
+            if (Token::Match(varTok, "%char%|%num%|%str%"))
                 std::swap(varTok, litTok);
-            else if (litTok->tokType() != Token::eString && litTok->tokType() != Token::eNumber)
+            else if (!Token::Match(litTok, "%char%|%num%|%str%"))
                 continue;
 
             // Pointer addition?
@@ -200,10 +200,11 @@ void CheckString::checkSuspiciousStringCompare()
                 varTok = varTok->astParent();
             const std::string varname = varTok->expressionString();
 
+            const bool ischar(litTok->tokType() == Token::eChar);
             if (litTok->tokType() == Token::eString) {
                 if (_tokenizer->isC() || (var && var->isArrayOrPointer()))
                     suspiciousStringCompareError(tok, varname);
-            } else if (litTok->originalName() == "'\\0'" && var && var->isPointer()) {
+            } else if (ischar && var && var->isPointer()) {
                 suspiciousStringCompareError_char(tok, varname);
             }
         }

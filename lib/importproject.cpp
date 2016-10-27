@@ -19,7 +19,7 @@
 #include "importproject.h"
 #include "path.h"
 #include "settings.h"
-#include "tokenlist.h"
+#include "tokenize.h"
 #include "token.h"
 #include "tinyxml2.h"
 #include <fstream>
@@ -37,6 +37,26 @@ void ImportProject::ignorePaths(std::vector<std::string> &ipaths)
             }
         }
         if (ignore)
+            fileSettings.erase(it++);
+        else
+            ++it;
+    }
+}
+
+void ImportProject::ignoreOtherConfigs(const std::string &cfg)
+{
+    for (std::list<FileSettings>::iterator it = fileSettings.begin(); it != fileSettings.end();) {
+        if (it->cfg != cfg)
+            fileSettings.erase(it++);
+        else
+            ++it;
+    }
+}
+
+void ImportProject::ignoreOtherPlatforms(cppcheck::Platform::PlatformType platformType)
+{
+    for (std::list<FileSettings>::iterator it = fileSettings.begin(); it != fileSettings.end();) {
+        if (it->platformType != cppcheck::Platform::Unspecified && it->platformType != platformType)
             fileSettings.erase(it++);
         else
             ++it;
@@ -194,10 +214,12 @@ namespace {
             if (a)
                 name = a;
             for (const tinyxml2::XMLElement *e = cfg->FirstChildElement(); e; e = e->NextSiblingElement()) {
-                if (std::strcmp(e->Name(),"Configuration")==0)
-                    configuration = e->GetText();
-                else if (std::strcmp(e->Name(),"Platform")==0)
-                    platform = e->GetText();
+                if (e->GetText()) {
+                    if (std::strcmp(e->Name(),"Configuration")==0)
+                        configuration = e->GetText();
+                    else if (std::strcmp(e->Name(),"Platform")==0)
+                        platform = e->GetText();
+                }
             }
         }
         std::string name;
@@ -214,31 +236,39 @@ namespace {
                 if (std::strcmp(e1->Name(), "ClCompile") != 0)
                     continue;
                 for (const tinyxml2::XMLElement *e = e1->FirstChildElement(); e; e = e->NextSiblingElement()) {
-                    if (std::strcmp(e->Name(), "PreprocessorDefinitions") == 0)
-                        preprocessorDefinitions = e->GetText();
-                    else if (std::strcmp(e->Name(), "AdditionalIncludeDirectories") == 0)
-                        additionalIncludePaths = e->GetText();
+                    if (e->GetText()) {
+                        if (std::strcmp(e->Name(), "PreprocessorDefinitions") == 0)
+                            preprocessorDefinitions = e->GetText();
+                        else if (std::strcmp(e->Name(), "AdditionalIncludeDirectories") == 0)
+                            additionalIncludePaths = e->GetText();
+                    }
                 }
             }
         }
+
+        static void replaceAll(std::string &c, const std::string &from, const std::string &to) {
+            std::string::size_type pos;
+            while ((pos = c.find(from)) != std::string::npos) {
+                c.erase(pos,from.size());
+                c.insert(pos,to);
+            }
+        }
+
         bool conditionIsTrue(const ProjectConfiguration &p) const {
             std::string c = condition;
-            std::string::size_type pos = 0;
-            while ((pos = c.find("$(Configuration)")) != std::string::npos) {
-                c.erase(pos,16);
-                c.insert(pos,p.configuration);
-            }
-            while ((pos = c.find("$(Platform)")) != std::string::npos) {
-                c.erase(pos, 11);
-                c.insert(pos, p.platform);
-            }
+            replaceAll(c, "$(Configuration)", p.configuration);
+            replaceAll(c, "$(Platform)", p.platform);
+
             // TODO : Better evaluation
             Settings s;
             std::istringstream istr(c);
-            TokenList tokens(&s);
-            tokens.createTokens(istr);
-            tokens.createAst();
-            for (const Token *tok = tokens.front(); tok; tok = tok->next()) {
+            Tokenizer tokenizer(&s, nullptr);
+            tokenizer.tokenize(istr,"vcxproj");
+            for (const Token *tok = tokenizer.tokens(); tok; tok = tok->next()) {
+                if (tok->str() == "(" && tok->astOperand1() && tok->astOperand2()) {
+                    if (tok->astOperand1()->expressionString() == "Configuration.Contains")
+                        return ('\'' + p.configuration + '\'') == tok->astOperand2()->str();
+                }
                 if (tok->str() == "==" && tok->astOperand1() && tok->astOperand2() && tok->astOperand1()->str() == tok->astOperand2()->str())
                     return true;
             }
@@ -272,6 +302,8 @@ void ImportProject::importVcxproj(const std::string &filename)
     std::list<std::string> compileList;
     std::list<ItemDefinitionGroup> itemDefinitionGroupList;
 
+    bool useOfMfc = false;
+
     tinyxml2::XMLDocument doc;
     tinyxml2::XMLError error = doc.LoadFile(filename.c_str());
     if (error != tinyxml2::XML_SUCCESS)
@@ -294,6 +326,11 @@ void ImportProject::importVcxproj(const std::string &filename)
             }
         } else if (std::strcmp(node->Name(), "ItemDefinitionGroup") == 0) {
             itemDefinitionGroupList.push_back(ItemDefinitionGroup(node));
+        } else if (std::strcmp(node->Name(), "PropertyGroup") == 0) {
+            for (const tinyxml2::XMLElement *e = node->FirstChildElement(); e; e = e->NextSiblingElement()) {
+                if (std::strcmp(e->Name(), "UseOfMfc") == 0)
+                    useOfMfc = true;
+            }
         }
     }
 
@@ -305,13 +342,15 @@ void ImportProject::importVcxproj(const std::string &filename)
                 FileSettings fs;
                 fs.filename = Path::simplifyPath(Path::getPathFromFilename(filename) + *c);
                 fs.cfg = p->name;
-                fs.defines = "_MSC_VER=1700;_WIN32=1;" + i->preprocessorDefinitions;
+                fs.defines = "_MSC_VER=1900;_WIN32=1;" + i->preprocessorDefinitions;
                 if (p->platform == "Win32")
                     fs.platformType = cppcheck::Platform::Win32W;
                 else if (p->platform == "x64") {
                     fs.platformType = cppcheck::Platform::Win64;
                     fs.defines += ";_WIN64=1";
                 }
+                if (useOfMfc)
+                    fs.defines += ";__AFXWIN_H__";
                 fs.setDefines(fs.defines);
                 fs.setIncludePaths(Path::getPathFromFilename(filename), toStringList(i->additionalIncludePaths));
                 fileSettings.push_back(fs);

@@ -530,6 +530,8 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
     if (name.empty())
         return Error(OK);
 
+    _functions.insert(name);
+
     for (const tinyxml2::XMLElement *functionnode = node->FirstChildElement(); functionnode; functionnode = functionnode->NextSiblingElement()) {
         const std::string functionnodename = functionnode->Name();
         if (functionnodename == "noreturn")
@@ -543,31 +545,31 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
             leakignore.insert(name);
         else if (functionnodename == "use-retval")
             _useretval.insert(name);
-        else if (functionnodename == "arg") {
+        else if (functionnodename == "returnValue") {
+            if (const char *expr = functionnode->GetText())
+                _returnValue[name] = expr;
+            if (const char *type = functionnode->Attribute("type"))
+                _returnValueType[name] = type;
+        } else if (functionnodename == "arg") {
             const char* argNrString = functionnode->Attribute("nr");
             if (!argNrString)
                 return Error(MISSING_ATTRIBUTE, "nr");
             const bool bAnyArg = strcmp(argNrString, "any")==0;
             const int nr = (bAnyArg) ? -1 : atoi(argNrString);
-            bool notbool = false;
-            bool notnull = false;
-            bool notuninit = false;
-            bool formatstr = false;
-            bool strz = false;
-            std::string& valid = argumentChecks[name][nr].valid;
-            std::list<ArgumentChecks::MinSize>& minsizes = argumentChecks[name][nr].minsizes;
+            ArgumentChecks &ac = argumentChecks[name][nr];
+            ac.optional  = functionnode->Attribute("default") != nullptr;
             for (const tinyxml2::XMLElement *argnode = functionnode->FirstChildElement(); argnode; argnode = argnode->NextSiblingElement()) {
                 const std::string argnodename = argnode->Name();
                 if (argnodename == "not-bool")
-                    notbool = true;
+                    ac.notbool = true;
                 else if (argnodename == "not-null")
-                    notnull = true;
+                    ac.notnull = true;
                 else if (argnodename == "not-uninit")
-                    notuninit = true;
+                    ac.notuninit = true;
                 else if (argnodename == "formatstr")
-                    formatstr = true;
+                    ac.formatstr = true;
                 else if (argnodename == "strz")
-                    strz = true;
+                    ac.strz = true;
                 else if (argnodename == "valid") {
                     // Validate the validation expression
                     const char *p = argnode->GetText();
@@ -591,7 +593,7 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
                         return Error(BAD_ATTRIBUTE_VALUE, argnode->GetText());
 
                     // Set validation expression
-                    valid = argnode->GetText();
+                    ac.valid = argnode->GetText();
                 }
 
                 else if (argnodename == "minsize") {
@@ -617,26 +619,25 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
                     if (strlen(argattr) != 1 || argattr[0]<'0' || argattr[0]>'9')
                         return Error(BAD_ATTRIBUTE_VALUE, argattr);
 
-                    minsizes.push_back(ArgumentChecks::MinSize(type,argattr[0]-'0'));
+                    ac.minsizes.push_back(ArgumentChecks::MinSize(type,argattr[0]-'0'));
                     if (type == ArgumentChecks::MinSize::MUL) {
                         const char *arg2attr  = argnode->Attribute("arg2");
                         if (!arg2attr)
                             return Error(MISSING_ATTRIBUTE, "arg2");
                         if (strlen(arg2attr) != 1 || arg2attr[0]<'0' || arg2attr[0]>'9')
                             return Error(BAD_ATTRIBUTE_VALUE, arg2attr);
-                        minsizes.back().arg2 = arg2attr[0] - '0';
+                        ac.minsizes.back().arg2 = arg2attr[0] - '0';
                     }
+                }
+
+                else if (argnodename == "iterator") {
+                    ac.iteratorInfo.setType(argnode->Attribute("type"));
+                    ac.iteratorInfo.setContainer(argnode->Attribute("container"));
                 }
 
                 else
                     unknown_elements.insert(argnodename);
             }
-            argumentChecks[name][nr].notbool   = notbool;
-            argumentChecks[name][nr].notnull   = notnull;
-            argumentChecks[name][nr].notuninit = notuninit;
-            argumentChecks[name][nr].formatstr = formatstr;
-            argumentChecks[name][nr].strz      = strz;
-            argumentChecks[name][nr].optional  = functionnode->Attribute("default") != nullptr;
         } else if (functionnodename == "ignorefunction") {
             _ignorefunction.insert(name);
         } else if (functionnodename == "formatstr") {
@@ -716,18 +717,29 @@ bool Library::isargvalid(const Token *ftok, int argnr, const MathLib::bigint arg
     return false;
 }
 
-static std::string functionName(const Token *ftok, bool *error)
+std::string Library::getFunctionName(const Token *ftok, bool *error) const
 {
     if (!ftok) {
         *error = true;
         return "";
     }
-    if (ftok->isName())
+    if (ftok->isName()) {
+        for (const Scope *scope = ftok->scope(); scope; scope = scope->nestedIn) {
+            if (!scope->isClassOrStruct())
+                continue;
+            for (unsigned int i = 0; i < scope->definedType->derivedFrom.size(); ++i) {
+                const Type::BaseInfo &baseInfo = scope->definedType->derivedFrom[i];
+                const std::string name(baseInfo.name + "::" + ftok->str());
+                if (_functions.find(name) != _functions.end() && matchArguments(ftok, name))
+                    return name;
+            }
+        }
         return ftok->str();
+    }
     if (ftok->str() == "::") {
         if (!ftok->astOperand2())
-            return functionName(ftok->astOperand1(), error);
-        return functionName(ftok->astOperand1(),error) + "::" + functionName(ftok->astOperand2(),error);
+            return getFunctionName(ftok->astOperand1(), error);
+        return getFunctionName(ftok->astOperand1(),error) + "::" + getFunctionName(ftok->astOperand2(),error);
     }
     if (ftok->str() == "." && ftok->astOperand1()) {
         const std::string type = astCanonicalType(ftok->astOperand1());
@@ -736,13 +748,13 @@ static std::string functionName(const Token *ftok, bool *error)
             return "";
         }
 
-        return type + "::" + functionName(ftok->astOperand2(),error);
+        return type + "::" + getFunctionName(ftok->astOperand2(),error);
     }
     *error = true;
     return "";
 }
 
-static std::string functionName(const Token *ftok)
+std::string Library::getFunctionName(const Token *ftok) const
 {
     if (!Token::Match(ftok, "%name% ("))
         return "";
@@ -750,7 +762,7 @@ static std::string functionName(const Token *ftok)
     // Lookup function name using AST..
     if (ftok->astParent()) {
         bool error = false;
-        std::string ret = functionName(ftok->next()->astOperand1(), &error);
+        std::string ret = getFunctionName(ftok->next()->astOperand1(), &error);
         return error ? std::string() : ret;
     }
 
@@ -773,7 +785,7 @@ bool Library::isnullargbad(const Token *ftok, int argnr) const
     const ArgumentChecks *arg = getarg(ftok, argnr);
     if (!arg) {
         // scan format string argument should not be null
-        const std::string funcname = functionName(ftok);
+        const std::string funcname = getFunctionName(ftok);
         std::map<std::string, std::pair<bool, bool> >::const_iterator it = _formatstr.find(funcname);
         if (it != _formatstr.end() && it->second.first)
             return true;
@@ -786,7 +798,7 @@ bool Library::isuninitargbad(const Token *ftok, int argnr) const
     const ArgumentChecks *arg = getarg(ftok, argnr);
     if (!arg) {
         // non-scan format string argument should not be uninitialized
-        const std::string funcname = functionName(ftok);
+        const std::string funcname = getFunctionName(ftok);
         std::map<std::string, std::pair<bool, bool> >::const_iterator it = _formatstr.find(funcname);
         if (it != _formatstr.end() && !it->second.first)
             return true;
@@ -798,14 +810,14 @@ bool Library::isuninitargbad(const Token *ftok, int argnr) const
 /** get allocation info for function */
 const Library::AllocFunc* Library::alloc(const Token *tok) const
 {
-    const std::string funcname = functionName(tok);
+    const std::string funcname = getFunctionName(tok);
     return isNotLibraryFunction(tok) && argumentChecks.find(funcname) != argumentChecks.end() ? 0 : getAllocDealloc(_alloc, funcname);
 }
 
 /** get deallocation info for function */
 const Library::AllocFunc* Library::dealloc(const Token *tok) const
 {
-    const std::string funcname = functionName(tok);
+    const std::string funcname = getFunctionName(tok);
     return isNotLibraryFunction(tok) && argumentChecks.find(funcname) != argumentChecks.end() ? 0 : getAllocDealloc(_dealloc, funcname);
 }
 
@@ -829,7 +841,7 @@ const Library::ArgumentChecks * Library::getarg(const Token *ftok, int argnr) co
     if (isNotLibraryFunction(ftok))
         return nullptr;
     std::map<std::string, std::map<int, ArgumentChecks> >::const_iterator it1;
-    it1 = argumentChecks.find(functionName(ftok));
+    it1 = argumentChecks.find(getFunctionName(ftok));
     if (it1 == argumentChecks.end())
         return nullptr;
     const std::map<int,ArgumentChecks>::const_iterator it2 = it1->second.find(argnr);
@@ -906,10 +918,15 @@ bool Library::isNotLibraryFunction(const Token *ftok) const
     if (ftok->varId())
         return true;
 
+    return !matchArguments(ftok, getFunctionName(ftok));
+}
+
+bool Library::matchArguments(const Token *ftok, const std::string &functionName) const
+{
     int callargs = numberOfArguments(ftok);
-    const std::map<std::string, std::map<int, ArgumentChecks> >::const_iterator it = argumentChecks.find(functionName(ftok));
+    const std::map<std::string, std::map<int, ArgumentChecks> >::const_iterator it = argumentChecks.find(functionName);
     if (it == argumentChecks.end())
-        return (callargs != 0);
+        return (callargs == 0);
     int args = 0;
     int firstOptionalArg = -1;
     for (std::map<int, ArgumentChecks>::const_iterator it2 = it->second.begin(); it2 != it->second.end(); ++it2) {
@@ -919,25 +936,68 @@ bool Library::isNotLibraryFunction(const Token *ftok) const
             firstOptionalArg = it2->first;
 
         if (it2->second.formatstr)
-            return args > callargs;
+            return args <= callargs;
     }
-    return (firstOptionalArg < 0) ? args != callargs : !(callargs >= firstOptionalArg-1 && callargs <= args);
+    return (firstOptionalArg < 0) ? args == callargs : (callargs >= firstOptionalArg-1 && callargs <= args);
 }
 
 const Library::WarnInfo* Library::getWarnInfo(const Token* ftok) const
 {
     if (isNotLibraryFunction(ftok))
         return nullptr;
-    std::map<std::string, WarnInfo>::const_iterator i = functionwarn.find(functionName(ftok));
+    std::map<std::string, WarnInfo>::const_iterator i = functionwarn.find(getFunctionName(ftok));
     if (i == functionwarn.cend())
         return nullptr;
     return &i->second;
 }
 
+bool Library::formatstr_function(const Token* ftok) const
+{
+    return (!isNotLibraryFunction(ftok) &&
+            _formatstr.find(getFunctionName(ftok)) != _formatstr.cend());
+}
+
+int Library::formatstr_argno(const Token* ftok) const
+{
+    const std::map<int, Library::ArgumentChecks>& argumentChecksFunc = argumentChecks.at(getFunctionName(ftok));
+    for (std::map<int, Library::ArgumentChecks>::const_iterator i = argumentChecksFunc.cbegin(); i != argumentChecksFunc.cend(); ++i) {
+        if (i->second.formatstr) {
+            return i->first - 1;
+        }
+    }
+    return -1;
+}
+
+bool Library::formatstr_scan(const Token* ftok) const
+{
+    return _formatstr.at(getFunctionName(ftok)).first;
+}
+
+bool Library::formatstr_secure(const Token* ftok) const
+{
+    return _formatstr.at(getFunctionName(ftok)).second;
+}
+
 bool Library::isUseRetVal(const Token* ftok) const
 {
     return (!isNotLibraryFunction(ftok) &&
-            _useretval.find(functionName(ftok)) != _useretval.end());
+            _useretval.find(getFunctionName(ftok)) != _useretval.end());
+}
+
+std::string Library::returnValue(const Token *ftok) const
+{
+    if (isNotLibraryFunction(ftok))
+        return std::string();
+    std::map<std::string, std::string>::const_iterator it = _returnValue.find(getFunctionName(ftok));
+    return it != _returnValue.end() ? it->second : std::string();
+}
+
+std::string Library::returnValueType(const Token *ftok) const
+{
+    if (isNotLibraryFunction(ftok))
+        return std::string();
+    std::map<std::string, std::string>::const_iterator it = _returnValueType.find(getFunctionName(ftok));
+    return it != _returnValueType.end() ? it->second : std::string();
 }
 
 bool Library::isnoreturn(const Token *ftok) const
@@ -946,7 +1006,7 @@ bool Library::isnoreturn(const Token *ftok) const
         return true;
     if (isNotLibraryFunction(ftok))
         return false;
-    std::map<std::string, bool>::const_iterator it = _noreturn.find(functionName(ftok));
+    std::map<std::string, bool>::const_iterator it = _noreturn.find(getFunctionName(ftok));
     return (it != _noreturn.end() && it->second);
 }
 
@@ -956,7 +1016,7 @@ bool Library::isnotnoreturn(const Token *ftok) const
         return false;
     if (isNotLibraryFunction(ftok))
         return false;
-    std::map<std::string, bool>::const_iterator it = _noreturn.find(functionName(ftok));
+    std::map<std::string, bool>::const_iterator it = _noreturn.find(getFunctionName(ftok));
     return (it != _noreturn.end() && !it->second);
 }
 

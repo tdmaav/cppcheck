@@ -31,6 +31,7 @@
 #include <string>
 #include <list>
 #include <vector>
+#include <cstring>
 
 namespace tinyxml2 {
     class XMLDocument;
@@ -137,17 +138,13 @@ public:
         return ((func->groupId > 0) && ((func->groupId & 1) == 1));
     }
 
-    bool formatstr_function(const std::string& funcname) const {
-        return _formatstr.find(funcname) != _formatstr.cend();
-    }
+    bool formatstr_function(const Token* ftok) const;
 
-    bool formatstr_scan(const std::string& funcname) const {
-        return _formatstr.at(funcname).first;
-    }
+    int formatstr_argno(const Token* ftok) const;
 
-    bool formatstr_secure(const std::string& funcname) const {
-        return _formatstr.at(funcname).second;
-    }
+    bool formatstr_scan(const Token* ftok) const;
+
+    bool formatstr_secure(const Token* ftok) const;
 
     std::set<std::string> use;
     std::set<std::string> leakignore;
@@ -165,9 +162,12 @@ public:
 
     // returns true if ftok is not a library function
     bool isNotLibraryFunction(const Token *ftok) const;
-
+    bool matchArguments(const Token *ftok, const std::string &functionName) const;
 
     bool isUseRetVal(const Token* ftok) const;
+
+    std::string returnValue(const Token *ftok) const;
+    std::string returnValueType(const Token *ftok) const;
 
     bool isnoreturn(const Token *ftok) const;
     bool isnotnoreturn(const Token *ftok) const;
@@ -229,7 +229,8 @@ public:
             notuninit(false),
             formatstr(false),
             strz(false),
-            optional(false) {
+            optional(false),
+            iteratorInfo() {
         }
 
         bool         notbool;
@@ -239,6 +240,26 @@ public:
         bool         strz;
         bool         optional;
         std::string  valid;
+
+        class IteratorInfo {
+        public:
+            IteratorInfo() : it(false), container(0), first(false), last(false) {}
+            void setContainer(const char *str) {
+                it = true;
+                container = str ? std::atoi(str) : 0;
+            }
+            void setType(const char *str) {
+                it = true;
+                first = str ? (std::strcmp(str,"first") == 0) : false;
+                last = str ? (std::strcmp(str,"last") == 0) : false;
+            }
+
+            bool it;
+            int  container;
+            bool first;
+            bool last;
+        };
+        IteratorInfo iteratorInfo;
 
         class MinSize {
         public:
@@ -277,6 +298,11 @@ public:
     const std::string& validarg(const Token *ftok, int argnr) const {
         const ArgumentChecks *arg = getarg(ftok, argnr);
         return arg ? arg->valid : emptyString;
+    }
+
+    const ArgumentChecks::IteratorInfo *getArgIteratorInfo(const Token *ftok, int argnr) const {
+        const ArgumentChecks *arg = getarg(ftok, argnr);
+        return arg && arg->iteratorInfo.it ? &arg->iteratorInfo : nullptr;
     }
 
     bool hasminsize(const std::string &functionName) const {
@@ -480,7 +506,10 @@ private:
     std::set<std::string> _useretval;
     std::map<std::string, AllocFunc> _alloc; // allocation functions
     std::map<std::string, AllocFunc> _dealloc; // deallocation functions
+    std::set<std::string> _functions;
     std::map<std::string, bool> _noreturn; // is function noreturn?
+    std::map<std::string, std::string> _returnValue;
+    std::map<std::string, std::string> _returnValueType;
     std::set<std::string> _ignorefunction; // ignore functions/macros from a library (gtk, qt etc)
     std::map<std::string, bool> _reporterrors;
     std::map<std::string, bool> _processAfterCode;
@@ -496,6 +525,9 @@ private:
     std::map<std::string, Platform> platforms; // platform dependent typedefs
 
     const ArgumentChecks * getarg(const Token *ftok, int argnr) const;
+
+    std::string getFunctionName(const Token *ftok, bool *error) const;
+    std::string getFunctionName(const Token *ftok) const;
 
     static const AllocFunc* getAllocDealloc(const std::map<std::string, AllocFunc> &data, const std::string &name) {
         const std::map<std::string, AllocFunc>::const_iterator it = data.find(name);
