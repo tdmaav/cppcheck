@@ -118,7 +118,7 @@ private:
         TEST_CASE(clarifyStatement);
 
         TEST_CASE(duplicateBranch);
-        TEST_CASE(duplicateBranch1); // tests extracted by http://www.viva64.com/en/b/0149/ ( Comparison between PVS-Studio and cppcheck ): Errors detected in Quake 3: Arena by PVS-Studio: Fragement 2
+        TEST_CASE(duplicateBranch1); // tests extracted by http://www.viva64.com/en/b/0149/ ( Comparison between PVS-Studio and cppcheck ): Errors detected in Quake 3: Arena by PVS-Studio: Fragment 2
         TEST_CASE(duplicateBranch2); // empty macro
         TEST_CASE(duplicateExpression1);
         TEST_CASE(duplicateExpression2); // ticket #2730
@@ -172,6 +172,23 @@ private:
         TEST_CASE(testEvaluationOrderSizeof);
 
         TEST_CASE(testUnsignedLessThanZero);
+
+        TEST_CASE(doubleMove1);
+        TEST_CASE(doubleMoveMemberInitialization1);
+        TEST_CASE(doubleMoveMemberInitialization2);
+        TEST_CASE(moveAndAssign1);
+        TEST_CASE(moveAndAssign2);
+        TEST_CASE(moveAssignMoveAssign);
+        TEST_CASE(moveAndFunctionParameter);
+        TEST_CASE(moveAndFunctionParameterReference);
+        TEST_CASE(moveAndFunctionParameterConstReference);
+        TEST_CASE(moveAndFunctionParameterUnknown);
+        TEST_CASE(moveAndReturn);
+        TEST_CASE(moveAndClear);
+        TEST_CASE(movedPointer);
+        TEST_CASE(partiallyMoved);
+        TEST_CASE(moveAndLambda);
+        TEST_CASE(forwardAndUsed);
     }
 
     void check(const char code[], const char *filename = nullptr, bool experimental = false, bool inconclusive = true, bool runSimpleChecks=true, Settings* settings = 0) {
@@ -185,6 +202,8 @@ private:
         settings->addEnabled("warning");
         settings->addEnabled("portability");
         settings->addEnabled("performance");
+        settings->standards.c = Standards::CLatest;
+        settings->standards.cpp = Standards::CPPLatest;
         settings->inconclusive = inconclusive;
         settings->experimental = experimental;
 
@@ -249,7 +268,7 @@ private:
         check("void foo() {\n"
               "    cout << 42 / (int)0;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:2]: (error) Division by zero.\n", errout.str());
+        TODO_ASSERT_EQUALS("[test.cpp:2]: (error) Division by zero.\n", "", errout.str());
     }
 
     void zeroDiv2() {
@@ -2272,7 +2291,7 @@ private:
 
         Settings settings;
         settings.library.setnoreturn("exit", true);
-        settings.library.argumentChecks["exit"][1] = Library::ArgumentChecks();
+        settings.library.functions["exit"].argumentChecks[1] = Library::ArgumentChecks();
         check("void foo() {\n"
               "    exit(0);\n"
               "    break;\n"
@@ -3338,7 +3357,7 @@ private:
     void duplicateBranch1() {
 
         // tests inspired by http://www.viva64.com/en/b/0149/ ( Comparison between PVS-Studio and cppcheck )
-        // Errors detected in Quake 3: Arena by PVS-Studio: Fragement 2
+        // Errors detected in Quake 3: Arena by PVS-Studio: Fragment 2
         check("void f()\n"
               "{\n"
               "  if (front < 0)\n"
@@ -4607,6 +4626,16 @@ private:
         // #6383 - unsigned type
         check("const int x = (unsigned int)(-1) >> 2;");
         ASSERT_EQUALS("", errout.str());
+
+        // #7814 - UB happening in valueflowcode when it tried to compute shifts.
+        check("int shift1() { return 1 >> -1 ;}\n"
+              "int shift2() { return 1 << -1 ;}\n"
+              "int shift3() { return -1 >> 1 ;}\n"
+              "int shift4() { return -1 << 1 ;}\n");
+        ASSERT_EQUALS("[test.cpp:1]: (error) Shifting by a negative value is undefined behaviour\n"
+                      "[test.cpp:2]: (error) Shifting by a negative value is undefined behaviour\n"
+                      "[test.cpp:3]: (error) Shifting a negative value is undefined behaviour\n"
+                      "[test.cpp:4]: (error) Shifting a negative value is undefined behaviour\n", errout.str());
     }
 
     void incompleteArrayFill() {
@@ -5972,6 +6001,15 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:3]: (warning) Label 'caseZERO' is not used. Should this be a 'case' of the enclosing switch()?\n"
                       "[test.cpp:5]: (warning) Label 'case1' is not used. Should this be a 'case' of the enclosing switch()?\n", errout.str());
+
+        check("int test(char art) {\n"
+              "    switch (art) {\n"
+              "    case 2:\n"
+              "        return 2;\n"
+              "    }\n"
+              "    label:\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:6]: (style) Label 'label' is not used.\n", errout.str());
     }
 
     void testEvaluationOrder() {
@@ -6008,7 +6046,7 @@ private:
     }
 
     void testEvaluationOrderMacro() {
-        // macro, dont bailout (#7233)
+        // macro, don't bailout (#7233)
         check((std::string("void f(int x) {\n"
                            "  return x + ") + Preprocessor::macroChar + "x++;\n"
                "}").c_str(), "test.c");
@@ -6075,6 +6113,187 @@ private:
         ASSERT_EQUALS("[test.c:8]: (style) Checking if unsigned variable 'd.n' is less than zero.\n"
                       "[test.c:12]: (style) Checking if unsigned variable 'd.n' is less than zero.\n",
                       errout.str());
+    }
+
+    void doubleMove1() {
+        check("void g(A a);\n"
+              "void f() {\n"
+              "    A a;\n"
+              "    g(std::move(a));\n"
+              "    g(std::move(a));\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:5]: (warning) Access of moved variable a.\n", errout.str());
+    }
+
+    void doubleMoveMemberInitialization1() {
+        check("class A\n"
+              "{\n"
+              "    A(B && b)\n"
+              "    :b1(std::move(b))\n"
+              "    {\n"
+              "        b2 = std::move(b);\n"
+              "    }\n"
+              "    B b1;\n"
+              "    B b2;\n"
+              "};");
+        ASSERT_EQUALS("[test.cpp:6]: (warning) Access of moved variable b.\n", errout.str());
+    }
+
+    void doubleMoveMemberInitialization2() {
+        check("class A\n"
+              "{\n"
+              "    A(B && b)\n"
+              "    :b1(std::move(b)),\n"
+              "     b2(std::move(b))\n"
+              "    {}\n"
+              "    B b1;\n"
+              "    B b2;\n"
+              "};");
+        ASSERT_EQUALS("[test.cpp:5]: (warning) Access of moved variable b.\n", errout.str());
+    }
+
+    void moveAndAssign1() {
+        check("A g(A a);\n"
+              "void f() {\n"
+              "    A a;\n"
+              "    a = g(std::move(a));\n"
+              "    a = g(std::move(a));\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void moveAndAssign2() {
+        check("A g(A a);\n"
+              "void f() {\n"
+              "    A a;\n"
+              "    B b = g(std::move(a));\n"
+              "    C c = g(std::move(a));\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:5]: (warning) Access of moved variable a.\n", errout.str());
+    }
+
+    void moveAssignMoveAssign() {
+        check("void h(A a);\n"
+              "void f() {"
+              "    A a;\n"
+              "    g(std::move(a));\n"
+              "    h(a);\n"
+              "    a = b;\n"
+              "    h(a);\n"
+              "    g(std::move(a));\n"
+              "    h(a);\n"
+              "    a = b;\n"
+              "    h(a);\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (warning) Access of moved variable a.\n"
+                      "[test.cpp:8]: (warning) Access of moved variable a.\n", errout.str());
+    }
+
+    void moveAndFunctionParameter() {
+        check("void g(A a);\n"
+              "void f() {\n"
+              "    A a;\n"
+              "    A b = std::move(a);\n"
+              "    g(a);\n"
+              "    A c = a;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:5]: (warning) Access of moved variable a.\n"
+                      "[test.cpp:6]: (warning) Access of moved variable a.\n", errout.str());
+    }
+
+    void moveAndFunctionParameterReference() {
+        check("void g(A & a);\n"
+              "void f() {\n"
+              "    A a;\n"
+              "    A b = std::move(a);\n"
+              "    g(a);\n"
+              "    A c = a;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void moveAndFunctionParameterConstReference() {
+        check("void g(A const & a);\n"
+              "void f() {\n"
+              "    A a;\n"
+              "    A b = std::move(a);\n"
+              "    g(a);\n"
+              "    A c = a;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:5]: (warning) Access of moved variable a.\n"
+                      "[test.cpp:6]: (warning) Access of moved variable a.\n", errout.str());
+    }
+
+    void moveAndFunctionParameterUnknown() {
+        check("void f() {\n"
+              "    A a;\n"
+              "    A b = std::move(a);\n"
+              "    g(a);\n"
+              "    A c = a;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (warning, inconclusive) Access of moved variable a.\n"
+                      "[test.cpp:5]: (warning, inconclusive) Access of moved variable a.\n", errout.str());
+    }
+
+    void moveAndReturn() {
+        check("int f(int i) {\n"
+              "    A a;\n"
+              "    A b;\n"
+              "    g(std::move(a));\n"
+              "    if (i)\n"
+              "        return g(std::move(b));\n"
+              "    return h(std::move(a),std::move(b));\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:7]: (warning) Access of moved variable a.\n", errout.str());
+    }
+
+    void moveAndClear() {
+        check("void f() {\n"
+              "    V v;\n"
+              "    g(std::move(v));\n"
+              "    v.clear();\n"
+              "    if (v.empty()) {}\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (warning, inconclusive) Access of moved variable v.\n"
+                      "[test.cpp:5]: (warning, inconclusive) Access of moved variable v.\n", errout.str());
+    }
+
+    void movedPointer() {
+        check("void f() {\n"
+              "    P p;\n"
+              "    g(std::move(p));\n"
+              "    x = p->x;\n"
+              "    y = p->y;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (warning) Access of moved variable p.\n"
+                      "[test.cpp:5]: (warning) Access of moved variable p.\n", errout.str());
+    }
+
+    void partiallyMoved() {
+        check("void f() {\n"
+              "    A a;\n"
+              "    gx(std::move(a).x());\n"
+              "    gy(std::move(a).y());\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void moveAndLambda() {
+        check("void f() {\n"
+              "    A a;\n"
+              "    auto h = [a=std::move(a)](){return g(std::move(a));};"
+              "    b = a;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void forwardAndUsed() {
+        check("template<typename T>\n"
+              "void f(T && t) {\n"
+              "    g(std::forward<T>(t));\n"
+              "    T s = t;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (warning) Access of forwarded variable t.\n", errout.str());
     }
 };
 

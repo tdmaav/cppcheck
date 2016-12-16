@@ -193,6 +193,26 @@ private:
               "}");
         ASSERT_EQUALS("", errout.str());
 
+        check("void g(int x);\n"
+              "void f(int x) {\n"
+              "    int a = 100;\n"
+              "    while (x) {\n"
+              "        int y = 16 | a;\n"
+              "        while (y != 0) g(y);\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:6]: (style) Condition 'y!=0' is always true\n[test.cpp:5] -> [test.cpp:6]: (style) Mismatching assignment and comparison, comparison 'y!=0' is always true.\n", errout.str());
+
+        check("void g(int &x);\n"
+              "void f(int x) {\n"
+              "    int a = 100;\n"
+              "    while (x) {\n"
+              "        int y = 16 | a;\n"
+              "        while (y != 0) g(y);\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
         // calling function
         check("void f(int x) {\n"
               "    int y = x & 7;\n"
@@ -293,6 +313,33 @@ private:
               "  }\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n"
+              "    int x = 100;\n"
+              "    while (x) {\n"
+              "        g(x);\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void g(int x);\n"
+              "void f() {\n"
+              "    int x = 100;\n"
+              "    while (x) {\n"
+              "        g(x);\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void g(int & x);\n"
+              "void f() {\n"
+              "    int x = 100;\n"
+              "    while (x) {\n"
+              "        g(x);\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
     }
 
     void mismatchingBitAnd() {
@@ -1416,7 +1463,7 @@ private:
               "}");
         ASSERT_EQUALS("", errout.str());
 
-        // #6313 - false postive: opposite conditions in nested if blocks when condition changed
+        // #6313 - false positive: opposite conditions in nested if blocks when condition changed
         check("void Foo::Bar() {\n"
               "   if(var){\n"
               "      --var;\n"
@@ -1728,6 +1775,20 @@ private:
               "}");
         ASSERT_EQUALS("", errout.str());
 
+        // #7783  FP knownConditionTrueFalse on assert(0 && "message")
+        check("void foo(int x) {\n"
+              "    if (x<0)\n"
+              "    {\n"
+              "        assert(0 && \"bla\");\n"
+              "        ASSERT(0 && \"bla\");\n"
+              "        assert_foo(0 && \"bla\");\n"
+              "        ASSERT_FOO(0 && \"bla\");\n"
+              "        assert((int)(0==0));\n"
+              "        assert((int)(0==0) && \"bla\");\n"
+              "    }\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
         // #7750 warn about number and char literals in boolean expressions
         check("void f() {\n"
               "  if('a'){}\n"
@@ -1768,7 +1829,7 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:2]: (warning) Invalid test for overflow 'x+100<x'. Condition is always false unless there is overflow, and overflow is UB.\n", errout.str());
 
-        check("void f(signed int x) {\n" // unsigned overflow => dont warn
+        check("void f(signed int x) {\n" // unsigned overflow => don't warn
               "    assert(x + 100U < x);\n"
               "}");
         ASSERT_EQUALS("", errout.str());

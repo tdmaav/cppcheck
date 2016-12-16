@@ -17,6 +17,7 @@
  */
 
 #include "cppcheckexecutor.h"
+#include "analyzerinfo.h"
 #include "cmdlineparser.h"
 #include "cppcheck.h"
 #include "filelister.h"
@@ -50,7 +51,7 @@
 #endif
 #endif
 
-#if !defined(NO_UNIX_BACKTRACE_SUPPORT) && defined(USE_UNIX_SIGNAL_HANDLING) && defined(__GNUC__) && !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(__NetBSD__) && !defined(__SVR4) && !defined(__QNX__)
+#if !defined(NO_UNIX_BACKTRACE_SUPPORT) && defined(USE_UNIX_SIGNAL_HANDLING) && defined(__GNUC__) && defined(__GLIBC__) && !defined(__CYGWIN__) && !defined(__MINGW32__) && !defined(__NetBSD__) && !defined(__SVR4) && !defined(__QNX__)
 #define USE_UNIX_BACKTRACE_SUPPORT
 #include <cxxabi.h>
 #include <execinfo.h>
@@ -802,6 +803,13 @@ int CppCheckExecutor::check_internal(CppCheck& cppcheck, int /*argc*/, const cha
         reportErr(ErrorLogger::ErrorMessage::getXMLHeader(settings.xml_version));
     }
 
+    if (!settings.buildDir.empty()) {
+        std::list<std::string> fileNames;
+        for (std::map<std::string, std::size_t>::const_iterator i = _files.begin(); i != _files.end(); ++i)
+            fileNames.push_back(i->first);
+        AnalyzerInformation::writeFilesTxt(settings.buildDir, fileNames, settings.project.fileSettings);
+    }
+
     unsigned int returnValue = 0;
     if (settings.jobs == 1) {
         // Single process
@@ -854,8 +862,10 @@ int CppCheckExecutor::check_internal(CppCheck& cppcheck, int /*argc*/, const cha
         returnValue = executor.check();
     }
 
+    cppcheck.analyseWholeProgram(_settings->buildDir, _files);
+
     if (settings.isEnabled("information") || settings.checkConfiguration) {
-        const bool enableUnusedFunctionCheck = cppcheck.unusedFunctionCheckIsEnabled();
+        const bool enableUnusedFunctionCheck = cppcheck.isUnusedFunctionCheckEnabled();
 
         if (settings.jointSuppressionReport) {
             for (std::map<std::string, std::size_t>::const_iterator i = _files.begin(); i != _files.end(); ++i) {

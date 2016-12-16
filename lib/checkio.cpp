@@ -233,7 +233,7 @@ void CheckIO::checkFileUsage()
                     if ((tok->str() == "ungetc" || tok->str() == "ungetwc") && fileTok)
                         fileTok = fileTok->nextArgument();
                     operation = Filepointer::UNIMPORTANT;
-                } else if (!Token::Match(tok, "if|for|while|catch|switch") && _settings->library.functionpure.find(tok->str()) == _settings->library.functionpure.end()) {
+                } else if (!Token::Match(tok, "if|for|while|catch|switch") && !_settings->library.isFunctionConst(tok->str(), true)) {
                     const Token* const end2 = tok->linkAt(1);
                     if (scope->functionOf && scope->functionOf->isClassOrStruct() && !scope->function->isStatic() && ((tok->strAt(-1) != "::" && tok->strAt(-1) != ".") || tok->strAt(-2) == "this")) {
                         if (!tok->function() || (tok->function()->nestedIn && tok->function()->nestedIn->isClassOrStruct())) {
@@ -475,7 +475,7 @@ static bool findFormat(unsigned int arg, const Token *firstArg,
                  argTok->variable()->dimensionKnown(0) &&
                  argTok->variable()->dimension(0) != 0))) {
         *formatArgTok = argTok->nextArgument();
-        if (argTok->values.size() >= 1 && argTok->values.front().tokvalue && argTok->values.front().tokvalue->tokType() == Token::eString)
+        if (!argTok->values.empty() && argTok->values.front().isTokValue() && argTok->values.front().tokvalue && argTok->values.front().tokvalue->tokType() == Token::eString)
             *formatStringTok = argTok->values.front().tokvalue;
         return true;
     }
@@ -521,7 +521,7 @@ void CheckIO::checkWrongPrintfScanfArguments()
                 if (!findFormat(1, tok->tokAt(2), &formatStringTok, &argListTok))
                     continue;
             } else if (Token::simpleMatch(tok, "swprintf (") && !Token::Match(tok->tokAt(2)->nextArgument(), "%str%")) {
-                // Find forth parameter and format string
+                // Find fourth parameter and format string
                 if (!findFormat(2, tok->tokAt(2), &formatStringTok, &argListTok))
                     continue;
             } else if (isWindows && Token::Match(tok, "sprintf_s|swprintf_s (")) {
@@ -1723,7 +1723,7 @@ bool CheckIO::ArgumentInfo::isArrayOrPointer() const
         return variableInfo->isArrayOrPointer();
     } else {
         const Token *tok = typeToken;
-        while (tok && Token::Match(tok, "const|struct"))
+        while (Token::Match(tok, "const|struct"))
             tok = tok->next();
         if (tok && tok->strAt(1) == "*")
             return true;

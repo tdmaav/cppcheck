@@ -343,9 +343,9 @@ private:
               "    const std::string tp2(a.begin(), a.end());\n"
               "}");
         ASSERT_EQUALS(// TODO "[test.cpp:2]: (error) Iterators of different containers are used together.\n"
-                      // TODO "[test.cpp:3]: (error) Iterators of different containers are used together.\n"
-                      "[test.cpp:4]: (error) Iterators of different containers are used together.\n"
-                      "[test.cpp:5]: (error) Iterators of different containers are used together.\n", errout.str());
+            // TODO "[test.cpp:3]: (error) Iterators of different containers are used together.\n"
+            "[test.cpp:4]: (error) Iterators of different containers are used together.\n"
+            "[test.cpp:5]: (error) Iterators of different containers are used together.\n", errout.str());
     }
 
     void iterator9() {
@@ -2507,10 +2507,6 @@ private:
 
         // ticket #2887 (infinite loop)
         check("A::A(std::auto_ptr<X> e){}");
-        ASSERT_EQUALS("", errout.str());
-
-        // ticket #2967 (segmentation fault)
-        check("auto_ptr<x>\n");
         ASSERT_EQUALS("", errout.str());
 
         // ticket #4390

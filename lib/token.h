@@ -411,20 +411,20 @@ public:
         setFlag(fIsEnumType, value);
     }
 
-    static const Token *findsimplematch(const Token *startTok, const char pattern[]);
-    static const Token *findsimplematch(const Token *startTok, const char pattern[], const Token *end);
-    static const Token *findmatch(const Token *startTok, const char pattern[], unsigned int varId = 0);
-    static const Token *findmatch(const Token *startTok, const char pattern[], const Token *end, unsigned int varId = 0);
-    static Token *findsimplematch(Token *startTok, const char pattern[]) {
+    static const Token *findsimplematch(const Token * const startTok, const char pattern[]);
+    static const Token *findsimplematch(const Token * const startTok, const char pattern[], const Token * const end);
+    static const Token *findmatch(const Token * const startTok, const char pattern[], const unsigned int varId = 0U);
+    static const Token *findmatch(const Token * const startTok, const char pattern[], const Token * const end, const unsigned int varId = 0U);
+    static Token *findsimplematch(Token * const startTok, const char pattern[]) {
         return const_cast<Token *>(findsimplematch(const_cast<const Token *>(startTok), pattern));
     }
-    static Token *findsimplematch(Token *startTok, const char pattern[], const Token *end) {
+    static Token *findsimplematch(Token * const startTok, const char pattern[], const Token * const end) {
         return const_cast<Token *>(findsimplematch(const_cast<const Token *>(startTok), pattern, end));
     }
-    static Token *findmatch(Token *startTok, const char pattern[], unsigned int varId = 0) {
+    static Token *findmatch(Token * const startTok, const char pattern[], const unsigned int varId = 0U) {
         return const_cast<Token *>(findmatch(const_cast<const Token *>(startTok), pattern, varId));
     }
-    static Token *findmatch(Token *startTok, const char pattern[], const Token *end, unsigned int varId = 0) {
+    static Token *findmatch(Token * const startTok, const char pattern[], const Token * const end, const unsigned int varId = 0U) {
         return const_cast<Token *>(findmatch(const_cast<const Token *>(startTok), pattern, end, varId));
     }
 
@@ -492,10 +492,12 @@ public:
     }
     void varId(unsigned int id) {
         _varId = id;
-        if (id != 0)
+        if (id != 0) {
             _tokType = eVariable;
-        else
+            isStandardType(false);
+        } else {
             update_property_info();
+        }
     }
 
     /**
@@ -749,13 +751,13 @@ public:
     std::list<ValueFlow::Value> values;
 
     bool hasKnownIntValue() const {
-        return values.size() == 1U && values.front().isKnown() && values.front().tokvalue == nullptr;
+        return values.size() == 1U && values.front().isKnown() && values.front().isIntValue();
     }
 
     const ValueFlow::Value * getValue(const MathLib::bigint val) const {
         std::list<ValueFlow::Value>::const_iterator it;
         for (it = values.begin(); it != values.end(); ++it) {
-            if (it->intvalue == val && !it->tokvalue)
+            if (it->isIntValue() && it->intvalue == val)
                 return &(*it);
         }
         return nullptr;
@@ -765,13 +767,22 @@ public:
         const ValueFlow::Value *ret = nullptr;
         std::list<ValueFlow::Value>::const_iterator it;
         for (it = values.begin(); it != values.end(); ++it) {
-            if (it->tokvalue)
+            if (!it->isIntValue())
                 continue;
             if ((!ret || it->intvalue > ret->intvalue) &&
                 ((it->condition != nullptr) == condition))
                 ret = &(*it);
         }
         return ret;
+    }
+
+    const ValueFlow::Value * getMovedValue() const {
+        std::list<ValueFlow::Value>::const_iterator it;
+        for (it = values.begin(); it != values.end(); ++it) {
+            if (it->isMovedValue())
+                return &(*it);
+        }
+        return nullptr;
     }
 
     const ValueFlow::Value * getValueLE(const MathLib::bigint val, const Settings *settings) const;

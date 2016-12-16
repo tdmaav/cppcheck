@@ -240,7 +240,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
                 tok = tok->tokAt(3);
 
             // skip over qualification
-            while (tok && Token::Match(tok, "%type% ::"))
+            while (Token::Match(tok, "%type% ::"))
                 tok = tok->tokAt(2);
         }
 
@@ -355,7 +355,7 @@ SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *setti
 
                 // class function?
                 else if (isFunction(tok, scope, &funcStart, &argStart, &declEnd)) {
-                    if (tok->previous()->str() != "::") {
+                    if (tok->previous()->str() != "::" || tok->strAt(-2) == scope->className) {
                         Function function;
 
                         // save the function definition argument start '('
@@ -1389,8 +1389,7 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
 
     // regular function?
     else if (Token::Match(tok, "%name% (") && !isReservedName(tok->str()) && tok->previous() &&
-             (tok->previous()->isName() || tok->strAt(-1) == ">" || tok->strAt(-1) == "&" || tok->strAt(-1) == "*" || // Either a return type in front of tok
-              tok->strAt(-1) == "::" || tok->strAt(-1) == "~" || // or a scope qualifier in front of tok
+             (Token::Match(tok->previous(), "%name%|>|&|*|::|~") || // Either a return type or scope qualifier in front of tok
               outerScope->isClassOrStruct())) { // or a ctor/dtor
         const Token* tok1 = tok->previous();
         const Token* tok2 = tok->next()->link()->next();
@@ -1401,12 +1400,11 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
 
         // skip over qualification
         while (Token::simpleMatch(tok1, "::")) {
-            if (Token::Match(tok1->tokAt(-1), "%name%"))
-                tok1 = tok1->tokAt(-2);
-            else if (tok1->strAt(-1) == ">" && tok1->linkAt(-1) && Token::Match(tok1->linkAt(-1)->previous(), "%name%"))
-                tok1 = tok1->linkAt(-1)->tokAt(-2);
-            else
-                tok1 = tok1->tokAt(-1);
+            tok1 = tok1->previous();
+            if (Token::Match(tok1, "%name%"))
+                tok1 = tok1->previous();
+            else if (tok1 && tok1->str() == ">" && tok1->link() && Token::Match(tok1->link()->previous(), "%name%"))
+                tok1 = tok1->link()->tokAt(-2);
         }
 
         // skip over const, noexcept, throw and override specifiers
@@ -1429,7 +1427,7 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
         if (!Token::Match(tok1, "{|}|;|public:|protected:|private:") && tok1) {
             // skip over pointers and references
             while (Token::Match(tok1, "[*&]"))
-                tok1 = tok1->tokAt(-1);
+                tok1 = tok1->previous();
 
             // skip over template
             if (tok1 && tok1->str() == ">") {
@@ -1452,10 +1450,9 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
 
             // skip over qualification
             while (Token::simpleMatch(tok1, "::")) {
-                if (Token::Match(tok1->tokAt(-1), "%name%"))
-                    tok1 = tok1->tokAt(-2);
-                else
-                    tok1 = tok1->tokAt(-1);
+                tok1 = tok1->previous();
+                if (Token::Match(tok1, "%name%"))
+                    tok1 = tok1->previous();
             }
 
             // skip over modifiers and other stuff
@@ -1498,7 +1495,7 @@ bool SymbolDatabase::isFunction(const Token *tok, const Scope* outerScope, const
         const Token* tok2 = tok->next()->link()->next()->link();
         if (Token::Match(tok2, ") const| ;|{|=") ||
             Token::Match(tok2, ") : ::| %name% (|::|<|{") ||
-            Token::Match(tok->next()->link()->next()->link(), ") const| noexcept {|;|(")) {
+            Token::Match(tok2, ") const| noexcept {|;|(")) {
             *funcStart = tok;
             *argStart = tok2->link();
             *declEnd = Token::findmatch(tok2->next(), "{|;");
@@ -1839,6 +1836,15 @@ bool Function::argsMatch(const Scope *scope, const Token *first, const Token *se
     return false;
 }
 
+const Token * Function::constructorMemberInitialization() const
+{
+    if (!isConstructor() || !functionScope || !functionScope->classStart)
+        return nullptr;
+    if (Token::Match(token, "%name% (") && Token::simpleMatch(token->linkAt(1), ") :"))
+        return token->linkAt(1)->next();
+    return nullptr;
+}
+
 Function* SymbolDatabase::addGlobalFunction(Scope*& scope, const Token*& tok, const Token *argStart, const Token* funcStart)
 {
     Function* function = nullptr;
@@ -1891,7 +1897,7 @@ Function* SymbolDatabase::addGlobalFunctionDecl(Scope*& scope, const Token *tok,
         tok1 = tok1->previous();
 
     // find the return type
-    while (tok1 && Token::Match(tok1->next(), "static|extern|const")) {
+    while (Token::Match(tok1, "static|extern|const")) {
         if (tok1->str() == "static")
             function.isStaticLocal(true);
         else if (tok1->str() == "extern")
@@ -4289,6 +4295,12 @@ static void setValueType(Token *tok, const ValueType &valuetype, bool cpp, Value
         setValueType(parent, vt, cpp, defaultSignedness, settings);
         return;
     }
+    if (Token::Match(parent->previous(), "%name% (") && parent->astOperand1() == tok && valuetype.pointer > 0U) {
+        ValueType vt(valuetype);
+        vt.pointer -= 1U;
+        setValueType(parent, vt, cpp, defaultSignedness, settings);
+        return;
+    }
     if (parent->str() == "*" && !parent->astOperand2() && valuetype.pointer > 0U) {
         ValueType vt(valuetype);
         vt.pointer -= 1U;
@@ -4527,7 +4539,7 @@ void SymbolDatabase::setValueTypeInTokenList(Token *tokens, bool cpp, const Sett
         if (tok->isNumber()) {
             if (MathLib::isFloat(tok->str())) {
                 ValueType::Type type = ValueType::Type::DOUBLE;
-                const char suffix = tok->str()[tok->str().size() - 1U];
+                const char suffix = tok->str().back();
                 if (suffix == 'f' || suffix == 'F')
                     type = ValueType::Type::FLOAT;
                 else if (suffix == 'L' || suffix == 'l')
@@ -4618,8 +4630,8 @@ void SymbolDatabase::setValueTypeInTokenList(Token *tokens, bool cpp, const Sett
 
             // library function
             else if (tok->previous()) {
-                const std::string typestr(settings->library.returnValueType(tok->previous()));
-                if (typestr.empty())
+                const std::string& typestr(settings->library.returnValueType(tok->previous()));
+                if (typestr.empty() || typestr == "iterator")
                     continue;
                 TokenList tokenList(settings);
                 std::istringstream istr(typestr+";");

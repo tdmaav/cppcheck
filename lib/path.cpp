@@ -69,11 +69,11 @@ std::string Path::simplifyPath(std::string originalPath)
 
     // Remove ./, .//, ./// etc. at the beginning
     while (originalPath.compare(0,2,"./") == 0) { // remove "./././"
-        size_t toErase = originalPath.find_first_not_of("/",2);
+        const size_t toErase = originalPath.find_first_not_of('/', 2);
         originalPath = originalPath.erase(0, toErase);
     }
 
-    std::string subPath = "";
+    std::string subPath;
     std::vector<std::string> pathParts;
     for (std::size_t i = 0; i < originalPath.size(); ++i) {
         if (originalPath[i] == '/' || originalPath[i] == '\\') {
@@ -227,7 +227,7 @@ std::string Path::getRelativePath(const std::string& absolutePath, const std::ve
         if (absolutePath == *i || i->empty()) // Seems to be a file, or path is empty
             continue;
 
-        bool endsWithSep = (*i)[i->length()-1] == '/';
+        bool endsWithSep = i->back() == '/';
         if (absolutePath.compare(0, i->length(), *i) == 0 && absolutePath[i->length() - (endsWithSep?1:0)] == '/') {
             std::string rest = absolutePath.substr(i->length() + (endsWithSep?0:1));
             return rest;

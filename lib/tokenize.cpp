@@ -220,7 +220,7 @@ bool Tokenizer::duplicateTypedef(Token **tokPtr, const Token *name, const Token 
 
         if (end->str() == "[") {
             if (!end->link())
-                syntaxError(end); // #6680 invalid code
+                syntaxError(end); // invalid code
             end = end->link()->next();
         } else if (end->str() == ",") {
             // check for derived class
@@ -1046,7 +1046,7 @@ void Tokenizer::simplifyTypedef()
                         if (func->previous()->str() == "operator")
                             func = func->previous();
 
-                        if (!func->previous()) // #7020
+                        if (!func->previous())
                             syntaxError(func);
 
                         // check for qualifier
@@ -1448,13 +1448,13 @@ void Tokenizer::simplifyTypedef()
                             // Name is not available, and () should not be
                             // inserted
                             const bool castOperator = inOperator && Token::Match(tok2, "%type% (");
-                            Token *tok3;
+                            Token *openParenthesis = nullptr;
 
                             if (!castOperator) {
                                 tok2->insertToken("(");
                                 tok2 = tok2->next();
 
-                                tok3 = tok2;
+                                openParenthesis = tok2;
                             }
 
                             const Token *tok4 = namespaceStart;
@@ -1470,14 +1470,14 @@ void Tokenizer::simplifyTypedef()
                             tok2->insertToken("*");
                             tok2 = tok2->next();
 
-                            if (!castOperator) {
+                            if (openParenthesis) {
                                 // skip over name
                                 tok2 = tok2->next();
 
                                 tok2->insertToken(")");
                                 tok2 = tok2->next();
 
-                                Token::createMutualLinks(tok2, tok3);
+                                Token::createMutualLinks(tok2, openParenthesis);
                             }
                         }
                     } else if (typeOf) {
@@ -1485,7 +1485,7 @@ void Tokenizer::simplifyTypedef()
                     } else if (tok2->strAt(2) == "[") {
                         do {
                             if (!tok2->linkAt(2))
-                                syntaxError(tok2); // #6807
+                                syntaxError(tok2);
 
                             tok2 = tok2->linkAt(2)->previous();
                         } while (tok2->strAt(2) == "[");
@@ -1831,7 +1831,7 @@ void Tokenizer::combineOperators()
                    Token::Match(tok, "private|protected|public|__published : !!:")) {
             bool simplify = false;
             unsigned int par = 0U;
-            for (const Token *prev = tok->tokAt(-1); prev; prev = prev->previous()) {
+            for (const Token *prev = tok->previous(); prev; prev = prev->previous()) {
                 if (prev->str() == ")") {
                     ++par;
                 } else if (prev->str() == "(") {
@@ -1847,7 +1847,7 @@ void Tokenizer::combineOperators()
                 }
                 if (prev->isName() && prev->isUpperCaseName())
                     continue;
-                if (prev->isName() && prev->str()[prev->str().size() - 1U] == ':')
+                if (prev->isName() && prev->str().back() == ':')
                     simplify = true;
                 break;
             }
@@ -2189,7 +2189,7 @@ void Tokenizer::simplifyLabelsCaseDefault()
             if (tok->str() != "case" && tok->next() && tok->next()->str() == ":") {
                 tok = tok->next();
                 if (!tok->next())
-                    syntaxError(tok); // #7270 invalid code
+                    syntaxError(tok);
                 if (tok->next()->str() != ";" && tok->next()->str() != "case")
                     tok->insertToken(";");
                 else
@@ -2249,7 +2249,7 @@ void Tokenizer::simplifyTemplates()
         return;
 
     for (Token *tok = list.front(); tok; tok = tok->next()) {
-        // #2648 - simple fix for sizeof used as template parameter
+        // simple fix for sizeof used as template parameter
         // TODO: this is a bit hardcoded. make a bit more generic
         if (Token::Match(tok, "%name% < sizeof ( %type% ) >") && tok->tokAt(4)->isStandardType()) {
             Token * const tok3 = tok->next();
@@ -2415,7 +2415,7 @@ static void setVarIdStructMembers(Token **tok1,
 }
 
 
-void Tokenizer::setVarIdClassDeclaration(Token * const startToken,
+void Tokenizer::setVarIdClassDeclaration(const Token * const startToken,
         const std::map<std::string, unsigned int> &variableId,
         const unsigned int scopeStartVarId,
         std::map<unsigned int, std::map<std::string,unsigned int> >& structMembers)
@@ -2440,7 +2440,7 @@ void Tokenizer::setVarIdClassDeclaration(Token * const startToken,
     const Token *initListArgLastToken = nullptr;
     for (Token *tok = startToken->next(); tok != endToken; tok = tok->next()) {
         if (!tok)
-            syntaxError(nullptr); // #7089 invalid code
+            syntaxError(nullptr);
         if (initList) {
             if (tok == initListArgLastToken)
                 initListArgLastToken = nullptr;
@@ -2465,7 +2465,7 @@ void Tokenizer::setVarIdClassDeclaration(Token * const startToken,
                 if (Token::Match(tok->previous(), "::|.") && tok->strAt(-2) != "this" && !Token::simpleMatch(tok->tokAt(-5), "( * this ) ."))
                     continue;
                 if (!tok->next())
-                    syntaxError(nullptr); // #7237 invalid code
+                    syntaxError(nullptr);
                 if (tok->next()->str() == "::") {
                     if (tok->str() == className)
                         tok = tok->tokAt(2);
@@ -2635,7 +2635,7 @@ void Tokenizer::setVarIdPass1()
              (tok->str() == "(" && isFunctionHead(tok,"{")) ||
              (tok->str() == "(" && !scopeStack.top().isExecutable && isFunctionHead(tok,";:")) ||
              (tok->str() == "," && !scopeStack.top().isExecutable) ||
-             (tok->isName() && tok->str().at(tok->str().length()-1U) == ':'))) {
+             (tok->isName() && tok->str().back() == ':'))) {
 
             // No variable declarations in sizeof
             if (Token::simpleMatch(tok->previous(), "sizeof (")) {
@@ -2649,7 +2649,7 @@ void Tokenizer::setVarIdPass1()
             const Token *tok2 = (tok->isName()) ? tok : tok->next();
 
             // private: protected: public: etc
-            while (tok2 && tok2->str()[tok2->str().size() - 1U] == ':') {
+            while (tok2 && tok2->str().back() == ':') {
                 tok2 = tok2->next();
             }
             if (!tok2)
@@ -2678,7 +2678,7 @@ void Tokenizer::setVarIdPass1()
                     const Token *tok3 = tok2->next();
                     if (!tok3->isStandardType() && tok3->str() != "void" && !Token::Match(tok3, "struct|union|class %type%") && tok3->str() != "." && !Token::Match(tok2->link()->previous(), "[&*]")) {
                         if (!scopeStack.top().isExecutable) {
-                            // Detecting initializations with () in non-executable scope is hard and often impossible to be done safely. Thus, only treat code as a variable that definitly is one.
+                            // Detecting initializations with () in non-executable scope is hard and often impossible to be done safely. Thus, only treat code as a variable that definitely is one.
                             decl = false;
                             bool rhs = false;
                             for (; tok3; tok3 = tok3->nextArgumentBeforeCreateLinks2()) {
@@ -2955,7 +2955,7 @@ void Tokenizer::setVarIdPass2()
     }
 }
 
-static void linkBrackets(Tokenizer* tokenizer, std::stack<const Token*>& type, std::stack<Token*>& links, Token* token, char open, char close)
+static void linkBrackets(const Tokenizer * const tokenizer, std::stack<const Token*>& type, std::stack<Token*>& links, Token * const token, const char open, const char close)
 {
     if (token->str()[0] == open) {
         links.push(token);
@@ -3123,7 +3123,7 @@ bool Tokenizer::simplifySizeof()
                 do {
                     const MathLib::bigint num = MathLib::toLongNumber(tok2->strAt(1));
                     if (num<0)
-                        break; // #6940 negative number
+                        break;
                     size *= (unsigned)num;
                     tok2 = tok2->tokAt(3);
                 } while (Token::Match(tok2, "[ %num% ]"));
@@ -3162,7 +3162,7 @@ bool Tokenizer::simplifySizeof()
             tok->deleteThis();
             tok->deleteNext();
             std::ostringstream sz;
-            sz << ((isC()) ? _settings->sizeof_int : 1) ; // #7490 sizeof('a') should be sizeof(int) in C mode
+            sz << ((isC()) ? _settings->sizeof_int : 1);
             tok->str(sz.str());
             ret = true;
             continue;
@@ -3460,7 +3460,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     // remove Borland stuff..
     simplifyBorland();
 
-    // #2449: syntax error: enum with typedef in it
+    // syntax error: enum with typedef in it
     checkForEnumsWithTypedef();
 
     // Remove __asm..
@@ -3818,7 +3818,7 @@ void Tokenizer::printDebugOutput(unsigned int simplification) const
     if (simplification == 2U && _settings->debugwarnings) {
         printUnknownTypes();
 
-        // #5054 - the typeStartToken() should come before typeEndToken()
+        // the typeStartToken() should come before typeEndToken()
         for (unsigned int varid = 1; varid < _symbolDatabase->getVariableListSize(); varid++) {
             const Variable *var = _symbolDatabase->getVariableFromVarId(varid);
             if (!var)
@@ -3850,9 +3850,13 @@ void Tokenizer::dump(std::ostream &out) const
         out << "    <token id=\"" << tok << "\" file=\"" << ErrorLogger::toxml(list.file(tok)) << "\" linenr=\"" << tok->linenr() << '\"';
         out << " str=\"" << ErrorLogger::toxml(tok->str()) << '\"';
         out << " scope=\"" << tok->scope() << '\"';
-        if (tok->isName())
+        if (tok->isName()) {
             out << " type=\"name\"";
-        else if (tok->isNumber()) {
+            if (tok->isUnsigned())
+                out << " isUnsigned=\"true\"";
+            else if (tok->isSigned())
+                out << " isSigned=\"true\"";
+        } else if (tok->isNumber()) {
             out << " type=\"number\"";
             if (MathLib::isInt(tok->str()))
                 out << " isInt=\"True\"";
@@ -3898,7 +3902,8 @@ void Tokenizer::dump(std::ostream &out) const
     out << "  </tokenlist>" << std::endl;
 
     _symbolDatabase->printXml(out);
-    list.front()->printValueFlow(true, out);
+    if (list.front())
+        list.front()->printValueFlow(true, out);
 }
 
 void Tokenizer::removeMacrosInGlobalScope()
@@ -4897,9 +4902,9 @@ void Tokenizer::simplifyUndefinedSizeArray()
 void Tokenizer::simplifyCasts()
 {
     for (Token *tok = list.front(); tok; tok = tok->next()) {
-        // #2897 : don't remove cast in such cases:
+        // Don't remove cast in such cases:
         // *((char *)a + 1) = 0;
-        // #3596 : remove cast when casting a function pointer:
+        // Remove cast when casting a function pointer:
         // (*(void (*)(char *))fp)(x);
         if (!tok->isName() &&
             Token::simpleMatch(tok->next(), "* (") &&
@@ -5291,12 +5296,12 @@ bool Tokenizer::simplifyFunctionReturn()
     return ret;
 }
 
-void Tokenizer::simplifyVarDecl(bool only_k_r_fpar)
+void Tokenizer::simplifyVarDecl(const bool only_k_r_fpar)
 {
     simplifyVarDecl(list.front(), nullptr, only_k_r_fpar);
 }
 
-void Tokenizer::simplifyVarDecl(Token * tokBegin, Token * tokEnd, bool only_k_r_fpar)
+void Tokenizer::simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, const bool only_k_r_fpar)
 {
     // Split up variable declarations..
     // "int a=4;" => "int a; a=4;"
@@ -5658,7 +5663,7 @@ void Tokenizer::simplifyPlatformTypes()
                 // skip when non-global namespace defined
                 if (tok1 && tok1->tokType() == Token::eName)
                     continue;
-                tok = tok->tokAt(-1);
+                tok = tok->previous();
                 tok->deleteThis();
             }
             Token *typeToken;
@@ -6466,8 +6471,8 @@ bool Tokenizer::simplifyKnownVariablesSimplify(Token **tok2, Token *tok3, unsign
         if (pointeralias && Token::Match(tok3, ("!!= " + value).c_str()))
             break;
 
-        // Stop if do is found
-        if (tok3->str() == "do")
+        // Stop if a loop is found
+        if (pointeralias && Token::Match(tok3, "do|for|while"))
             break;
 
         // Stop if unknown function call is seen
@@ -7299,7 +7304,7 @@ bool Tokenizer::IsScopeNoReturn(const Token *endScopeToken, bool *unknown) const
             }
         }
 
-        // don't warn for nonglobal functions (class methods, functions hidden in namespaces) since they cant be configured yet
+        // don't warn for nonglobal functions (class methods, functions hidden in namespaces) since they can't be configured yet
         // FIXME: when methods and namespaces can be configured properly, remove the "globalFunction" check
         if (globalFunction) {
             reportError(endScopeToken->previous(),
@@ -8027,6 +8032,19 @@ const Token * Tokenizer::findGarbageCode() const
             }
         }
     }
+
+    // Code must not start with an arithmetical operand
+    if (Token::Match(list.front(), "%cop%"))
+        return list.front();
+
+    // Code must end with } ; ) NAME
+    if (!Token::Match(list.back(), "%name%|;|}|)"))
+        return list.back();
+    if (list.back()->str() == ")" && !Token::Match(list.back()->link()->previous(), "%name% ("))
+        return list.back();
+    if (Token::Match(list.back(), "void|char|short|int|long|float|double|const|volatile|static|inline|struct|class|enum|union|template|sizeof|break|continue|typedef"))
+        return list.back();
+
     return nullptr;
 }
 
@@ -8406,9 +8424,9 @@ void Tokenizer::simplifyAttribute()
 {
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         if (Token::Match(tok, "%type% (") && !_settings->library.isNotLibraryFunction(tok)) {
-            if (_settings->library.functionpure.find(tok->str()) != _settings->library.functionpure.end())
+            if (_settings->library.isFunctionConst(tok->str(), true))
                 tok->isAttributePure(true);
-            if (_settings->library.functionconst.find(tok->str()) != _settings->library.functionconst.end())
+            if (_settings->library.isFunctionConst(tok->str(), false))
                 tok->isAttributeConst(true);
         }
         while (Token::Match(tok, "__attribute__|__attribute (") && tok->next()->link() && tok->next()->link()->next()) {

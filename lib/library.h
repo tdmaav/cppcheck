@@ -31,7 +31,6 @@
 #include <string>
 #include <list>
 #include <vector>
-#include <cstring>
 
 namespace tinyxml2 {
     class XMLDocument;
@@ -54,9 +53,10 @@ public:
 
     class Error {
     public:
-        Error() : errorcode(OK) , reason("") {}
-        explicit Error(ErrorCode e) : errorcode(e) , reason("") {}
-        Error(ErrorCode e, const std::string &r) : errorcode(e), reason(r) {}
+        Error() : errorcode(OK) {}
+        explicit Error(ErrorCode e) : errorcode(e) {}
+        template<typename T>
+        Error(ErrorCode e, T&& r) : errorcode(e), reason(r) {}
         ErrorCode     errorcode;
         std::string   reason;
     };
@@ -139,17 +139,9 @@ public:
     }
 
     bool formatstr_function(const Token* ftok) const;
-
     int formatstr_argno(const Token* ftok) const;
-
     bool formatstr_scan(const Token* ftok) const;
-
     bool formatstr_secure(const Token* ftok) const;
-
-    std::set<std::string> use;
-    std::set<std::string> leakignore;
-    std::set<std::string> functionconst;
-    std::set<std::string> functionpure;
 
     struct WarnInfo {
         std::string message;
@@ -166,8 +158,9 @@ public:
 
     bool isUseRetVal(const Token* ftok) const;
 
-    std::string returnValue(const Token *ftok) const;
-    std::string returnValueType(const Token *ftok) const;
+    const std::string& returnValue(const Token *ftok) const;
+    const std::string& returnValueType(const Token *ftok) const;
+    int returnValueContainer(const Token *ftok) const;
 
     bool isnoreturn(const Token *ftok) const;
     bool isnotnoreturn(const Token *ftok) const;
@@ -244,15 +237,6 @@ public:
         class IteratorInfo {
         public:
             IteratorInfo() : it(false), container(0), first(false), last(false) {}
-            void setContainer(const char *str) {
-                it = true;
-                container = str ? std::atoi(str) : 0;
-            }
-            void setType(const char *str) {
-                it = true;
-                first = str ? (std::strcmp(str,"first") == 0) : false;
-                last = str ? (std::strcmp(str,"last") == 0) : false;
-            }
 
             bool it;
             int  container;
@@ -263,7 +247,7 @@ public:
 
         class MinSize {
         public:
-            enum Type {NONE,STRLEN,ARGVALUE,SIZEOF,MUL};
+            enum Type { NONE, STRLEN, ARGVALUE, SIZEOF, MUL };
             MinSize(Type t, int a) : type(t), arg(a), arg2(0) {}
             Type type;
             int arg;
@@ -272,8 +256,25 @@ public:
         std::list<MinSize> minsizes;
     };
 
-    // function name, argument nr => argument data
-    std::map<std::string, std::map<int, ArgumentChecks> > argumentChecks;
+
+    struct Function {
+        std::map<int, ArgumentChecks> argumentChecks; // argument nr => argument data
+        bool use;
+        bool leakignore;
+        bool isconst;
+        bool ispure;
+        bool useretval;
+        bool ignore;  // ignore functions/macros from a library (gtk, qt etc)
+        bool formatstr;
+        bool formatstr_scan;
+        bool formatstr_secure;
+        Function() : use(false), leakignore(false), isconst(false), ispure(false), useretval(false), ignore(false), formatstr(false), formatstr_scan(false), formatstr_secure(false) {}
+    };
+
+    std::map<std::string, Function> functions;
+    bool isUse(const std::string& functionName) const;
+    bool isLeakIgnore(const std::string& functionName) const;
+    bool isFunctionConst(const std::string& functionName, bool pure) const;
 
     bool isboolargbad(const Token *ftok, int argnr) const {
         const ArgumentChecks *arg = getarg(ftok, argnr);
@@ -305,18 +306,7 @@ public:
         return arg && arg->iteratorInfo.it ? &arg->iteratorInfo : nullptr;
     }
 
-    bool hasminsize(const std::string &functionName) const {
-        std::map<std::string, std::map<int, ArgumentChecks> >::const_iterator it1;
-        it1 = argumentChecks.find(functionName);
-        if (it1 == argumentChecks.end())
-            return false;
-        std::map<int,ArgumentChecks>::const_iterator it2;
-        for (it2 = it1->second.begin(); it2 != it1->second.end(); ++it2) {
-            if (!it2->second.minsizes.empty())
-                return true;
-        }
-        return false;
-    }
+    bool hasminsize(const std::string &functionName) const;
 
     const std::list<ArgumentChecks::MinSize> *argminsizes(const Token *ftok, int argnr) const {
         const ArgumentChecks *arg = getarg(ftok, argnr);
@@ -333,9 +323,7 @@ public:
 
     bool reportErrors(const std::string &path) const;
 
-    bool ignorefunction(const std::string &function) const {
-        return (_ignorefunction.find(function) != _ignorefunction.end());
-    }
+    bool ignorefunction(const std::string &function) const;
 
     bool isexecutableblock(const std::string &file, const std::string &token) const;
 
@@ -363,19 +351,14 @@ public:
     bool isimporter(const std::string& file, const std::string &importer) const;
 
     bool isreflection(const std::string &token) const {
-        const std::map<std::string,int>::const_iterator it
-            = _reflection.find(token);
-        return it != _reflection.end();
+        return _reflection.find(token) != _reflection.end();
     }
 
     int reflectionArgument(const std::string &token) const {
-        int argIndex = -1;
-        const std::map<std::string,int>::const_iterator it
-            = _reflection.find(token);
-        if (it != _reflection.end()) {
-            argIndex = it->second;
-        }
-        return argIndex;
+        const std::map<std::string, int>::const_iterator it = _reflection.find(token);
+        if (it != _reflection.end())
+            return it->second;
+        return -1;
     }
 
     std::set<std::string> returnuninitdata;
@@ -400,13 +383,13 @@ public:
             , _const_ptr(false) {
         }
         bool operator == (const PlatformType & type) const {
-            return (_type == type._type &&
-                    _signed == type._signed &&
+            return (_signed == type._signed &&
                     _unsigned == type._unsigned &&
                     _long == type._long &&
                     _pointer == type._pointer &&
                     _ptr_ptr == type._ptr_ptr &&
-                    _const_ptr == type._const_ptr);
+                    _const_ptr == type._const_ptr &&
+                    _type == type._type);
         }
         bool operator != (const PlatformType & type) const {
             return !(*this == type);
@@ -430,16 +413,13 @@ public:
 
     const PlatformType *platform_type(const std::string &name, const std::string & platform) const {
         const std::map<std::string, Platform>::const_iterator it = platforms.find(platform);
-
         if (it != platforms.end()) {
             const PlatformType * const type = it->second.platform_type(name);
-
             if (type)
                 return type;
         }
 
         const std::map<std::string, PlatformType>::const_iterator it2 = platform_types.find(name);
-
         return (it2 != platform_types.end()) ? &(it2->second) : nullptr;
     }
 
@@ -470,16 +450,16 @@ private:
     public:
         CodeBlock() : _offset(0) {}
 
-        void setStart(const std::string& s) {
+        void setStart(const char* s) {
             _start = s;
         }
-        void setEnd(const std::string& e) {
+        void setEnd(const char* e) {
             _end = e;
         }
         void setOffset(const int o) {
             _offset = o;
         }
-        void addBlock(const std::string& blockName) {
+        void addBlock(const char* blockName) {
             _blocks.insert(blockName);
         }
         const std::string& start() const {
@@ -503,14 +483,12 @@ private:
     };
     int allocid;
     std::set<std::string> _files;
-    std::set<std::string> _useretval;
     std::map<std::string, AllocFunc> _alloc; // allocation functions
     std::map<std::string, AllocFunc> _dealloc; // deallocation functions
-    std::set<std::string> _functions;
     std::map<std::string, bool> _noreturn; // is function noreturn?
     std::map<std::string, std::string> _returnValue;
     std::map<std::string, std::string> _returnValueType;
-    std::set<std::string> _ignorefunction; // ignore functions/macros from a library (gtk, qt etc)
+    std::map<std::string, int> _returnValueContainer;
     std::map<std::string, bool> _reporterrors;
     std::map<std::string, bool> _processAfterCode;
     std::set<std::string> _markupExtensions; // file extensions of markup files
@@ -518,8 +496,7 @@ private:
     std::map<std::string, CodeBlock> _executableblocks; // keywords for blocks of executable code
     std::map<std::string, ExportedFunctions> _exporters; // keywords that export variables/functions to libraries (meta-code/macros)
     std::map<std::string, std::set<std::string> > _importers; // keywords that import variables/functions
-    std::map<std::string,int> _reflection; // invocation of reflection
-    std::map<std::string, std::pair<bool, bool> > _formatstr; // Parameters for format string checking
+    std::map<std::string, int> _reflection; // invocation of reflection
     std::map<std::string, struct PodType> podtypes; // pod types
     std::map<std::string, PlatformType> platform_types; // platform independent typedefs
     std::map<std::string, Platform> platforms; // platform dependent typedefs

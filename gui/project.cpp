@@ -29,7 +29,7 @@
 
 Project::Project(QWidget *parent) :
     QObject(parent),
-    mPFile(NULL),
+    mProjectFile(NULL),
     mParentWidget(parent)
 {
 }
@@ -37,14 +37,14 @@ Project::Project(QWidget *parent) :
 Project::Project(const QString &filename, QWidget *parent) :
     QObject(parent),
     mFilename(filename),
-    mPFile(NULL),
+    mProjectFile(NULL),
     mParentWidget(parent)
 {
 }
 
 Project::~Project()
 {
-    delete mPFile;
+    delete mProjectFile;
 }
 
 QString Project::Filename() const
@@ -59,16 +59,16 @@ void Project::SetFilename(const QString &filename)
 
 bool Project::IsOpen() const
 {
-    return mPFile != NULL;
+    return mProjectFile != NULL;
 }
 
 bool Project::Open()
 {
-    mPFile = new ProjectFile(mFilename, this);
+    mProjectFile = new ProjectFile(mFilename, this);
     if (!QFile::exists(mFilename))
         return false;
 
-    if (!mPFile->Read()) {
+    if (!mProjectFile->Read()) {
         QMessageBox msg(QMessageBox::Critical,
                         tr("Cppcheck"),
                         tr("Could not read the project file."),
@@ -76,7 +76,7 @@ bool Project::Open()
                         mParentWidget);
         msg.exec();
         mFilename = QString();
-        mPFile->SetFilename(mFilename);
+        mProjectFile->SetFilename(mFilename);
         return false;
     }
 
@@ -86,56 +86,26 @@ bool Project::Open()
 bool Project::Edit()
 {
     ProjectFileDialog dlg(mFilename, mParentWidget);
-    QString root = mPFile->GetRootPath();
-    dlg.SetRootPath(root);
-    QStringList includes = mPFile->GetIncludeDirs();
-    dlg.SetIncludepaths(includes);
-    QStringList defines = mPFile->GetDefines();
-    dlg.SetDefines(defines);
-    QStringList paths = mPFile->GetCheckPaths();
-    dlg.SetPaths(paths);
-    QString importProject = mPFile->GetImportProject();
-    dlg.SetImportProject(importProject);
-    QStringList ignorepaths = mPFile->GetExcludedPaths();
-    dlg.SetExcludedPaths(ignorepaths);
-    QStringList libraries = mPFile->GetLibraries();
-    dlg.SetLibraries(libraries);
-    QStringList suppressions = mPFile->GetSuppressions();
-    dlg.SetSuppressions(suppressions);
+    dlg.LoadFromProjectFile(mProjectFile);
+    if (dlg.exec() != QDialog::Accepted)
+        return false;
 
-    int rv = dlg.exec();
-    if (rv == QDialog::Accepted) {
-        QString root = dlg.GetRootPath();
-        mPFile->SetRootPath(root);
-        mPFile->SetImportProject(dlg.GetImportProject());
-        QStringList includes = dlg.GetIncludePaths();
-        mPFile->SetIncludes(includes);
-        QStringList defines = dlg.GetDefines();
-        mPFile->SetDefines(defines);
-        QStringList paths = dlg.GetPaths();
-        mPFile->SetCheckPaths(paths);
-        QStringList excludedpaths = dlg.GetExcludedPaths();
-        mPFile->SetExcludedPaths(excludedpaths);
-        QStringList libraries = dlg.GetLibraries();
-        mPFile->SetLibraries(libraries);
-        QStringList suppressions = dlg.GetSuppressions();
-        mPFile->SetSuppressions(suppressions);
+    dlg.SaveToProjectFile(mProjectFile);
 
-        bool writeSuccess = mPFile->Write();
-        if (!writeSuccess) {
-            QMessageBox msg(QMessageBox::Critical,
-                            tr("Cppcheck"),
-                            tr("Could not write the project file."),
-                            QMessageBox::Ok,
-                            mParentWidget);
-            msg.exec();
-        }
-        return writeSuccess;
+    if (!mProjectFile->Write()) {
+        QMessageBox msg(QMessageBox::Critical,
+                        tr("Cppcheck"),
+                        tr("Could not write the project file."),
+                        QMessageBox::Ok,
+                        mParentWidget);
+        msg.exec();
+        return false;
     }
-    return false;
+
+    return true;
 }
 
 void Project::Create()
 {
-    mPFile = new ProjectFile(mFilename, this);
+    mProjectFile = new ProjectFile(mFilename, this);
 }

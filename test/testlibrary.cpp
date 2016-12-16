@@ -30,6 +30,7 @@ public:
     TestLibrary() : TestFixture("TestLibrary") { }
 
 private:
+    Settings settings;
 
     void run() {
         TEST_CASE(empty);
@@ -66,9 +67,7 @@ private:
 
         Library library;
         readLibrary(library, xmldata);
-        ASSERT(library.use.empty());
-        ASSERT(library.leakignore.empty());
-        ASSERT(library.argumentChecks.empty());
+        ASSERT(library.functions.empty());
     }
 
     void function() const {
@@ -86,9 +85,8 @@ private:
 
         Library library;
         readLibrary(library, xmldata);
-        ASSERT(library.use.empty());
-        ASSERT(library.leakignore.empty());
-        ASSERT(library.argumentChecks.empty());
+        ASSERT_EQUALS(library.functions.size(), 1U);
+        ASSERT(library.functions.at("foo").argumentChecks.empty());
         ASSERT(library.isnotnoreturn(tokenList.front()));
     }
 
@@ -222,13 +220,13 @@ private:
 
         Library library;
         readLibrary(library, xmldata);
-        ASSERT_EQUALS(true, library.argumentChecks["foo"][1].notuninit);
-        ASSERT_EQUALS(true, library.argumentChecks["foo"][2].notnull);
-        ASSERT_EQUALS(true, library.argumentChecks["foo"][3].formatstr);
-        ASSERT_EQUALS(true, library.argumentChecks["foo"][4].strz);
-        ASSERT_EQUALS(false, library.argumentChecks["foo"][4].optional);
-        ASSERT_EQUALS(true, library.argumentChecks["foo"][5].notbool);
-        ASSERT_EQUALS(true, library.argumentChecks["foo"][5].optional);
+        ASSERT_EQUALS(true, library.functions["foo"].argumentChecks[1].notuninit);
+        ASSERT_EQUALS(true, library.functions["foo"].argumentChecks[2].notnull);
+        ASSERT_EQUALS(true, library.functions["foo"].argumentChecks[3].formatstr);
+        ASSERT_EQUALS(true, library.functions["foo"].argumentChecks[4].strz);
+        ASSERT_EQUALS(false, library.functions["foo"].argumentChecks[4].optional);
+        ASSERT_EQUALS(true, library.functions["foo"].argumentChecks[5].notbool);
+        ASSERT_EQUALS(true, library.functions["foo"].argumentChecks[5].optional);
     }
 
     void function_arg_any() const {
@@ -241,7 +239,7 @@ private:
 
         Library library;
         readLibrary(library, xmldata);
-        ASSERT_EQUALS(true, library.argumentChecks["foo"][-1].notuninit);
+        ASSERT_EQUALS(true, library.functions["foo"].argumentChecks[-1].notuninit);
     }
 
     void function_arg_valid() const {
@@ -346,9 +344,9 @@ private:
 
         Library library;
         readLibrary(library, xmldata);
-        ASSERT(library.use.empty());
-        ASSERT(library.leakignore.empty());
-        ASSERT(library.argumentChecks.empty());
+        ASSERT_EQUALS(library.functions.size(), 2U);
+        ASSERT(library.functions.at("Foo::foo").argumentChecks.empty());
+        ASSERT(library.functions.at("bar").argumentChecks.empty());
 
         {
             TokenList tokenList(nullptr);
@@ -375,12 +373,9 @@ private:
 
         Library library;
         readLibrary(library, xmldata);
-        ASSERT(library.use.empty());
-        ASSERT(library.leakignore.empty());
-        ASSERT(library.argumentChecks.empty());
+        ASSERT_EQUALS(library.functions.size(), 1U);
 
         {
-            Settings settings;
             Tokenizer tokenizer(&settings, nullptr);
             std::istringstream istr("CString str; str.Format();");
             tokenizer.tokenize(istr, "test.cpp");
@@ -388,7 +383,6 @@ private:
         }
 
         {
-            Settings settings;
             Tokenizer tokenizer(&settings, nullptr);
             std::istringstream istr("HardDrive hd; hd.Format();");
             tokenizer.tokenize(istr, "test.cpp");
@@ -408,7 +402,6 @@ private:
         readLibrary(library, xmldata);
 
         {
-            Settings settings;
             Tokenizer tokenizer(&settings, nullptr);
             std::istringstream istr("struct X : public Base { void dostuff() { f(0); } };");
             tokenizer.tokenize(istr, "test.cpp");
@@ -416,7 +409,6 @@ private:
         }
 
         {
-            Settings settings;
             Tokenizer tokenizer(&settings, nullptr);
             std::istringstream istr("struct X : public Base { void dostuff() { f(1,2); } };");
             tokenizer.tokenize(istr, "test.cpp");
@@ -471,9 +463,7 @@ private:
 
         Library library;
         readLibrary(library, xmldata);
-        ASSERT(library.use.empty());
-        ASSERT(library.leakignore.empty());
-        ASSERT(library.argumentChecks.empty());
+        ASSERT(library.functions.empty());
 
         ASSERT(Library::ismemory(library.alloc("CreateX")));
         ASSERT_EQUALS(library.allocId("CreateX"), library.deallocId("DeleteX"));
@@ -516,9 +506,7 @@ private:
 
         Library library;
         readLibrary(library, xmldata);
-        ASSERT(library.use.empty());
-        ASSERT(library.leakignore.empty());
-        ASSERT(library.argumentChecks.empty());
+        ASSERT(library.functions.empty());
 
         const Library::AllocFunc* af = library.alloc("CreateX");
         ASSERT(af && af->arg == 5);
@@ -539,9 +527,7 @@ private:
 
         Library library;
         readLibrary(library, xmldata);
-        ASSERT(library.use.empty());
-        ASSERT(library.leakignore.empty());
-        ASSERT(library.argumentChecks.empty());
+        ASSERT(library.functions.empty());
 
         ASSERT(Library::isresource(library.allocId("CreateX")));
         ASSERT_EQUALS(library.allocId("CreateX"), library.deallocId("DeleteX"));

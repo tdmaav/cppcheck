@@ -388,6 +388,11 @@ void MainWindow::DoCheckProject(ImportProject p)
     if (mProject)
         qDebug() << "Checking project file" << mProject->GetProjectFile()->GetFilename();
 
+    if (!checkSettings.buildDir.empty()) {
+        std::list<std::string> sourcefiles;
+        AnalyzerInformation::writeFilesTxt(checkSettings.buildDir, sourcefiles, p.fileSettings);
+    }
+
     //mThread->SetCheckProject(true);
     mThread->SetProject(p);
     mThread->Check(checkSettings, true);
@@ -437,6 +442,13 @@ void MainWindow::DoCheckFiles(const QStringList &files)
 
     if (mProject)
         qDebug() << "Checking project file" << mProject->GetProjectFile()->GetFilename();
+
+    if (!checkSettings.buildDir.empty()) {
+        std::list<std::string> sourcefiles;
+        foreach (QString s, fileNames)
+            sourcefiles.push_back(s.toStdString());
+        AnalyzerInformation::writeFilesTxt(checkSettings.buildDir, sourcefiles, checkSettings.project.fileSettings);
+    }
 
     mThread->SetCheckFiles(true);
     mThread->Check(checkSettings, true);
@@ -742,6 +754,12 @@ Settings MainWindow::GetCppcheckSettings()
         // Only check the given -D configuration
         if (!defines.isEmpty())
             result.maxConfigs = 1;
+
+        QString buildDir = pfile->GetBuildDir();
+        if (!buildDir.isEmpty()) {
+            QString prjpath = QFileInfo(pfile->GetFilename()).absolutePath();
+            result.buildDir = (prjpath + '/' + buildDir).toStdString();
+        }
     }
 
     // Include directories (and files) are searched in listed order.
@@ -759,6 +777,8 @@ Settings MainWindow::GetCppcheckSettings()
     result.addEnabled("portability");
     result.addEnabled("information");
     result.addEnabled("missingInclude");
+    if (!result.buildDir.empty())
+        result.addEnabled("unusedFunction");
     result.debug = false;
     result.debugwarnings = mSettings->value(SETTINGS_SHOW_DEBUG_WARNINGS, false).toBool();
     result.quiet = false;

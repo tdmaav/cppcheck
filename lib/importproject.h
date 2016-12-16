@@ -21,12 +21,13 @@
 #define importprojectH
 //---------------------------------------------------------------------------
 
+#include "config.h"
+#include "platform.h"
 #include <list>
+#include <map>
 #include <string>
 #include <set>
 #include <vector>
-#include "config.h"
-#include "platform.h"
 
 /// @addtogroup Core
 /// @{
@@ -47,11 +48,11 @@ public:
         cppcheck::Platform::PlatformType platformType;
 
         void setDefines(std::string defs);
-        void setIncludePaths(const std::string &basepath, const std::list<std::string> &in);
+        void setIncludePaths(const std::string &basepath, const std::list<std::string> &in, const std::map<std::string, std::string> &variables);
     };
     std::list<FileSettings> fileSettings;
 
-    void ignorePaths(std::vector<std::string> &ipaths);
+    void ignorePaths(const std::vector<std::string> &ipaths);
     void ignoreOtherConfigs(const std::string &cfg);
     void ignoreOtherPlatforms(cppcheck::Platform::PlatformType platformType);
 
@@ -59,7 +60,7 @@ public:
 private:
     void importCompileCommands(std::istream &istr);
     void importSln(std::istream &istr, const std::string &path);
-    void importVcxproj(const std::string &filename);
+    void importVcxproj(const std::string &filename, std::map<std::string, std::string> variables, const std::string &additionalIncludeDirectories);
 };
 
 /// @}

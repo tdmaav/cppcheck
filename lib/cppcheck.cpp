@@ -24,6 +24,8 @@
 #include "check.h"
 #include "path.h"
 
+#include "checkunusedfunctions.h"
+
 #include <algorithm>
 #include <fstream>
 #include <sstream>
@@ -82,7 +84,7 @@ unsigned int CppCheck::check(const std::string &path, const std::string &content
 
 unsigned int CppCheck::check(const ImportProject::FileSettings &fs)
 {
-    CppCheck temp(*this, _useGlobalSuppressions);
+    CppCheck temp(_errorLogger, _useGlobalSuppressions);
     temp._settings = _settings;
     temp._settings.userDefines = fs.defines;
     temp._settings.includePaths = fs.includePaths;
@@ -120,6 +122,8 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
         }
     }
 
+    CheckUnusedFunctions checkUnusedFunctions(0,0,0);
+
     bool internalErrorFound(false);
     try {
         Preprocessor preprocessor(_settings, this);
@@ -134,6 +138,29 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
         preprocessor.inlineSuppressions(tokens1);
         tokens1.removeComments();
         preprocessor.removeComments();
+
+        if (!_settings.buildDir.empty()) {
+            // Get toolinfo
+            std::string toolinfo;
+            toolinfo += CPPCHECK_VERSION_STRING;
+            toolinfo += _settings.isEnabled("warning") ? 'w' : ' ';
+            toolinfo += _settings.isEnabled("style") ? 's' : ' ';
+            toolinfo += _settings.isEnabled("performance") ? 'p' : ' ';
+            toolinfo += _settings.isEnabled("portability") ? 'p' : ' ';
+            toolinfo += _settings.isEnabled("information") ? 'i' : ' ';
+            toolinfo += _settings.userDefines;
+
+            // Calculate checksum so it can be compared with old checksum / future checksums
+            const unsigned int checksum = preprocessor.calculateChecksum(tokens1, toolinfo);
+            std::list<ErrorLogger::ErrorMessage> errors;
+            if (!analyzerInformation.analyzeFile(_settings.buildDir, filename, cfgname, checksum, &errors)) {
+                while (!errors.empty()) {
+                    reportErr(errors.front());
+                    errors.pop_front();
+                }
+                return exitcode;  // known results => no need to reanalyze file
+            }
+        }
 
         // Get directives
         preprocessor.setDirectives(tokens1);
@@ -291,6 +318,10 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
                 // Check normal tokens
                 checkNormalTokens(_tokenizer);
 
+                // Analyze info..
+                if (!_settings.buildDir.empty())
+                    checkUnusedFunctions.parseTokens(_tokenizer, filename.c_str(), &_settings, false);
+
                 // simplify more if required, skip rest of iteration if failed
                 if (_simplify) {
                     // if further simplification fails then skip rest of iteration
@@ -343,10 +374,13 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
         exitcode=1; // e.g. reflect a syntax error
     }
 
+    analyzerInformation.setFileInfo("CheckUnusedFunctions", checkUnusedFunctions.analyzerInfo());
+    analyzerInformation.close();
+
     // In jointSuppressionReport mode, unmatched suppressions are
     // collected after all files are processed
     if (!_settings.jointSuppressionReport && (_settings.isEnabled("information") || _settings.checkConfiguration)) {
-        reportUnmatchedSuppressions(_settings.nomsg.getUnmatchedLocalSuppressions(filename, unusedFunctionCheckIsEnabled()));
+        reportUnmatchedSuppressions(_settings.nomsg.getUnmatchedLocalSuppressions(filename, isUnusedFunctionCheckEnabled()));
     }
 
     _errorList.clear();
@@ -411,8 +445,10 @@ void CppCheck::checkNormalTokens(const Tokenizer &tokenizer)
     // Analyse the tokens..
     for (std::list<Check *>::const_iterator it = Check::instances().begin(); it != Check::instances().end(); ++it) {
         Check::FileInfo *fi = (*it)->getFileInfo(&tokenizer, &_settings);
-        if (fi != nullptr)
+        if (fi != nullptr) {
             fileInfo.push_back(fi);
+            analyzerInformation.setFileInfo((*it)->name(), fi->toString());
+        }
     }
 
     executeRules("normal", tokenizer);
@@ -635,6 +671,7 @@ void CppCheck::reportErr(const ErrorLogger::ErrorMessage &msg)
     _errorList.push_back(errmsg);
 
     _errorLogger.reportErr(msg);
+    analyzerInformation.reportErr(msg, _settings.verbose);
 }
 
 void CppCheck::reportOut(const std::string &outmsg)
@@ -698,7 +735,16 @@ void CppCheck::analyseWholeProgram()
         (*it)->analyseWholeProgram(fileInfo, _settings, *this);
 }
 
-bool CppCheck::unusedFunctionCheckIsEnabled() const
+void CppCheck::analyseWholeProgram(const std::string &buildDir, const std::map<std::string, std::size_t> &files)
+{
+    (void)files;
+    if (buildDir.empty())
+        return;
+    if (_settings.isEnabled("unusedFunction"))
+        CheckUnusedFunctions::analyseWholeProgram(this, buildDir);
+}
+
+bool CppCheck::isUnusedFunctionCheckEnabled() const
 {
     return (_settings.jobs == 1 && _settings.isEnabled("unusedFunction"));
 }

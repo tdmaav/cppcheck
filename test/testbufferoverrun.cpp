@@ -158,7 +158,6 @@ private:
         TEST_CASE(buffer_overrun_16);
         TEST_CASE(buffer_overrun_18); // ticket #2576 - for, calculation with loop variable
         TEST_CASE(buffer_overrun_19); // #2597 - class member with unknown type
-        TEST_CASE(buffer_overrun_20); // #2986 (segmentation fault)
         TEST_CASE(buffer_overrun_21);
         TEST_CASE(buffer_overrun_24); // index variable is changed in for-loop
         TEST_CASE(buffer_overrun_26); // #4432 (segmentation fault)
@@ -2413,11 +2412,6 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
-    void buffer_overrun_20() { // #2986(segmentation fault)
-        check("x[y]\n");
-        ASSERT_EQUALS("", errout.str());
-    }
-
     void buffer_overrun_21() {
         check("void foo()\n"
               "{ { {\n"
@@ -3436,6 +3430,20 @@ private:
               "    baz[99] = 0;\n"
               "}");
         ASSERT_EQUALS("[test.cpp:3]: (warning, inconclusive) The buffer 'baz' may not be null-terminated after the call to strncpy().\n", errout.str());
+
+        check("void foo ( char *bar ) {\n"
+              "    char baz[100];\n"
+              "    strncpy(baz, bar, 100);\n"
+              "    baz[99] = '\\0';\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void foo ( char *bar ) {\n"
+              "    char baz[100];\n"
+              "    strncpy(baz, bar, 100);\n"
+              "    baz[x+1] = '\\0';\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
 
         // Test with invalid code that there is no segfault
         check("char baz[100];\n"

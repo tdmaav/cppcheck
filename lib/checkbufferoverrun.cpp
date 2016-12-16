@@ -30,7 +30,6 @@
 #include <algorithm>
 #include <sstream>
 #include <list>
-#include <cassert>     // <- assert
 #include <cstdlib>
 #include <stack>
 
@@ -193,7 +192,7 @@ void CheckBufferOverrun::outOfBoundsError(const Token *tok, const std::string &w
 
 void CheckBufferOverrun::pointerOutOfBoundsError(const Token *tok, const Token *index, const MathLib::bigint indexvalue)
 {
-    // The severity is portability instead of error since this ub doesnt
+    // The severity is portability instead of error since this ub doesn't
     // cause bad behaviour on most implementations. people create out
     // of bounds pointers by intention.
     const std::string expr(tok ? tok->expressionString() : std::string(""));
@@ -987,10 +986,12 @@ void CheckBufferOverrun::checkScope_inner(const Token *tok, const ArrayInfo &arr
                     for (; tok4; tok4 = tok4->next()) {
                         const Token* tok3 = tok2->tokAt(2);
                         if (tok4->varId() == tok3->varId()) {
-                            if (!Token::Match(tok4, "%varid% [ %any% ] = 0 ;", tok3->varId())) {
+                            const Token *eq = nullptr;
+                            if (Token::Match(tok4, "%varid% [", tok3->varId()) && Token::simpleMatch(tok4->linkAt(1), "] ="))
+                                eq = tok4->linkAt(1)->next();
+                            const Token *rhs = eq ? eq->astOperand2() : nullptr;
+                            if (!(rhs && rhs->hasKnownIntValue() && rhs->getValue(0)))
                                 terminateStrncpyError(tok2, tok3->str());
-                            }
-
                             break;
                         }
                     }
@@ -1134,7 +1135,7 @@ void CheckBufferOverrun::checkGlobalAndLocalVariable()
                 continue;
 
             for (std::list<ValueFlow::Value>::const_iterator it = tok->values.begin(); it != tok->values.end(); ++it) {
-                if (!it->tokvalue)
+                if (!it->isTokValue() || !it->tokvalue)
                     continue;
                 const Variable *var = it->tokvalue->variable();
                 if (var && var->isArray()) {
@@ -1894,6 +1895,24 @@ void CheckBufferOverrun::arrayIndexThenCheckError(const Token *tok, const std::s
                 "is checked that is within limits. This can mean that the array might be accessed out of bounds. "
                 "Reorder conditions such as '(a[i] && i < 10)' to '(i < 10 && a[i])'. That way the array will "
                 "not be accessed if the index is out of limits.", CWE398, false);
+}
+
+std::string CheckBufferOverrun::MyFileInfo::toString() const
+{
+    std::ostringstream ret;
+    for (std::map<std::string, struct CheckBufferOverrun::MyFileInfo::ArrayUsage>::const_iterator it = arrayUsage.begin(); it != arrayUsage.end(); ++it) {
+        ret << "    <ArrayUsage"
+            << " array=\"" << ErrorLogger::toxml(it->first) << '\"'
+            << " index=\"" << it->second.index << '\"'
+            << " fileName=\"" << ErrorLogger::toxml(it->second.fileName) << '\"'
+            << " linenr=\"" << it->second.linenr << "\"/>\n";
+    }
+    for (std::map<std::string, MathLib::bigint>::const_iterator it = arraySize.begin(); it != arraySize.end(); ++it) {
+        ret << "    <ArraySize"
+            << " array=\"" << ErrorLogger::toxml(it->first) << '\"'
+            << " size=\"" << it->second << "\"/>\n";
+    }
+    return ret.str();
 }
 
 Check::FileInfo* CheckBufferOverrun::getFileInfo(const Tokenizer *tokenizer, const Settings *settings) const

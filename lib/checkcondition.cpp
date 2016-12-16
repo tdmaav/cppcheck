@@ -151,7 +151,7 @@ bool CheckCondition::assignIfParseScope(const Token * const assignTok,
                 // is variable changed in loop?
                 const Token *bodyStart = tok2->linkAt(1)->next();
                 const Token *bodyEnd   = bodyStart ? bodyStart->link() : nullptr;
-                if (!bodyEnd || bodyEnd->str() != "}" || isVariableChanged(bodyStart, bodyEnd, varid))
+                if (!bodyEnd || bodyEnd->str() != "}" || isVariableChanged(bodyStart, bodyEnd, varid, _settings))
                     continue;
             }
 
@@ -351,13 +351,13 @@ void CheckCondition::comparisonError(const Token *tok, const std::string &bitop,
     reportError(tok, Severity::style, "comparisonError", errmsg, CWE398, false);
 }
 
-bool CheckCondition::isOverlappingCond(const Token * const cond1, const Token * const cond2, const std::set<std::string> &constFunctions) const
+bool CheckCondition::isOverlappingCond(const Token * const cond1, const Token * const cond2, bool pure) const
 {
     if (!cond1 || !cond2)
         return false;
 
     // same expressions
-    if (isSameExpression(_tokenizer->isCPP(), true, cond1, cond2, constFunctions))
+    if (isSameExpression(_tokenizer->isCPP(), true, cond1, cond2, _settings->library, pure))
         return true;
 
     // bitwise overlap for example 'x&7' and 'x==1'
@@ -380,7 +380,7 @@ bool CheckCondition::isOverlappingCond(const Token * const cond1, const Token * 
         if (!num2->isNumber() || MathLib::isNegative(num2->str()))
             return false;
 
-        if (!isSameExpression(_tokenizer->isCPP(), true, expr1, expr2, constFunctions))
+        if (!isSameExpression(_tokenizer->isCPP(), true, expr1, expr2, _settings->library, pure))
             return false;
 
         const MathLib::bigint value1 = MathLib::toLongNumber(num1->str());
@@ -414,7 +414,7 @@ void CheckCondition::multiCondition()
                 break;
             tok2 = tok2->tokAt(4);
 
-            if (isOverlappingCond(cond1, tok2->astOperand2(), _settings->library.functionpure))
+            if (isOverlappingCond(cond1, tok2->astOperand2(), true))
                 multiConditionError(tok2, cond1->linenr());
         }
     }
@@ -502,7 +502,7 @@ void CheckCondition::oppositeInnerCondition()
         const Token *cond1 = scope->classDef->next()->astOperand2();
         const Token *cond2 = ifToken->next()->astOperand2();
 
-        if (isOppositeCond(false, _tokenizer->isCPP(), cond1, cond2, _settings->library.functionpure))
+        if (isOppositeCond(false, _tokenizer->isCPP(), cond1, cond2, _settings->library, true))
             oppositeInnerConditionError(scope->classDef, cond2);
     }
 }
@@ -664,6 +664,7 @@ void CheckCondition::checkIncorrectLogicOperator()
     const bool printWarning = _settings->isEnabled("warning");
     if (!printWarning && !printStyle)
         return;
+    const bool printInconclusive = _settings->inconclusive;
 
     const SymbolDatabase *symbolDatabase = _tokenizer->getSymbolDatabase();
     const std::size_t functions = symbolDatabase->functionScopes.size();
@@ -676,7 +677,7 @@ void CheckCondition::checkIncorrectLogicOperator()
 
             // Opposite comparisons around || or && => always true or always false
             if ((tok->astOperand1()->isName() || tok->astOperand2()->isName()) &&
-                isOppositeCond(true, _tokenizer->isCPP(), tok->astOperand1(), tok->astOperand2(), _settings->library.functionpure)) {
+                isOppositeCond(true, _tokenizer->isCPP(), tok->astOperand1(), tok->astOperand2(), _settings->library, true)) {
 
                 const bool alwaysTrue(tok->str() == "||");
                 incorrectLogicOperatorError(tok, tok->expressionString(), alwaysTrue, false);
@@ -684,16 +685,20 @@ void CheckCondition::checkIncorrectLogicOperator()
             }
 
 
-            // 'A && (!A || B)' is equivalent with 'A && B'
-            // 'A || (!A && B)' is equivalent with 'A || B'
+            // 'A && (!A || B)' is equivalent to 'A && B'
+            // 'A || (!A && B)' is equivalent to 'A || B'
             if (printStyle &&
                 ((tok->str() == "||" && tok->astOperand2()->str() == "&&") ||
                  (tok->str() == "&&" && tok->astOperand2()->str() == "||"))) {
                 const Token* tok2 = tok->astOperand2()->astOperand1();
-                if (isOppositeCond(true, _tokenizer->isCPP(), tok->astOperand1(), tok2, _settings->library.functionpure)) {
+                if (isOppositeCond(true, _tokenizer->isCPP(), tok->astOperand1(), tok2, _settings->library, true)) {
                     std::string expr1(tok->astOperand1()->expressionString());
                     std::string expr2(tok->astOperand2()->astOperand1()->expressionString());
                     std::string expr3(tok->astOperand2()->astOperand2()->expressionString());
+                    // make copy for later because the original string might get overwritten
+                    const std::string expr1VerboseMsg = expr1;
+                    const std::string expr2VerboseMsg = expr2;
+                    const std::string expr3VerboseMsg = expr3;
 
                     if (expr1.length() + expr2.length() + expr3.length() > 50U) {
                         if (expr1[0] == '!' && expr2[0] != '!') {
@@ -710,7 +715,12 @@ void CheckCondition::checkIncorrectLogicOperator()
                     const std::string cond1 = expr1 + " " + tok->str() + " (" + expr2 + " " + tok->astOperand2()->str() + " " + expr3 + ")";
                     const std::string cond2 = expr1 + " " + tok->str() + " " + expr3;
 
-                    redundantConditionError(tok, tok2->expressionString() + ". '" + cond1 + "' is equivalent to '" + cond2 + "'", false);
+                    const std::string cond1VerboseMsg = expr1VerboseMsg + " " + tok->str() + " " + expr2VerboseMsg + " " + tok->astOperand2()->str() + " " + expr3VerboseMsg;
+                    const std::string cond2VerboseMsg = expr1VerboseMsg + " " + tok->str() + " " + expr3VerboseMsg;
+                    // for the --verbose message, transform the actual condition and print it
+                    const std::string msg = tok2->expressionString() + ". '" + cond1 + "' is equivalent to '" + cond2 + "'\n"
+                                            "The condition '" + cond1VerboseMsg + "' is equivalent to '" + cond2VerboseMsg + "'.";
+                    redundantConditionError(tok, msg, false);
                     continue;
                 }
             }
@@ -739,12 +749,12 @@ void CheckCondition::checkIncorrectLogicOperator()
             if (!parseComparison(comp2, &not2, &op2, &value2, &expr2, &inconclusive))
                 continue;
 
-            if (inconclusive && !_settings->inconclusive)
+            if (inconclusive && !printInconclusive)
                 continue;
 
-            if (isSameExpression(_tokenizer->isCPP(), true, comp1, comp2, _settings->library.functionpure))
+            if (isSameExpression(_tokenizer->isCPP(), true, comp1, comp2, _settings->library, true))
                 continue; // same expressions => only report that there are same expressions
-            if (!isSameExpression(_tokenizer->isCPP(), true, expr1, expr2, _settings->library.functionpure))
+            if (!isSameExpression(_tokenizer->isCPP(), true, expr1, expr2, _settings->library, true))
                 continue;
 
             const bool isfloat = astIsFloat(expr1, true) || MathLib::isFloat(value1) || astIsFloat(expr2, true) || MathLib::isFloat(value2);
@@ -991,8 +1001,16 @@ void CheckCondition::alwaysTrueFalse()
 
             // Don't warn in assertions. Condition is often 'always true' by intention.
             // If platform,defines,etc cause 'always false' then that is not dangerous neither.
-            const std::string str = tok->astParent() && tok->astParent()->previous() ? tok->astParent()->previous()->str() : "";
-            if (str.find("assert")!=std::string::npos || str.find("ASSERT")!=std::string::npos)
+            bool assertFound = false;
+            for (const Token * tok2 = tok->astParent(); tok2 ; tok2 = tok2->astParent()) { // move backwards and try to find "assert"
+                if (tok2->str() == "(" && tok2->astOperand2()) {
+                    const std::string& str = tok2->previous()->str();
+                    if ((str.find("assert")!=std::string::npos || str.find("ASSERT")!=std::string::npos))
+                        assertFound = true;
+                    break;
+                }
+            }
+            if (assertFound)
                 continue;
 
             // Don't warn when there are expanded macros..
@@ -1064,9 +1082,9 @@ void CheckCondition::checkInvalidTestForOverflow()
                 continue;
 
             const Token *termToken;
-            if (isSameExpression(_tokenizer->isCPP(), true, exprToken, calcToken->astOperand1(), _settings->library.functionpure))
+            if (isSameExpression(_tokenizer->isCPP(), true, exprToken, calcToken->astOperand1(), _settings->library, true))
                 termToken = calcToken->astOperand2();
-            else if (isSameExpression(_tokenizer->isCPP(), true, exprToken, calcToken->astOperand2(), _settings->library.functionpure))
+            else if (isSameExpression(_tokenizer->isCPP(), true, exprToken, calcToken->astOperand2(), _settings->library, true))
                 termToken = calcToken->astOperand1();
             else
                 continue;

@@ -39,6 +39,7 @@ private:
         TEST_CASE(signConversion);
         TEST_CASE(longCastAssign);
         TEST_CASE(longCastReturn);
+        TEST_CASE(checkFloatToIntegerOverflow);
     }
 
     void check(const char code[], Settings* settings = 0) {
@@ -88,10 +89,10 @@ private:
 
         // Ticket #6793
         check("template<int I> int foo(int x) { return x << I; }\n"
-              "const int f = foo<31>(1);\n"
-              "const int g = foo<100>(1);\n"
+              "const int f = foo<31>(0);\n"
+              "const int g = foo<100>(0);\n"
               "template<int I> int hoo(int x) { return x << 32; }\n"
-              "const int h = hoo<100>(1);", &settings);
+              "const int h = hoo<100>(0);", &settings);
         ASSERT_EQUALS("[test.cpp:4]: (error) Shifting 32-bit value by 32 bits is undefined behaviour\n"
                       "[test.cpp:1]: (error) Shifting 32-bit value by 100 bits is undefined behaviour\n", errout.str());
 
@@ -106,6 +107,18 @@ private:
         Settings settings;
         settings.platform(Settings::Unix32);
         settings.addEnabled("warning");
+
+        check("void foo() {\n"
+              "    int intmax = 0x7fffffff;\n"
+              "    return intmax + 1;\n"
+              "}",&settings);
+        ASSERT_EQUALS("[test.cpp:3]: (error) Signed integer overflow for expression 'intmax+1'.\n", errout.str());
+
+        check("void foo() {\n"
+              "    int intmax = 0x7fffffff;\n"
+              "    return intmax - 1;\n"
+              "}",&settings);
+        ASSERT_EQUALS("", errout.str());
 
         check("int foo(signed int x) {\n"
               "   if (x==123456) {}\n"
@@ -145,7 +158,7 @@ private:
               "void f2() { f1(-4); }");
         ASSERT_EQUALS("", errout.str());
 
-        // Dont warn for + and -
+        // Don't warn for + and -
         check("void f1(int x) {"
               "  a = x + 5U;\n"
               "}\n"
@@ -198,6 +211,43 @@ private:
               "  return x * y;\n"
               "}\n", &settings);
         ASSERT_EQUALS("", errout.str());
+    }
+
+    // This function ensure that test works with different compilers. Floats can
+    // be stringified differently.
+    std::string removeFloat(const std::string& msg) {
+        std::string::size_type pos1 = msg.find("float (");
+        std::string::size_type pos2 = msg.find(") conversion");
+        if (pos1 == std::string::npos || pos2 == std::string::npos || pos1 > pos2)
+            return msg;
+        return msg.substr(0,pos1+7) + msg.substr(pos2);
+    }
+
+    void checkFloatToIntegerOverflow() {
+        check("void f(void) {\n"
+              "  return (int)1E100;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () conversion overflow.\n", removeFloat(errout.str()));
+
+        check("void f(void) {\n"
+              "  return (int)-1E100;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () conversion overflow.\n", removeFloat(errout.str()));
+
+        check("void f(void) {\n"
+              "  return (short)1E6;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () conversion overflow.\n", removeFloat(errout.str()));
+
+        check("void f(void) {\n"
+              "  return (unsigned char)256.0;\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () conversion overflow.\n", removeFloat(errout.str()));
+
+        check("void f(void) {\n"
+              "  return (unsigned char)255.5;\n"
+              "}\n");
+        ASSERT_EQUALS("", removeFloat(errout.str()));
     }
 };
 

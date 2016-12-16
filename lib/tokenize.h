@@ -238,8 +238,8 @@ public:
      * Simplify variable declarations (split up)
      * \param only_k_r_fpar Only simplify K&R function parameters
      */
-    void simplifyVarDecl(bool only_k_r_fpar);
-    void simplifyVarDecl(Token * tokBegin, Token * tokEnd, bool only_k_r_fpar);
+    void simplifyVarDecl(const bool only_k_r_fpar);
+    void simplifyVarDecl(Token * tokBegin, const Token * const tokEnd, const bool only_k_r_fpar);
 
     /**
      * Simplify variable initialization
@@ -691,7 +691,7 @@ private:
 
     void unsupportedTypedef(const Token *tok) const;
 
-    void setVarIdClassDeclaration(Token * const startToken,
+    void setVarIdClassDeclaration(const Token * const startToken,
                                   const std::map<std::string, unsigned int> &variableId,
                                   const unsigned int scopeStartVarId,
                                   std::map<unsigned int, std::map<std::string,unsigned int> >& structMembers);
@@ -750,7 +750,7 @@ public:
      * Token list: stores all tokens.
      */
     TokenList list;
-    // Implement tokens() as a wrapper for convinience when using the TokenList
+    // Implement tokens() as a wrapper for convenience when using the TokenList
     const Token* tokens() const {
         return list.front();
     }

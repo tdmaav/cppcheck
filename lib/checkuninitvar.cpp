@@ -888,7 +888,7 @@ bool CheckUninitVar::isVariableUsage(const Token *vartok, bool pointer, Alloc al
                 break;
             }
             if (alloc != NO_ALLOC && parent->str() == "(") {
-                if (_settings->library.functionpure.find(parent->strAt(-1)) == _settings->library.functionpure.end()) {
+                if (!_settings->library.isFunctionConst(parent->strAt(-1), true)) {
                     assignment = true;
                     break;
                 }
@@ -973,7 +973,7 @@ bool CheckUninitVar::isVariableUsage(const Token *vartok, bool pointer, Alloc al
         const Token *parent = vartok->next()->astParent();
         while (Token::Match(parent, "[|."))
             parent = parent->astParent();
-        if (Token::simpleMatch(parent, "&") && !parent->astOperand2())
+        if (parent && Token::simpleMatch(parent, "&") && !parent->astOperand2())
             return false;
         if (parent && Token::Match(parent->previous(), "if|while|switch ("))
             return true;
@@ -985,7 +985,7 @@ bool CheckUninitVar::isVariableUsage(const Token *vartok, bool pointer, Alloc al
     if (_tokenizer->isCPP() && Token::Match(vartok->next(), "<<|>>")) {
         // Is this calculation done in rhs?
         const Token *tok = vartok;
-        while (tok && Token::Match(tok, "%name%|.|::"))
+        while (Token::Match(tok, "%name%|.|::"))
             tok = tok->previous();
         if (Token::Match(tok, "[;{}]"))
             return false;
@@ -1057,7 +1057,7 @@ int CheckUninitVar::isFunctionParUsage(const Token *vartok, bool pointer, Alloc 
         } else {
             const bool isnullbad = _settings->library.isnullargbad(start->previous(), argumentNumber + 1);
             if (pointer && !address && isnullbad && alloc == NO_ALLOC)
-                return true;
+                return 1;
             const bool isuninitbad = _settings->library.isuninitargbad(start->previous(), argumentNumber + 1);
             if (alloc != NO_ALLOC)
                 return isnullbad && isuninitbad;
