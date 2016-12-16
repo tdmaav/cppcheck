@@ -206,7 +206,7 @@ private:
         c.suggestInitializationList(nullptr, "variable");
         c.selfInitializationError(nullptr, "var");
         c.duplInheritedMembersError(nullptr, 0, "class", "class", "variable", false, false);
-        c.copyCtorAndEqOperatorError(nullptr, 0, "class", "class", "variable", false, false);
+        c.copyCtorAndEqOperatorError(nullptr, "class", false, false);
     }
 
     static std::string myName() {
