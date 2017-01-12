@@ -46,15 +46,21 @@ void CheckUninitVar::check()
     const SymbolDatabase *symbolDatabase = _tokenizer->getSymbolDatabase();
     std::list<Scope>::const_iterator scope;
 
+    std::set<std::string> arrayTypeDefs;
+    for (const Token *tok = _tokenizer->tokens(); tok; tok = tok->next()) {
+        if (Token::Match(tok, "%name% [") && tok->variable() && Token::Match(tok->variable()->typeStartToken(), "%type% %var% ;"))
+            arrayTypeDefs.insert(tok->variable()->typeStartToken()->str());
+    }
+
     // check every executable scope
     for (scope = symbolDatabase->scopeList.begin(); scope != symbolDatabase->scopeList.end(); ++scope) {
         if (scope->isExecutable()) {
-            checkScope(&*scope);
+            checkScope(&*scope, arrayTypeDefs);
         }
     }
 }
 
-void CheckUninitVar::checkScope(const Scope* scope)
+void CheckUninitVar::checkScope(const Scope* scope, const std::set<std::string> &arrayTypeDefs)
 {
     for (std::list<Variable>::const_iterator i = scope->varlist.begin(); i != scope->varlist.end(); ++i) {
         if ((_tokenizer->isCPP() && i->type() && !i->isPointer() && i->type()->needInitialization != Type::True) ||
@@ -87,7 +93,7 @@ void CheckUninitVar::checkScope(const Scope* scope)
                 continue;
         }
 
-        bool stdtype = _tokenizer->isC();
+        bool stdtype = _tokenizer->isC() && arrayTypeDefs.find(i->typeStartToken()->str()) == arrayTypeDefs.end();
         const Token* tok = i->typeStartToken();
         for (; tok != i->nameToken() && tok->str() != "<"; tok = tok->next()) {
             if (tok->isStandardType() || tok->isEnumType())
@@ -833,7 +839,8 @@ void CheckUninitVar::checkRhs(const Token *tok, const Variable &var, Alloc alloc
                 uninitvarError(tok, tok->str(), alloc);
             else if (!membervar.empty() && isMemberVariableUsage(tok, var.isPointer(), alloc, membervar))
                 uninitStructMemberError(tok, tok->str() + "." + membervar);
-
+            else if (Token::Match(tok, "%var% ="))
+                break;
         } else if (tok->str() == ";" || (indent==0 && tok->str() == ","))
             break;
         else if (tok->str() == "(")

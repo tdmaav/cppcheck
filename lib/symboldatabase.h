@@ -1111,6 +1111,22 @@ private:
     friend class Scope;
     friend class Function;
 
+    // Create symboldatabase...
+    void createSymbolDatabaseFindAllScopes();
+    void createSymbolDatabaseClassInfo();
+    void createSymbolDatabaseVariableInfo();
+    void createSymbolDatabaseFunctionScopes();
+    void createSymbolDatabaseClassAndStructScopes();
+    void createSymbolDatabaseFunctionReturnTypes();
+    void createSymbolDatabaseNeedInitialization();
+    void createSymbolDatabaseVariableSymbolTable();
+    void createSymbolDatabaseSetScopePointers();
+    void createSymbolDatabaseSetFunctionPointers();
+    void createSymbolDatabaseSetVariablePointers();
+    void createSymbolDatabaseSetTypePointers();
+    void createSymbolDatabaseEnums();
+    void createSymbolDatabaseUnknownArrayDimensions();
+
     void addClassFunction(Scope **info, const Token **tok, const Token *argStart);
     Function *addGlobalFunctionDecl(Scope*& scope, const Token* tok, const Token *argStart, const Token* funcStart);
     Function *addGlobalFunction(Scope*& scope, const Token*& tok, const Token *argStart, const Token* funcStart);
@@ -1152,6 +1168,8 @@ public:
     ValueType(enum Sign s, enum Type t, unsigned int p) : sign(s), type(t), pointer(p), constness(0U), typeScope(nullptr) {}
     ValueType(enum Sign s, enum Type t, unsigned int p, unsigned int c) : sign(s), type(t), pointer(p), constness(c), typeScope(nullptr) {}
     ValueType(enum Sign s, enum Type t, unsigned int p, unsigned int c, const std::string &otn) : sign(s), type(t), pointer(p), constness(c), typeScope(nullptr), originalTypeName(otn) {}
+
+    static ValueType parseDecl(const Token *type, const Settings *settings);
 
     bool isIntegral() const {
         return (type >= ValueType::Type::BOOL && type <= ValueType::Type::UNKNOWN_INT);

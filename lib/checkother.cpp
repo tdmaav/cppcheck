@@ -45,6 +45,7 @@ static const struct CWE CWE561(561U);   // Dead Code
 static const struct CWE CWE563(563U);   // Assignment to Variable without Use ('Unused Variable')
 static const struct CWE CWE570(570U);   // Expression is Always False
 static const struct CWE CWE571(571U);   // Expression is Always True
+static const struct CWE CWE672(672U);   // Operation on a Resource after Expiration or Release
 static const struct CWE CWE686(686U);   // Function Call With Incorrect Argument Type
 static const struct CWE CWE687(687U);   // Function Call With Incorrectly Specified Argument Value
 static const struct CWE CWE688(688U);   // Function Call With Incorrect Variable or Reference as Argument
@@ -1204,6 +1205,9 @@ void CheckOther::checkVariableScope()
             if (!tok->isNumber() && tok->tokType() != Token::eString && tok->tokType() != Token::eChar && !tok->isBoolean())
                 continue;
         }
+        // bailout if initialized with function call that has possible side effects
+        if (tok->str() == "(" && Token::simpleMatch(tok->astOperand2(), "("))
+            continue;
         bool reduce = true;
         bool used = false; // Don't warn about unused variables
         for (; tok && tok != var->scope()->classEnd; tok = tok->next()) {
@@ -2304,6 +2308,8 @@ static bool isNegative(const Token *tok, const Settings *settings)
 
 void CheckOther::checkNegativeBitwiseShift()
 {
+    const bool portability = _settings->isEnabled("portability");
+
     for (const Token* tok = _tokenizer->tokens(); tok; tok = tok->next()) {
         if (!tok->astOperand1() || !tok->astOperand2())
             continue;
@@ -2313,15 +2319,8 @@ void CheckOther::checkNegativeBitwiseShift()
 
         // don't warn if lhs is a class. this is an overloaded operator then
         if (_tokenizer->isCPP()) {
-            const Token *rhs = tok->astOperand1();
-            while (Token::Match(rhs, "::|."))
-                rhs = rhs->astOperand2();
-            if (!rhs)
-                continue;
-            if (!rhs->isNumber() && !rhs->variable())
-                continue;
-            if (rhs->variable() &&
-                (!rhs->variable()->typeStartToken() || !rhs->variable()->typeStartToken()->isStandardType()))
+            const ValueType * lhsType = tok->astOperand1()->valueType();
+            if (!lhsType || !lhsType->isIntegral())
                 continue;
         }
 
@@ -2337,7 +2336,7 @@ void CheckOther::checkNegativeBitwiseShift()
             continue;
 
         // Get negative rhs value. preferably a value which doesn't have 'condition'.
-        if (isNegative(tok->astOperand1(), _settings))
+        if (portability && isNegative(tok->astOperand1(), _settings))
             negativeBitwiseShiftError(tok, 1);
         else if (isNegative(tok->astOperand2(), _settings))
             negativeBitwiseShiftError(tok, 2);
@@ -2347,8 +2346,11 @@ void CheckOther::checkNegativeBitwiseShift()
 
 void CheckOther::negativeBitwiseShiftError(const Token *tok, int op)
 {
-    if (op == 1) // LHS
-        reportError(tok, Severity::error, "shiftNegative", "Shifting a negative value is undefined behaviour", CWE758, false);
+    if (op == 1)
+        // LHS - this is used by intention in various software, if it
+        // is used often in a project and works as expected then this is
+        // a portability issue
+        reportError(tok, Severity::portability, "shiftNegativeLHS", "Shifting a negative value is technically undefined behaviour", CWE758, false);
     else // RHS
         reportError(tok, Severity::error, "shiftNegative", "Shifting by a negative value is undefined behaviour", CWE758, false);
 }
@@ -2714,7 +2716,7 @@ void CheckOther::checkAccessOfMovedVariable()
         }
         for (const Token* tok = scopeStart->next(); tok != scope->classEnd; tok = tok->next()) {
             const ValueFlow::Value * movedValue = tok->getMovedValue();
-            if (!movedValue)
+            if (!movedValue || movedValue->moveKind == ValueFlow::Value::NonMovedVariable)
                 continue;
             if (movedValue->inconclusive && !reportInconclusive)
                 continue;
@@ -2767,8 +2769,131 @@ void CheckOther::accessMovedError(const Token *tok, const std::string &varname, 
         errorId = "accessForwarded";
         kindString = "forwarded";
         break;
+    default:
+        return;
     }
     const std::string errmsg(std::string("Access of ") + kindString + " variable " + varname + ".");
-    reportError(tok, Severity::warning, errorId, errmsg, CWE(0U), inconclusive);
+    reportError(tok, Severity::warning, errorId, errmsg, CWE672, inconclusive);
+}
+
+
+
+void CheckOther::checkFuncArgNamesDifferent()
+{
+    const bool style = _settings->isEnabled("style");
+    const bool inconclusive = _settings->inconclusive;
+    const bool warning = _settings->isEnabled("warning");
+
+    if (!(warning || (style && inconclusive)))
+        return;
+
+    const SymbolDatabase *symbolDatabase = _tokenizer->getSymbolDatabase();
+    // check every function
+    for (std::size_t i = 0, end = symbolDatabase->functionScopes.size(); i < end; ++i) {
+        const Function * function = symbolDatabase->functionScopes[i]->function;
+        // only check functions with arguments
+        if (!function || function->argCount() == 0)
+            continue;
+
+        // only check functions with seperate declarations and definitions
+        if (function->argDef == function->arg)
+            continue;
+
+        // get the function argument name tokens
+        std::vector<const Token *>  declarations(function->argCount());
+        std::vector<const Token *>  definitions(function->argCount());
+        const Token * decl = function->argDef->next();
+        for (std::size_t j = 0; j < function->argCount(); ++j) {
+            declarations[j] = nullptr;
+            definitions[j] = nullptr;
+            // get the definition
+            const Variable * variable = function->getArgumentVar(j);
+            if (variable) {
+                definitions[j] = variable->nameToken();
+            }
+            // get the declaration (search for first token with varId)
+            bool skip = false;
+            while (decl && !Token::Match(decl, ",|)|;")) {
+                // skip everything after the assignment because
+                // it could also have a varId or be the first
+                // token with a varId if there is no name token
+                if (decl->str() == "=")
+                    skip = true;
+                // skip over template
+                else if (decl->link())
+                    decl = decl->link();
+                else if (!skip && decl->varId()) {
+                    declarations[j] = decl;
+                }
+                decl = decl->next();
+            }
+            if (decl)
+                decl = decl->next();
+        }
+        // check for different argument order
+        if (warning) {
+            bool order_different = false;
+            for (std::size_t j = 0; j < function->argCount(); ++j) {
+                if (!declarations[j] || !definitions[j] || declarations[j]->str() == definitions[j]->str())
+                    continue;
+
+                for (std::size_t k = 0; k < function->argCount(); ++k) {
+                    if (j != k && definitions[k] && declarations[j]->str() == definitions[k]->str()) {
+                        order_different = true;
+                        break;
+                    }
+                }
+            }
+            if (order_different) {
+                funcArgOrderDifferent(function->name(), function->argDef->next(), function->arg->next(), declarations, definitions);
+                continue;
+            }
+        }
+        // check for different argument names
+        if (style && inconclusive) {
+            for (std::size_t j = 0; j < function->argCount(); ++j) {
+                if (declarations[j] && definitions[j] && declarations[j]->str() != definitions[j]->str())
+                    funcArgNamesDifferent(function->name(), j, declarations[j], definitions[j]);
+            }
+        }
+    }
+}
+
+void CheckOther::funcArgNamesDifferent(const std::string & name, size_t index,
+                                       const Token* declaration, const Token* definition)
+{
+    std::list<const Token *> tokens;
+    tokens.push_back(declaration);
+    tokens.push_back(definition);
+    reportError(tokens, Severity::style, "funcArgNamesDifferent",
+                "Function '" + name + "' argument " + MathLib::toString(index + 1) + " names different: declaration '" +
+                (declaration ? declaration->str() : std::string("A")) + "' definition '" +
+                (definition ? definition->str() : std::string("B")) + "'.", CWE(0U), true);
+}
+
+void CheckOther::funcArgOrderDifferent(const std::string & name,
+                                       const Token* declaration, const Token* definition,
+                                       const std::vector<const Token *> & declarations,
+                                       const std::vector<const Token *> & definitions)
+{
+    std::list<const Token *> tokens;
+    tokens.push_back(declarations.size() ? declarations[0] ? declarations[0] : declaration : nullptr);
+    tokens.push_back(definitions.size() ? definitions[0] ? definitions[0] : definition : nullptr);
+    std::string msg = "Function '" + name + "' argument order different: declaration '";
+    for (std::size_t i = 0; i < declarations.size(); ++i) {
+        if (i != 0)
+            msg += ", ";
+        if (declarations[i])
+            msg += declarations[i]->str();
+    }
+    msg += "' definition '";
+    for (std::size_t i = 0; i < definitions.size(); ++i) {
+        if (i != 0)
+            msg += ", ";
+        if (definitions[i])
+            msg += definitions[i]->str();
+    }
+    msg += "'";
+    reportError(tokens, Severity::warning, "funcArgOrderDifferent", msg, CWE(0U), false);
 }
 

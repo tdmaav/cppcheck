@@ -309,6 +309,8 @@ private:
         TEST_CASE(variadic1); // #7453
         TEST_CASE(variadic2); // #7649
         TEST_CASE(variadic3); // #7387
+
+        TEST_CASE(noReturnType);
     }
 
     void array() {
@@ -1144,7 +1146,7 @@ private:
                       "void(*p2)(char); \n"                         // pointer to function (char) returning void
                       "int(*(*p3)(char))[10];\n"                    // pointer to function (char) returning pointer to array 10 of int
                       "float(*(*p4)(char))(long); \n"               // pointer to function (char) returning pointer to function (long) returning float
-                      "short(*(*(p5) (char))(long))(double); \n"    // pointer to function (char) returning pointer to function (long) returning pointer to function (double) returning short
+                      "short(*(*(*p5) (char))(long))(double);\n"    // pointer to function (char) returning pointer to function (long) returning pointer to function (double) returning short
                       "int(*a1[10])(void); \n"                      // array 10 of pointer to function (void) returning int
                       "float(*(*a2[10])(char))(long);\n"            // array 10 of pointer to func (char) returning pointer to func (long) returning float
                       "short(*(*(*a3[10])(char))(long))(double);\n" // array 10 of pointer to function (char) returning pointer to function (long) returning pointer to function (double) returning short
@@ -1513,7 +1515,7 @@ private:
         }
     }
 
-    void check(const char code[], bool debug = true) {
+    void check(const char code[], bool debug = true, const char filename[] = "test.cpp") {
         // Clear the error log
         errout.str("");
 
@@ -1523,7 +1525,7 @@ private:
         // Tokenize..
         Tokenizer tokenizer(&settings1, this);
         std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp");
+        tokenizer.tokenize(istr, filename);
         tokenizer.simplifyTokenList2();
 
         // force symbol database creation
@@ -2028,8 +2030,8 @@ private:
               "static void function_declaration_after(void) __attribute__((__used__));\n");
         ASSERT_EQUALS("", errout.str());
 
-        check("main(int argc, char *argv[]) { }");
-        ASSERT_EQUALS("", errout.str());
+        check("main(int argc, char *argv[]) { }", true, "test.c");
+        ASSERT_EQUALS("[test.c:1]: (debug) SymbolDatabase::isFunction found C function 'main' without a return type.\n", errout.str());
 
         check("namespace boost {\n"
               "    std::locale generate_locale()\n"
@@ -4154,6 +4156,19 @@ private:
 
             const Token *f = Token::findsimplematch(tokenizer.tokens(), "zdcalc ( length");
             ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 1);
+        }
+    }
+
+    void noReturnType() {
+        GET_SYMBOL_DB_C("func() { }");
+
+        ASSERT(db && db->functionScopes.size() == 1);
+        if (db && db->functionScopes.size() == 1) {
+            ASSERT(db->functionScopes[0]->function);
+            if (db->functionScopes[0]->function) {
+                const Token *retDef = db->functionScopes[0]->function->retDef;
+                ASSERT_EQUALS("func", retDef ? retDef->str() : "");
+            }
         }
     }
 };

@@ -267,7 +267,7 @@ CheckMemoryLeak::AllocType CheckMemoryLeak::getDeallocationType(const Token *tok
 
 //--------------------------------------------------------------------------
 
-void CheckMemoryLeak::memoryLeak(const Token *tok, const std::string &varname, AllocType alloctype)
+void CheckMemoryLeak::memoryLeak(const Token *tok, const std::string &varname, AllocType alloctype) const
 {
     if (alloctype == CheckMemoryLeak::File ||
         alloctype == CheckMemoryLeak::Pipe ||
@@ -384,6 +384,9 @@ CheckMemoryLeak::AllocType CheckMemoryLeak::functionReturnType(const Function* f
             return No;
         }
         if (Token::Match(tok, "[(,] & %varid% [.,)]", varid)) {
+            return No;
+        }
+        if (Token::Match(tok, "[;{}] %varid% .", varid)) {
             return No;
         }
         if (allocType == No && tok->str() == "return")

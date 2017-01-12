@@ -563,6 +563,12 @@ private:
               "    ab->a[0] = 0;\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        check("union { char a[1]; int b; } ab;\n"
+              "void f() {\n"
+              "    ab.a[2] = 0;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
 
@@ -1123,9 +1129,9 @@ private:
               "    ptest->b[0][19] = 4;\n"
               "}");
         ASSERT_EQUALS("[test.cpp:9]: (error) Array 'test.a[10]' accessed at index 10, which is out of bounds.\n"
-                      "[test.cpp:14]: (error) Array 'ptest.a[10]' accessed at index 10, which is out of bounds.\n"
                       "[test.cpp:10]: (error) Array 'test.b[10][5]' index test.b[10][2] out of bounds.\n"
                       "[test.cpp:11]: (error) Array 'test.b[10][5]' index test.b[0][19] out of bounds.\n"
+                      "[test.cpp:14]: (error) Array 'ptest.a[10]' accessed at index 10, which is out of bounds.\n"
                       "[test.cpp:15]: (error) Array 'ptest.b[10][5]' index ptest.b[10][2] out of bounds.\n"
                       "[test.cpp:16]: (error) Array 'ptest.b[10][5]' index ptest.b[0][19] out of bounds.\n", errout.str());
 
@@ -1323,8 +1329,8 @@ private:
               "   y = var[ 0 ].arr[ 3 ];\n" // <-- array access out of bounds
               "   return y;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:10]: (error) Array 'var.arr[3]' accessed at index 3, which is out of bounds.\n"
-                      "[test.cpp:10]: (error) Array 'var[0].arr[3]' accessed at index 3, which is out of bounds.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:10]: (error) Array 'var[0].arr[3]' accessed at index 3, which is out of bounds.\n"
+                      "[test.cpp:10]: (error) Array 'var.arr[3]' accessed at index 3, which is out of bounds.\n", errout.str());
 
         check("int f( )\n"
               "{\n"
@@ -1368,8 +1374,8 @@ private:
               "var[0].var[ 2 ] = 2;\n"
               "var[0].var[ 4 ] = 4;\n" // <-- array access out of bounds
               "}");
-        ASSERT_EQUALS("[test.cpp:9]: (error) Array 'var.var[3]' accessed at index 4, which is out of bounds.\n"
-                      "[test.cpp:9]: (error) Array 'var[0].var[3]' accessed at index 4, which is out of bounds.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:9]: (error) Array 'var[0].var[3]' accessed at index 4, which is out of bounds.\n"
+                      "[test.cpp:9]: (error) Array 'var.var[3]' accessed at index 4, which is out of bounds.\n", errout.str());
 
         check("void f( ) {\n"
               "struct S{\n"
@@ -1612,6 +1618,26 @@ private:
               "    }\n"
               "}\n");
         ASSERT_EQUALS("", errout.str());
+
+        {
+            check("int foo() {\n"
+                  "  const size_t A = 4;\n"
+                  "  const size_t B = 2;\n"
+                  "  extern int stuff[A][B];\n"
+                  "  return stuff[0][1];\n"
+                  "}");
+            ASSERT_EQUALS("", errout.str());
+
+            // TODO: better handling of VLAs in symboldatabase. should be
+            //       possible to use ValueFlow values.
+            check("int foo() {\n"
+                  "  const size_t A = 4;\n"
+                  "  const size_t B = 2;\n"
+                  "  extern int stuff[A][B];\n"
+                  "  return stuff[0][1];\n"
+                  "}");
+            TODO_ASSERT_EQUALS("error", "", errout.str());
+        }
     }
 
     void array_index_switch_in_for() {

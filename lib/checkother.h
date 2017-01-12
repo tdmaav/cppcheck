@@ -72,6 +72,7 @@ public:
         checkOther.checkInterlockedDecrement();
         checkOther.checkUnusedLabel();
         checkOther.checkEvaluationOrder();
+        checkOther.checkFuncArgNamesDifferent();
     }
 
     /** @brief Run checks against the simplified token list */
@@ -207,6 +208,9 @@ public:
     /** @brief %Check for access of moved or forwarded variable */
     void checkAccessOfMovedVariable();
 
+    /** @brief %Check if function declaration and definition argument names different */
+    void checkFuncArgNamesDifferent();
+
 private:
     // Error messages..
     void checkComparisonFunctionIsAlwaysTrueOrFalseError(const Token* tok, const std::string &strFunctionName, const std::string &varName, const bool result);
@@ -258,6 +262,8 @@ private:
     void unknownEvaluationOrder(const Token* tok);
     static bool isMovedParameterAllowedForInconclusiveFunction(const Token * tok);
     void accessMovedError(const Token *tok, const std::string &varname, ValueFlow::Value::MoveKind moveKind, bool inconclusive);
+    void funcArgNamesDifferent(const std::string & name, size_t index, const Token* declaration, const Token* definition);
+    void funcArgOrderDifferent(const std::string & name, const Token * declaration, const Token * definition, const std::vector<const Token*> & declarations, const std::vector<const Token*> & definitions);
 
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const {
         CheckOther c(nullptr, settings, errorLogger);
@@ -268,6 +274,7 @@ private:
         c.misusedScopeObjectError(nullptr, "varname");
         c.invalidPointerCastError(nullptr,  "float", "double", false);
         c.negativeBitwiseShiftError(nullptr, 1);
+        c.negativeBitwiseShiftError(nullptr, 2);
         c.checkPipeParameterSizeError(nullptr,  "varname", "dimension");
         c.raceAfterInterlockedDecrementError(nullptr);
 
@@ -316,6 +323,10 @@ private:
         c.unknownEvaluationOrder(nullptr);
         c.accessMovedError(nullptr, "v", ValueFlow::Value::MovedVariable, false);
         c.accessMovedError(nullptr, "v", ValueFlow::Value::ForwardedVariable, false);
+        c.funcArgNamesDifferent("function", 1, nullptr, nullptr);
+
+        std::vector<const Token *> nullvec;
+        c.funcArgOrderDifferent("function", nullptr, nullptr, nullvec, nullvec);
     }
 
     static std::string myName() {
@@ -374,7 +385,9 @@ private:
                "- prefer erfc, expm1 or log1p to avoid loss of precision.\n"
                "- identical code in both branches of if/else or ternary operator.\n"
                "- redundant pointer operation on pointer like &*some_ptr.\n"
-               "- find unused 'goto' labels.\n";
+               "- find unused 'goto' labels.\n"
+               "- function declaration and definition argument names different.\n"
+               "- function declaration and definition argument order different.\n";
     }
 };
 /// @}

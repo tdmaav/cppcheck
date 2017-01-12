@@ -179,6 +179,9 @@ private:
         TEST_CASE(moveAndAssign1);
         TEST_CASE(moveAndAssign2);
         TEST_CASE(moveAssignMoveAssign);
+        TEST_CASE(moveAndReset1);
+        TEST_CASE(moveAndReset2);
+        TEST_CASE(moveResetMoveReset);
         TEST_CASE(moveAndFunctionParameter);
         TEST_CASE(moveAndFunctionParameterReference);
         TEST_CASE(moveAndFunctionParameterConstReference);
@@ -189,6 +192,9 @@ private:
         TEST_CASE(partiallyMoved);
         TEST_CASE(moveAndLambda);
         TEST_CASE(forwardAndUsed);
+
+        TEST_CASE(funcArgNamesDifferent);
+        TEST_CASE(funcArgOrderDifferent);
     }
 
     void check(const char code[], const char *filename = nullptr, bool experimental = false, bool inconclusive = true, bool runSimpleChecks=true, Settings* settings = 0) {
@@ -268,7 +274,7 @@ private:
         check("void foo() {\n"
               "    cout << 42 / (int)0;\n"
               "}");
-        TODO_ASSERT_EQUALS("[test.cpp:2]: (error) Division by zero.\n", "", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (error) Division by zero.\n", errout.str());
     }
 
     void zeroDiv2() {
@@ -712,6 +718,15 @@ private:
               "    }\n"
               "    if (b) {\n"
               "        c(i);\n"
+              "    }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n" // #5398
+              "    bool success = false;\n"
+              "    int notReducable(someClass.getX(&success));\n"
+              "    if (success) {\n"
+              "        foo(notReducable);\n"
               "    }\n"
               "}");
         ASSERT_EQUALS("", errout.str());
@@ -4615,13 +4630,17 @@ private:
               "   std::cout << 3 << -1 ;\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+        check("void foo() {\n"
+              "   x = (-10+2) << 3;\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (portability) Shifting a negative value is technically undefined behaviour\n", errout.str());
 
         check("x = y ? z << $-1 : 0;\n");
         ASSERT_EQUALS("", errout.str());
 
         // Negative LHS
         check("const int x = -1 >> 2;");
-        ASSERT_EQUALS("[test.cpp:1]: (error) Shifting a negative value is undefined behaviour\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:1]: (portability) Shifting a negative value is technically undefined behaviour\n", errout.str());
 
         // #6383 - unsigned type
         check("const int x = (unsigned int)(-1) >> 2;");
@@ -4634,8 +4653,8 @@ private:
               "int shift4() { return -1 << 1 ;}\n");
         ASSERT_EQUALS("[test.cpp:1]: (error) Shifting by a negative value is undefined behaviour\n"
                       "[test.cpp:2]: (error) Shifting by a negative value is undefined behaviour\n"
-                      "[test.cpp:3]: (error) Shifting a negative value is undefined behaviour\n"
-                      "[test.cpp:4]: (error) Shifting a negative value is undefined behaviour\n", errout.str());
+                      "[test.cpp:3]: (portability) Shifting a negative value is technically undefined behaviour\n"
+                      "[test.cpp:4]: (portability) Shifting a negative value is technically undefined behaviour\n", errout.str());
     }
 
     void incompleteArrayFill() {
@@ -6189,6 +6208,45 @@ private:
                       "[test.cpp:8]: (warning) Access of moved variable a.\n", errout.str());
     }
 
+    void moveAndReset1() {
+        check("A g(A a);\n"
+              "void f() {\n"
+              "    A a;\n"
+              "    a.reset(g(std::move(a)));\n"
+              "    a.reset(g(std::move(a)));\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void moveAndReset2() {
+        check("A g(A a);\n"
+              "void f() {\n"
+              "    A a;\n"
+              "    A b;\n"
+              "    A c;\n"
+              "    b.reset(g(std::move(a)));\n"
+              "    c.reset(g(std::move(a)));\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:7]: (warning) Access of moved variable a.\n", errout.str());
+    }
+
+    void moveResetMoveReset() {
+        check("void h(A a);\n"
+              "void f() {"
+              "    A a;\n"
+              "    g(std::move(a));\n"
+              "    h(a);\n"
+              "    a.reset(b);\n"
+              "    h(a);\n"
+              "    g(std::move(a));\n"
+              "    h(a);\n"
+              "    a.reset(b);\n"
+              "    h(a);\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (warning) Access of moved variable a.\n"
+                      "[test.cpp:8]: (warning) Access of moved variable a.\n", errout.str());
+    }
+
     void moveAndFunctionParameter() {
         check("void g(A a);\n"
               "void f() {\n"
@@ -6254,8 +6312,7 @@ private:
               "    v.clear();\n"
               "    if (v.empty()) {}\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:4]: (warning, inconclusive) Access of moved variable v.\n"
-                      "[test.cpp:5]: (warning, inconclusive) Access of moved variable v.\n", errout.str());
+        ASSERT_EQUALS("", errout.str());
     }
 
     void movedPointer() {
@@ -6294,6 +6351,57 @@ private:
               "    T s = t;\n"
               "}");
         ASSERT_EQUALS("[test.cpp:4]: (warning) Access of forwarded variable t.\n", errout.str());
+    }
+
+    void funcArgNamesDifferent() {
+        check("void func1(int a, int b, int c); \n"
+              "void func1(int a, int b, int c) { }\n"
+              "void func2(int a, int b, int c);\n"
+              "void func2(int A, int B, int C) { }\n"
+              "class Fred {\n"
+              "    void func1(int a, int b, int c); \n"
+              "    void func2(int a, int b, int c);\n"
+              "    void func3(int a = 0, int b = 0, int c = 0);\n"
+              "    void func4(int a = 0, int b = 0, int c = 0);\n"
+              "};\n"
+              "void Fred::func1(int a, int b, int c) { }\n"
+              "void Fred::func2(int A, int B, int C) { }\n"
+              "void Fred::func3(int a, int b, int c) { }\n"
+              "void Fred::func4(int A, int B, int C) { }\n");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (style, inconclusive) Function 'func2' argument 1 names different: declaration 'a' definition 'A'.\n"
+                      "[test.cpp:3] -> [test.cpp:4]: (style, inconclusive) Function 'func2' argument 2 names different: declaration 'b' definition 'B'.\n"
+                      "[test.cpp:3] -> [test.cpp:4]: (style, inconclusive) Function 'func2' argument 3 names different: declaration 'c' definition 'C'.\n"
+                      "[test.cpp:7] -> [test.cpp:12]: (style, inconclusive) Function 'func2' argument 1 names different: declaration 'a' definition 'A'.\n"
+                      "[test.cpp:7] -> [test.cpp:12]: (style, inconclusive) Function 'func2' argument 2 names different: declaration 'b' definition 'B'.\n"
+                      "[test.cpp:7] -> [test.cpp:12]: (style, inconclusive) Function 'func2' argument 3 names different: declaration 'c' definition 'C'.\n"
+                      "[test.cpp:9] -> [test.cpp:14]: (style, inconclusive) Function 'func4' argument 1 names different: declaration 'a' definition 'A'.\n"
+                      "[test.cpp:9] -> [test.cpp:14]: (style, inconclusive) Function 'func4' argument 2 names different: declaration 'b' definition 'B'.\n"
+                      "[test.cpp:9] -> [test.cpp:14]: (style, inconclusive) Function 'func4' argument 3 names different: declaration 'c' definition 'C'.\n", errout.str());
+    }
+
+    void funcArgOrderDifferent() {
+        check("void func1(int a, int b, int c);\n"
+              "void func1(int a, int b, int c) { }\n"
+              "void func2(int a, int b, int c);\n"
+              "void func2(int c, int b, int a) { }\n"
+              "void func3(int, int b, int c);\n"
+              "void func3(int c, int b, int a) { }\n"
+              "class Fred {\n"
+              "    void func1(int a, int b, int c);\n"
+              "    void func2(int a, int b, int c);\n"
+              "    void func3(int a = 0, int b = 0, int c = 0);\n"
+              "    void func4(int, int b = 0, int c = 0);\n"
+              "};\n"
+              "void Fred::func1(int a, int b, int c) { }\n"
+              "void Fred::func2(int c, int b, int a) { }\n"
+              "void Fred::func3(int c, int b, int a) { }\n"
+              "void Fred::func4(int c, int b, int a) { }\n",
+              nullptr, false, false);
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:4]: (warning) Function 'func2' argument order different: declaration 'a, b, c' definition 'c, b, a'\n"
+                      "[test.cpp:5] -> [test.cpp:6]: (warning) Function 'func3' argument order different: declaration ', b, c' definition 'c, b, a'\n"
+                      "[test.cpp:9] -> [test.cpp:14]: (warning) Function 'func2' argument order different: declaration 'a, b, c' definition 'c, b, a'\n"
+                      "[test.cpp:10] -> [test.cpp:15]: (warning) Function 'func3' argument order different: declaration 'a, b, c' definition 'c, b, a'\n"
+                      "[test.cpp:11] -> [test.cpp:16]: (warning) Function 'func4' argument order different: declaration ', b, c' definition 'c, b, a'\n", errout.str());
     }
 };
 

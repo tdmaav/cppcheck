@@ -178,6 +178,8 @@ private:
         TEST_CASE(simplifyKnownVariables58);    // ticket #5268
         TEST_CASE(simplifyKnownVariables59);    // skip for header
         TEST_CASE(simplifyKnownVariables60);    // #6829
+        TEST_CASE(simplifyKnownVariables61);    // #7805
+        TEST_CASE(simplifyKnownVariables62);    // #5666 - p=&str[0]
         TEST_CASE(simplifyKnownVariablesBailOutAssign1);
         TEST_CASE(simplifyKnownVariablesBailOutAssign2);
         TEST_CASE(simplifyKnownVariablesBailOutAssign3); // #4395 - nested assignments
@@ -271,6 +273,7 @@ private:
         TEST_CASE(vardecl24);  // #4187 - variable declaration within lambda function
         TEST_CASE(vardecl25);  // #4799 - segmentation fault
         TEST_CASE(vardecl26);  // #5907 - incorrect handling of extern declarations
+        TEST_CASE(vardecl27);  // #7850 - crash on valid C code
         TEST_CASE(vardecl_stl_1);
         TEST_CASE(vardecl_stl_2);
         TEST_CASE(vardecl_template_1);
@@ -531,7 +534,6 @@ private:
         return tokenizer.tokens()->stringifyList(true,true,true,true,false);
     }
 
-
     void tokenize1() {
         const char code[] = "void f ( )\n"
                             "{ if ( p . y ( ) > yof ) { } }";
@@ -728,7 +730,7 @@ private:
 
     // #4239 - segfault for "f ( struct { int typedef T x ; } ) { }"
     void tokenize25() {
-        tokenizeAndStringify("f ( struct { int typedef T x ; } ) { }");
+        ASSERT_THROW(tokenizeAndStringify("f ( struct { int typedef T x ; } ) { }"), InternalError);
     }
 
     // #4245 - segfault
@@ -2650,6 +2652,30 @@ private:
                       "}", tokenizeAndStringify(code, true));
     }
 
+    void simplifyKnownVariables61() { // #7805
+        tokenizeAndStringify("static const int XX = 0;\n"
+                             "enum E { XX };\n"
+                             "struct s {\n"
+                             "  enum Bar {\n"
+                             "    XX,\n"
+                             "    Other\n"
+                             "  };\n"
+                             "  enum { XX };\n"
+                             "};", /*simplify=*/true);
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void simplifyKnownVariables62() { // #5666
+        ASSERT_EQUALS("void foo ( std :: string str ) {\n"
+                      "char * p ; p = & str [ 0 ] ;\n"
+                      "* p = 0 ;\n"
+                      "}",
+                      tokenizeAndStringify("void foo(std::string str) {\n"
+                                           "  char *p = &str[0];\n"
+                                           "  *p = 0;\n"
+                                           "}", /*simplify=*/true));
+    }
+
     void simplifyKnownVariablesBailOutAssign1() {
         const char code[] = "int foo() {\n"
                             "    int i; i = 0;\n"
@@ -3913,6 +3939,16 @@ private:
         ASSERT_EQUALS(expected, tokenizeAndStringify(code));
     }
 
+    void vardecl27() { // #7850
+        const char code[] = "extern int foo(char);\n"
+                            "void* class(char c) {\n"
+                            "  if (foo(c))\n"
+                            "    return 0;\n"
+                            "  return 0;\n"
+                            "}";
+        tokenizeAndStringify(code, /*simplify=*/false, /*expand=*/true, Settings::Native, "test.c");
+    }
+
     void volatile_variables() {
         const char code[] = "volatile int a=0;\n"
                             "volatile int b=0;\n"
@@ -4505,6 +4541,21 @@ private:
             const Token *tok = Token::findsimplematch(tokenizer.tokens(), "<");
             ASSERT_EQUALS(true, tok->link() == tok->tokAt(4));
             ASSERT_EQUALS(true, tok->linkAt(4) == tok);
+        }
+
+        {
+            // #7865
+            const char code[] = "template <typename T, typename U>\n"
+                                "struct CheckedDivOp< T, U, typename std::enable_if<std::is_floating_point<T>::value || std::is_floating_point<U>::value>::type> {\n"
+                                "};\n";
+            errout.str("");
+            Tokenizer tokenizer(&settings0, this);
+            std::istringstream istr(code);
+            tokenizer.tokenize(istr, "test.cpp");
+            const Token *tok1 = Token::findsimplematch(tokenizer.tokens(), "struct")->tokAt(2);
+            const Token *tok2 = Token::findsimplematch(tokenizer.tokens(), "{")->previous();
+            ASSERT_EQUALS(true, tok1->link() == tok2);
+            ASSERT_EQUALS(true, tok2->link() == tok1);
         }
     }
 

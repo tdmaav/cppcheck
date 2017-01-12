@@ -80,6 +80,8 @@ private:
         TEST_CASE(knownValue);
 
         TEST_CASE(valueFlowSizeofForwardDeclaredEnum);
+
+        TEST_CASE(valueFlowGlobalVar);
     }
 
     bool testValueOfX(const char code[], unsigned int linenr, int value) {
@@ -340,6 +342,13 @@ private:
 
         code = "void f(int i) {\n"
                "    X x;\n"
+               "    y = g(std::move(x), \n"
+               "          x.size());\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 4U, ValueFlow::Value::MovedVariable));
+
+        code = "void f(int i) {\n"
+               "    X x;\n"
                "    x = g(std::move(x));\n"
                "    y = x;\n"
                "}";
@@ -352,7 +361,6 @@ private:
                "    return h(std::move(x));\n"
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 5U, ValueFlow::Value::MovedVariable));
-
     }
 
     void valueFlowCalculations() {
@@ -371,9 +379,13 @@ private:
         ASSERT_EQUALS(0, valueOfTok("3 <  (a ? b : 2);", "<").intvalue);
         ASSERT_EQUALS(0, valueOfTok("3 <= (a ? b : 2);", "<=").intvalue);
 
-        ASSERT(tokenValues("(UNKNOWN_TYPE)123;","(").empty());
-        ASSERT(tokenValues("(unsigned char)~0;", "(").empty()); // TODO: should get value 255
-        ASSERT(tokenValues("(int)0;", "(").empty()); // TODO: should get value 0
+        ASSERT_EQUALS(1, valueOfTok("(UNKNOWN_TYPE)1;","(").intvalue);
+        ASSERT(tokenValues("(UNKNOWN_TYPE)1000;","(").empty()); // don't know if there is truncation, sign extension
+        ASSERT_EQUALS(255, valueOfTok("(unsigned char)~0;", "(").intvalue);
+        ASSERT_EQUALS(0, valueOfTok("(int)0;", "(").intvalue);
+        ASSERT_EQUALS(3, valueOfTok("(int)(1+2);", "(").intvalue);
+        ASSERT_EQUALS(0, valueOfTok("(UNKNOWN_TYPE*)0;","(").intvalue);
+        ASSERT_EQUALS(100, valueOfTok("(int)100.0;", "(").intvalue);
 
         // Don't calculate if there is UB
         ASSERT(tokenValues(";-1<<10;","<<").empty());
@@ -473,6 +485,22 @@ private:
         values = tokenValues(code,"-");
         ASSERT_EQUALS(1U, values.size());
         ASSERT_EQUALS(-10, values.back().intvalue);
+
+        // sizeof
+        code  = "void f() {\n"
+                "    x = sizeof(int);\n"
+                "}";
+        values = tokenValues(code,"( int )");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(settings.sizeof_int, values.back().intvalue);
+
+        code  = "void f() {\n"
+                "    struct S *a[10];"
+                "    x = sizeof(a) / sizeof(a[0]);\n"
+                "}";
+        values = tokenValues(code,"/");
+        ASSERT_EQUALS(1U, values.size());
+        ASSERT_EQUALS(10, values.back().intvalue);
 
         // function call => calculation
         code  = "void f(int x) {\n"
@@ -876,6 +904,12 @@ private:
                "    a = x;\n"
                "}";
         ASSERT_EQUALS(true, testValueOfX(code, 3U, 123));
+
+        code = "void f() {\n"
+               "    bool x = 32;\n"
+               "    a = x;\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 3U, 1));
 
         code = "void f() {\n"
                "    int x = 123;\n"
@@ -1634,6 +1668,14 @@ private:
         ASSERT_EQUALS(false, testValueOfX(code, 4U, 2));
         ASSERT_EQUALS(true, testValueOfX(code, 5U, 2));
 
+        code = "enum AB {A,B};\n" // enum => handled by valueForLoop2
+               "void f() {\n"
+               "    int x;\n"
+               "    for (x = 1; x < B; ++x)\n"
+               "        a[x] = 0;\n" // <- not 1
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 5U, 1));
+
         code = "void f(int a) {\n"
                "    for (int x = a; x < 10; x++)\n"
                "        a[x] = 0;\n"
@@ -1705,7 +1747,7 @@ private:
                "    for (int x = 0; x < 10 && y = do_something();)\n"
                "        x;\n"
                "}";
-        ASSERT_EQUALS(true, testValueOfX(code, 4U, 0));
+        TODO_ASSERT_EQUALS(true, false, testValueOfX(code, 4U, 0));
 
         code = "void f() {\n"
                "    int x,y;\n"
@@ -1789,6 +1831,20 @@ private:
                "  a = x;\n" // <- x can't be 5
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 6U, 5));
+
+        // assert after for loop..
+        code = "static void f() {\n"
+               "  int x;\n"
+               "  int ctls[10];\n"
+               "  for (x = 0; x <= 10; x++) {\n"
+               "    if (cond)\n"
+               "      break;\n"
+               "  }\n"
+               "  assert(x <= 10);\n"
+               "  ctls[x] = 123;\n" // <- x can't be 11
+               "}\n";
+        ASSERT_EQUALS(false, testValueOfX(code, 9U, 11));
+
 
         // hang
         code = "void f() {\n"
@@ -1924,6 +1980,16 @@ private:
                "};";
         ASSERT_EQUALS(true, testValueOfX(code, 3U, 123));
 
+        code = "void foo(int x, int y) {\n"
+               "  if (y == 1) {\n"
+               "    a = x;\n"  // <- x is not 1
+               "  }\n"
+               "}\n"
+               "\n"
+               "void bar() {\n"
+               "  foo(1, 10);\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 3U, 1));
     }
 
     void valueFlowFunctionReturn() {
@@ -2243,6 +2309,32 @@ private:
     void valueFlowSizeofForwardDeclaredEnum() {
         const char *code = "enum E; sz=sizeof(E);";
         valueOfTok(code, "="); // Don't crash (#7775)
+    }
+
+    void valueFlowGlobalVar() {
+        const char *code;
+
+        code = "int x;\n"
+               "void f() {\n"
+               "    x = 4;\n"
+               "    a = x;\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 4U, 4));
+
+        code = "int x;\n"
+               "void f() {\n"
+               "    if (x == 4) {}\n"
+               "    a = x;\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 4U, 4));
+
+        code = "int x;\n"
+               "void f() {\n"
+               "    x = 42;\n"
+               "    unknownFunction();\n"
+               "    a = x;\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 5U, 42));
     }
 };
 
