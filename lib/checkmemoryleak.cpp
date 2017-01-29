@@ -1696,6 +1696,13 @@ void CheckMemoryLeakInFunction::simplifycode(Token *tok) const
                 done = false;
             }
 
+            // Ticket #7745
+            // Delete "if (!var) { alloc ; dealloc }" blocks
+            if (Token::simpleMatch(tok2->next(), "if(!var) { alloc ; dealloc ; }")) {
+                tok2->deleteNext(7);
+                done = false;
+            }
+
             // Reduce "do { alloc ; } " => "alloc ;"
             /** @todo If the loop "do { alloc ; }" can be executed twice, reduce it to "loop alloc ;" */
             if (Token::simpleMatch(tok2->next(), "do { alloc ; }")) {
@@ -1964,12 +1971,16 @@ const Token *CheckMemoryLeakInFunction::findleak(const Token *tokens)
         return result->tokAt(2);
     }
 
+    if ((result = Token::findmatch(tokens, "alloc ; loop|while1 {| alloc ;")) != nullptr) {
+        return result->tokAt(3 + (result->strAt(3) == "{"));
+    }
+
     if ((result = Token::findsimplematch(tokens, "; alloc ; if assign ;")) != nullptr) {
         return result->tokAt(4);
     }
 
-    if (((result = Token::findsimplematch(tokens, "; alloc ; if dealloc ; }")) != nullptr) &&
-        !result->tokAt(7)) {
+    if (((result = Token::findsimplematch(tokens, "; alloc ; if dealloc ; }")) != nullptr) ||
+        ((result = Token::findsimplematch(tokens, "; alloc ; if dealloc ; return ;")) != nullptr)) {
         return result->tokAt(6);
     }
 

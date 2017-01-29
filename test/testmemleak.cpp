@@ -184,6 +184,7 @@ private:
         TEST_CASE(if9);     // if (realloc)
         TEST_CASE(if10);    // else if (realloc)
         TEST_CASE(if11);
+        TEST_CASE(if12);    // Ticket #7745
 
         TEST_CASE(forwhile5);
         TEST_CASE(forwhile6);
@@ -191,6 +192,7 @@ private:
         TEST_CASE(forwhile9);
         TEST_CASE(forwhile10);
         TEST_CASE(forwhile11);
+        TEST_CASE(forwhile12);
 
         TEST_CASE(switch2);
         TEST_CASE(switch3);
@@ -314,6 +316,7 @@ private:
         TEST_CASE(autoptr1);
         TEST_CASE(if_with_and);
         TEST_CASE(assign_pclose);
+        TEST_CASE(conditional_dealloc_return); // #7820
 
         // Using the function "exit"
         TEST_CASE(exit2);
@@ -366,6 +369,7 @@ private:
         TEST_CASE(trac3991);
         TEST_CASE(crash);
         TEST_CASE(trac7680);
+        TEST_CASE(trac7440);
     }
 
     std::string getcode(const char code[], const char varname[], bool classfunc=false) {
@@ -1232,6 +1236,16 @@ private:
                            "", errout.str());
     }
 
+    void if12() { // #7745
+        check("void f() {\n"
+              "  FILE *fp = fopen(\"name\", \"r\");\n"
+              "  if (!fp) {\n"
+              "    fp = fopen(\"name\", \"w\");\n"
+              "    fclose(fp);\n"
+              "  }\n"
+              "}", /*c=*/true, /*posix=*/false);
+        ASSERT_EQUALS("[test.c:7]: (error) Resource leak: fp\n", errout.str());
+    }
 
     void forwhile5() {
         check("void f(const char **a)\n"
@@ -1337,7 +1351,35 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void forwhile12() {
+        check("extern int bar();\n"
+              "void f() {\n"
+              "  FILE *fp = fopen(\"name\", \"r\" );\n"
+              "  while(bar()) {\n"
+              "    fp = fopen(\"name\", \"w\");\n"
+              "    fclose(fp);\n"
+              "  }\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:5]: (error) Resource leak: fp\n", errout.str());
 
+        check("void f() {\n"
+              "  FILE *fp = fopen(\"name\", \"r\" );\n"
+              "  while(1) {\n"
+              "    fp = fopen(\"name\", \"w\");\n"
+              "    fclose(fp);\n"
+              "  }\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Resource leak: fp\n", errout.str());
+
+        check("void f() {\n"
+              "  FILE *fp = fopen(\"name\", \"r\" );\n"
+              "  for( ; ; ) {\n"
+              "    fp = fopen(\"name\", \"w\");\n"
+              "    fclose(fp);\n"
+              "  }\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (error) Resource leak: fp\n", errout.str());
+    }
 
 
     void switch2() {
@@ -3376,6 +3418,39 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void conditional_dealloc_return() { // #7820
+        check("void f() {\n"
+              "  FILE *pPipe = popen(\"foo\", \"r\");\n"
+              "  if (feof(pPipe))\n"
+              "    pclose(pPipe);\n"
+              "  return;\n"
+              "}", /*c=*/true, /*posix=*/true);
+        ASSERT_EQUALS("[test.c:5]: (error) Resource leak: pPipe\n", errout.str());
+
+        check("extern int bar();\n"
+              "void f() {\n"
+              "  char *c = (char*) malloc(10);\n"
+              "  if (bar())\n"
+              "    free(c);\n"
+              "  return;\n"
+              "}", /*c=*/true);
+        ASSERT_EQUALS("[test.c:6]: (error) Memory leak: c\n", errout.str());
+
+        check("extern int bar();\n"
+              "extern int baz();\n"
+              "extern void bos(char*);\n"
+              "void f() {\n"
+              "  char *c;\n"
+              "  if(bar()) {\n"
+              "    bos(c);\n"
+              "    c = (char*) malloc(10);\n"
+              "    if (baz())\n"
+              "      free(c);\n"
+              "  };\n"
+              "}", /*c=*/true);
+        ASSERT_EQUALS("[test.c:11]: (error) Memory leak: c\n", errout.str());
+    }
+
     void exit2() {
         check("void f()\n"
               "{\n"
@@ -3955,6 +4030,16 @@ private:
         check("void foo() {\n"
               "  int *i = ::new int;\n"
               "  ::delete i;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void trac7440() {
+        check("int main(void) {\n"
+              "  char* data = new char[100];\n"
+              "  char** dataPtr = &data;\n"
+              "  printf(\"test\");\n"
+              "  delete [] *dataPtr;\n"
               "}");
         ASSERT_EQUALS("", errout.str());
     }
