@@ -178,7 +178,6 @@ private:
     void dublicatesError(const Token *tok, const std::string &func0, const std::string &func1);
 
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const {
-
         CheckClass c(nullptr, settings, errorLogger);
         c.noConstructorError(nullptr, "classname", false);
         c.noExplicitConstructorError(nullptr, "classname", false);
