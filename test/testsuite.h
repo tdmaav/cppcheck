@@ -38,9 +38,7 @@ private:
 protected:
     std::string classname;
     std::string testToRun;
-    bool gcc_style_errors;
     bool quiet_tests;
-    std::string currentTest;
 
     virtual void run() = 0;
 
@@ -70,7 +68,7 @@ public:
     virtual void reportErr(const ErrorLogger::ErrorMessage &msg);
     void run(const std::string &str);
 
-    explicit TestFixture(const std::string &_name);
+    explicit TestFixture(const char* _name);
     virtual ~TestFixture() { }
 
     static std::size_t runTests(const options& args);
@@ -78,7 +76,6 @@ public:
 
 extern std::ostringstream errout;
 extern std::ostringstream output;
-extern std::ostringstream warnings;
 
 #define TEST_CASE( NAME )  if ( prepareTest(#NAME) ) { NAME(); }
 #define ASSERT( CONDITION )  assert_(__FILE__, __LINE__, CONDITION)

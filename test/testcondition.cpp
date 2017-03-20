@@ -564,6 +564,24 @@ private:
               "  else if (x == 40) {}\n"
               "}");
         ASSERT_EQUALS("[test.cpp:3]: (style) Expression is always false because 'else if' condition matches previous condition at line 2.\n", errout.str());
+
+        check("void f(int x) {\n"
+              "  if (x == sizeof(double)) {}\n"
+              "  else { if (x == sizeof(long double)) {} }"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(int x) {\n"
+              "  if (x & 0x08) {}\n"
+              "  else if (x & 0xF8) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(int x) {\n"
+              "  if (x & 0xF8) {}\n"
+              "  else if (x & 0x08) {}\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:3]: (style) Expression is always false because 'else if' condition matches previous condition at line 2.\n", errout.str());
     }
 
     void checkBadBitmaskCheck() {
@@ -1499,6 +1517,16 @@ private:
               "    }\n"
               "}");
         TODO_ASSERT_EQUALS("error", "", errout.str());
+
+        check("void foo(unsigned u) {\n"
+              "  if (u != 0) {\n"
+              "    for (int i=0; i<32; i++) {\n"
+              "      if (u == 0) {}\n"  // <- don't warn
+              "      u = x;\n"
+              "    }\n"
+              "  }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     // clarify conditions with = and comparison
@@ -1767,6 +1795,11 @@ private:
               "}");
         ASSERT_EQUALS("", errout.str());
 
+        check("void f() {\n"
+              "  $if $( 1 $&& $x()) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
         // Don't warn in assertions. Condition is often 'always true' by intention.
         // If platform,defines,etc cause an 'always false' assertion then that is not very dangerous neither
         check("void f() {\n"
@@ -1789,7 +1822,7 @@ private:
               "}\n");
         ASSERT_EQUALS("", errout.str());
 
-        // #7750 warn about number and char literals in boolean expressions
+        // #7750 warn about char literals in boolean expressions
         check("void f() {\n"
               "  if('a'){}\n"
               "  if(L'b'){}\n"
@@ -1798,7 +1831,6 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:2]: (style) Condition ''a'' is always true\n"
                       "[test.cpp:3]: (style) Condition ''b'' is always true\n"
-                      "[test.cpp:4]: (style) Condition '1' is always true\n"
                       "[test.cpp:4]: (style) Condition ''c'' is always true\n"
                       "[test.cpp:5]: (style) Condition ''d'' is always true\n", errout.str());
     }

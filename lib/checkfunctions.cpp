@@ -105,7 +105,7 @@ void CheckFunctions::invalidFunctionUsage()
                     while (Token::Match(var, ".|::"))
                         var = var->astOperand2();
                     if (Token::Match(top, "%comp%|%oror%|&&|!|true|false") ||
-                        (var && var->variable() && Token::simpleMatch(var->variable()->typeStartToken(), "bool"))) {
+                        (var && var->variable() && Token::Match(var->variable()->typeStartToken(), "bool|_Bool"))) {
                         if (_settings->library.isboolargbad(functionToken, argnr))
                             invalidFunctionArgBoolError(top, functionToken->str(), argnr);
 
@@ -156,11 +156,14 @@ void CheckFunctions::checkIgnoredReturnValue()
     for (std::size_t i = 0; i < functions; ++i) {
         const Scope * scope = symbolDatabase->functionScopes[i];
         for (const Token* tok = scope->classStart->next(); tok != scope->classEnd; tok = tok->next()) {
-            // c++11 initialization
-            if (Token::Match(tok, "%var% (| {"))
+            // skip c++11 initialization, ({...})
+            if (Token::Match(tok, "%var%|( {"))
                 tok = tok->linkAt(1);
 
-            if (tok->varId() || !Token::Match(tok, "%name% (") || tok->strAt(-1) == ".")
+            if (tok->varId() || !Token::Match(tok, "%name% ("))
+                continue;
+
+            if (tok->next()->astParent())
                 continue;
 
             if (!tok->scope()->isExecutable()) {
@@ -171,11 +174,9 @@ void CheckFunctions::checkIgnoredReturnValue()
             const Token* parent = tok;
             while (parent->astParent() && parent->astParent()->str() == "::")
                 parent = parent->astParent();
-            if (tok->next()->astOperand1() != parent)
-                continue;
 
             if (!tok->next()->astParent() && (!tok->function() || !Token::Match(tok->function()->retDef, "void %name%")) && _settings->library.isUseRetVal(tok))
-                ignoredReturnValueError(tok, tok->str());
+                ignoredReturnValueError(tok, tok->next()->astOperand1()->expressionString());
         }
     }
 }

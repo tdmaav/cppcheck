@@ -582,7 +582,7 @@ private:
     const Token * findGarbageCode() const;
 
     /** Detect garbage expression */
-    bool isGarbageExpr(const Token *start, const Token *end) const;
+    static bool isGarbageExpr(const Token *start, const Token *end);
 
     /**
      * Remove __declspec()
@@ -679,7 +679,7 @@ private:
     /**
      * check for duplicate enum definition
      */
-    bool duplicateDefinition(Token **tokPtr) const;
+    static bool duplicateDefinition(Token **tokPtr);
 
     /**
      * report error message
@@ -794,10 +794,11 @@ public:
     */
     static const Token * startOfExecutableScope(const Token * tok);
 
-    bool isMaxTime() const {
 #ifdef MAXTIME
+    bool isMaxTime() const {
         return (std::time(0) > maxtime);
 #else
+    static bool isMaxTime() {
         return false;
 #endif
     }

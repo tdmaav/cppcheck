@@ -151,6 +151,7 @@ private:
         TEST_CASE(hasRegularFunctionReturningFunctionPointer);
         TEST_CASE(hasInlineClassFunctionReturningFunctionPointer);
         TEST_CASE(hasMissingInlineClassFunctionReturningFunctionPointer);
+        TEST_CASE(hasInlineClassOperatorTemplate);
         TEST_CASE(hasClassFunctionReturningFunctionPointer);
         TEST_CASE(methodWithRedundantScope);
         TEST_CASE(complexFunctionArrayPtr);
@@ -252,6 +253,7 @@ private:
         TEST_CASE(symboldatabase53); // #7124 (library podtype)
         TEST_CASE(symboldatabase54); // #7257
         TEST_CASE(symboldatabase55); // #7767 (return unknown macro)
+        TEST_CASE(symboldatabase56); // #7909
 
         TEST_CASE(enum1);
         TEST_CASE(enum2);
@@ -279,6 +281,11 @@ private:
         TEST_CASE(findFunction9);
         TEST_CASE(findFunction10); // #7673
         TEST_CASE(findFunction11);
+        TEST_CASE(findFunction12);
+        TEST_CASE(findFunction13);
+        TEST_CASE(findFunction14);
+        TEST_CASE(findFunction15);
+        TEST_CASE(findFunction16);
 
         TEST_CASE(noexceptFunction1);
         TEST_CASE(noexceptFunction2);
@@ -311,6 +318,8 @@ private:
         TEST_CASE(variadic3); // #7387
 
         TEST_CASE(noReturnType);
+
+        TEST_CASE(auto1);
     }
 
     void array() {
@@ -983,6 +992,34 @@ private:
             ASSERT(function && function->token->str() == "func");
             ASSERT(function && function->token == functionToken);
             ASSERT(function && !function->hasBody());
+        }
+    }
+
+    void hasInlineClassOperatorTemplate() {
+        GET_SYMBOL_DB("struct Fred { template<typename T> Foo & operator=(const Foo &) { return *this; } };");
+
+        // 3 scopes: Global, Class, and Function
+        ASSERT(db && db->scopeList.size() == 3);
+
+        if (db) {
+            const Token * const functionToken = Token::findsimplematch(tokenizer.tokens(), "operator=");
+
+            const Scope *scope = findFunctionScopeByToken(db, functionToken);
+
+            ASSERT(scope && scope->className == "operator=");
+            if (!scope)
+                return;
+            ASSERT(scope->functionOf && scope->functionOf == db->findScopeByName("Fred"));
+
+            const Function *function = findFunctionByName("operator=", &db->scopeList.back());
+
+            ASSERT(function && function->token->str() == "operator=");
+            ASSERT(function && function->token == functionToken);
+            ASSERT(function && function->hasBody() && function->isInline());
+            ASSERT(function && function->functionScope == scope && scope->function == function && function->nestedIn == db->findScopeByName("Fred"));
+            ASSERT(function && function->retDef == functionToken->tokAt(-2));
+
+            ASSERT(db && db->findScopeByName("Fred") && db->findScopeByName("Fred")->definedType->getFunction("operator=") == function);
         }
     }
 
@@ -2667,6 +2704,48 @@ private:
         }
     }
 
+    void symboldatabase56() { // #7909
+        {
+            GET_SYMBOL_DB("class Class {\n"
+                          "    class NestedClass {\n"
+                          "    public:\n"
+                          "        virtual void f();\n"
+                          "    };\n"
+                          "    friend void NestedClass::f();\n"
+                          "}");
+
+            ASSERT(db != nullptr);
+            if (db) {
+                ASSERT_EQUALS(0U, db->functionScopes.size());
+                ASSERT(db->scopeList.back().type == Scope::eClass && db->scopeList.back().className == "NestedClass");
+                ASSERT(db->scopeList.back().functionList.size() == 1U && !db->scopeList.back().functionList.front().hasBody());
+            }
+        }
+        {
+            GET_SYMBOL_DB("class Class {\n"
+                          "    friend void f1();\n"
+                          "    friend void f2() { }\n"
+                          "}");
+
+            ASSERT(db != nullptr);
+            if (db) {
+                ASSERT_EQUALS(1U, db->functionScopes.size());
+                ASSERT(db->scopeList.back().type == Scope::eFunction && db->scopeList.back().className == "f2");
+                ASSERT(db->scopeList.back().function && db->scopeList.back().function->hasBody());
+            }
+        }
+        {
+            GET_SYMBOL_DB_C("friend f1();\n"
+                            "friend f2() { }\n");
+
+            ASSERT(db != nullptr);
+            if (db) {
+                ASSERT_EQUALS(2U, db->scopeList.size());
+                ASSERT_EQUALS(2U, db->scopeList.begin()->functionList.size());
+            }
+        }
+    }
+
     void enum1() {
         GET_SYMBOL_DB("enum BOOL { FALSE, TRUE }; enum BOOL b;");
 
@@ -3446,6 +3525,231 @@ private:
         ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 4);
     }
 
+    void findFunction12() {
+        GET_SYMBOL_DB("void foo(std::string a) { }\n"
+                      "void foo(long long a) { }\n"
+                      "void func(char* cp) {\n"
+                      "    foo(0);\n"
+                      "    foo(0L);\n"
+                      "    foo(0.f);\n"
+                      "    foo(bar());\n"
+                      "    foo(cp);\n"
+                      "    foo(\"\");\n"
+                      "}");
+
+        ASSERT_EQUALS("", errout.str());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "foo ( 0 ) ;");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 2);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( 0L ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 2);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( 0.f ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 2);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( bar ( ) ) ;");
+        ASSERT_EQUALS(true, f && f->function() == nullptr);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( cp ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 1);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( \"\" ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 1);
+    }
+
+    void findFunction13() {
+        GET_SYMBOL_DB("void foo(std::string a) { }\n"
+                      "void foo(double a) { }\n"
+                      "void foo(long long a) { }\n"
+                      "void foo(int* a) { }\n"
+                      "void foo(void* a) { }\n"
+                      "void func(int i, const float f, int* ip, float* fp, char* cp) {\n"
+                      "    foo(0);\n"
+                      "    foo(0L);\n"
+                      "    foo(0.f);\n"
+                      "    foo(false);\n"
+                      "    foo(bar());\n"
+                      "    foo(i);\n"
+                      "    foo(f);\n"
+                      "    foo(&i);\n"
+                      "    foo(&f);\n"
+                      "    foo(ip);\n"
+                      "    foo(fp);\n"
+                      "    foo(cp);\n"
+                      "    foo(\"\");\n"
+                      "}");
+
+        ASSERT_EQUALS("", errout.str());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "foo ( 0 ) ;");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( 0L ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( 0.f ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 2);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( false ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( bar ( ) ) ;");
+        ASSERT_EQUALS(true, f && f->function() == nullptr);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( i ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( f ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 2);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( & i ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 4);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( & f ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 5);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( ip ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 4);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( fp ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 5);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( cp ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 5);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( \"\" ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 5);
+    }
+
+    void findFunction14() {
+        GET_SYMBOL_DB("void foo(int* a) { }\n"
+                      "void foo(const int* a) { }\n"
+                      "void foo(void* a) { }\n"
+                      "void foo(const float a) { }\n"
+                      "void foo(bool a) { }\n"
+                      "void foo2(Foo* a) { }\n"
+                      "void foo2(Foo a) { }\n"
+                      "void func(int* ip, const int* cip, const char* ccp, char* cp, float f, bool b) {\n"
+                      "    foo(ip);\n"
+                      "    foo(cip);\n"
+                      "    foo(cp);\n"
+                      "    foo(ccp);\n"
+                      "    foo(f);\n"
+                      "    foo(b);\n"
+                      "    foo2(0);\n"
+                      "    foo2(nullptr);\n"
+                      "    foo2(NULL);\n"
+                      "}");
+
+        ASSERT_EQUALS("", errout.str());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "foo ( ip ) ;");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 1);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( cip ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 2);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( cp ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( ccp ) ;");
+        ASSERT_EQUALS(true, f && f->function() == nullptr);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( f ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 4);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( b ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 5);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo2 ( 0 ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 6);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo2 ( nullptr ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 6);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo2 ( NULL ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 6);
+    }
+
+    void findFunction15() {
+        GET_SYMBOL_DB("void foo1(int, char* a) { }\n"
+                      "void foo1(int, char a) { }\n"
+                      "void foo1(int, wchar_t a) { }\n"
+                      "void foo2(int, float a) { }\n"
+                      "void foo2(int, wchar_t a) { }\n"
+                      "void foo3(int, float a) { }\n"
+                      "void foo3(int, char a) { }\n"
+                      "void func() {\n"
+                      "    foo1(1, 'c');\n"
+                      "    foo1(2, L'c');\n"
+                      "    foo2(3, 'c');\n"
+                      "    foo2(4, L'c');\n"
+                      "    foo3(5, 'c');\n"
+                      "    foo3(6, L'c');\n"
+                      "}");
+
+        ASSERT_EQUALS("", errout.str());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "foo1 ( 1");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 2);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo1 ( 2");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo2 ( 3");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 5);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo2 ( 4");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 5);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo3 ( 5");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 7);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo3 ( 6");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 7);
+    }
+
+    void findFunction16() {
+        GET_SYMBOL_DB("struct C { int i; static int si; float f; int* ip; float* fp};\n"
+                      "void foo(float a) { }\n"
+                      "void foo(int a) { }\n"
+                      "void foo(int* a) { }\n"
+                      "void func(C c, C* cp) {\n"
+                      "    foo(c.i);\n"
+                      "    foo(cp->i);\n"
+                      "    foo(c.f);\n"
+                      "    foo(c.si);\n"
+                      "    foo(C::si);\n"
+                      "    foo(c.ip);\n"
+                      "    foo(c.fp);\n"
+                      "}");
+
+        ASSERT_EQUALS("", errout.str());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "foo ( c . i ) ;");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( cp . i ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( c . f ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 2);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( c . si ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( C :: si ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 3);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( c . ip ) ;");
+        ASSERT_EQUALS(true, f && f->function() && f->function()->tokenDef->linenr() == 4);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "foo ( c . fp ) ;");
+        ASSERT_EQUALS(true, f && f->function() == nullptr);
+    }
+
+
 #define FUNC(x) const Function *x = findFunctionByName(#x, &db->scopeList.front()); \
                 ASSERT_EQUALS(true, x != nullptr);                                  \
                 if (x) ASSERT_EQUALS(true, x->isNoExcept());
@@ -3885,6 +4189,7 @@ private:
         ASSERT_EQUALS("signed int", typeOf("1;", "1", "test.c", &s));
         ASSERT_EQUALS("signed int", typeOf("32767;", "32767", "test.c", &s));
         ASSERT_EQUALS("signed long", typeOf("32768;", "32768", "test.c", &s));
+        ASSERT_EQUALS("unsigned int", typeOf("32768U;", "32768U", "test.c", &s));
         ASSERT_EQUALS("signed long long", typeOf("2147483648;", "2147483648", "test.c", &s));
         ASSERT_EQUALS("unsigned int", typeOf("1U;", "1U"));
         ASSERT_EQUALS("signed long", typeOf("1L;", "1L"));
@@ -4053,9 +4358,14 @@ private:
             settingsWin64.platformType = Settings::Win64;
             const Library::PodType u32 = { 4, 'u' };
             settingsWin64.library.podtypes["u32"] = u32;
+            settingsWin64.library.podtypes["xyz::x"] = u32;
             ValueType vt;
             ASSERT_EQUALS(true, vt.fromLibraryType("u32", &settingsWin64));
+            ASSERT_EQUALS(true, vt.fromLibraryType("xyz::x", &settingsWin64));
             ASSERT_EQUALS(ValueType::Type::INT, vt.type);
+            ASSERT_EQUALS("unsigned int *", typeOf(";void *data = new u32[10];", "new", "test.cpp", &settingsWin64));
+            ASSERT_EQUALS("unsigned int *", typeOf(";void *data = new xyz::x[10];", "new", "test.cpp", &settingsWin64));
+            ASSERT_EQUALS("unsigned int", typeOf("; x = (xyz::x)12;", "(", "test.cpp", &settingsWin64));
         }
         {
             // PlatformType
@@ -4068,6 +4378,18 @@ private:
             ASSERT_EQUALS(true, vt.fromLibraryType("s32", &settingsUnix32));
             ASSERT_EQUALS(ValueType::Type::INT, vt.type);
         }
+
+        // new
+        ASSERT_EQUALS("C *", typeOf("class C {}; x = new C();", "new"));
+
+        // auto variables
+        ASSERT_EQUALS("signed int", typeOf("; auto x = 3;", "x"));
+        ASSERT_EQUALS("signed int *", typeOf("; auto *p = (int *)0;", "p"));
+        ASSERT_EQUALS("signed int *", typeOf("; auto data = new int[100];", "data"));
+        ASSERT_EQUALS("signed int *", typeOf("; auto data = new (nothrow) int[100];", "data"));
+        ASSERT_EQUALS("signed int *", typeOf("; auto data = new (std::nothrow) int[100];", "data"));
+        ASSERT_EQUALS("const signed short", typeOf("short values[10]; void f() { for (const auto *x : values); }", "x"));
+        ASSERT_EQUALS("signed int *", typeOf("MACRO(test) void test() { auto x = (int*)y; }", "x")); // #7931 (garbage?)
     }
 
     void variadic1() { // #7453
@@ -4170,6 +4492,14 @@ private:
                 ASSERT_EQUALS("func", retDef ? retDef->str() : "");
             }
         }
+    }
+
+    void auto1() {
+        GET_SYMBOL_DB("; auto x = \"abc\";");
+        const Token *autotok = tokenizer.tokens()->next();
+        ASSERT(autotok && autotok->isStandardType());
+        const Variable *var = db ? db->getVariableFromVarId(1) : nullptr;
+        ASSERT(var && var->isPointer() && var->isConst());
     }
 };
 

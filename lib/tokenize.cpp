@@ -1779,8 +1779,7 @@ void Tokenizer::fillTypeSizes()
 {
     _typeSize.clear();
     _typeSize["char"] = 1;
-    _typeSize["char16_t"] = 2;
-    _typeSize["char32_t"] = 4;
+    _typeSize["_Bool"] = _settings->sizeof_bool;
     _typeSize["bool"] = _settings->sizeof_bool;
     _typeSize["short"] = _settings->sizeof_short;
     _typeSize["int"] = _settings->sizeof_int;
@@ -3664,9 +3663,11 @@ bool Tokenizer::simplifyTokenList2()
     // clear the _functionList so it can't contain dead pointers
     deleteSymbolDatabase();
 
-    // Clear AST. It will be created again at the end of this function.
-    for (Token *tok = list.front(); tok; tok = tok->next())
+    // Clear AST,ValueFlow. These will be created again at the end of this function.
+    for (Token *tok = list.front(); tok; tok = tok->next()) {
         tok->clearAst();
+        tok->values.clear();
+    }
 
     // f(x=g())   =>   x=g(); f(x)
     simplifyAssignmentInFunctionCall();
@@ -5300,6 +5301,10 @@ bool Tokenizer::simplifyFunctionReturn()
             const std::string pattern("(|[|=|return|%op% " + tok->str() + " ( ) ;|]|)|%cop%");
             for (Token *tok2 = list.front(); tok2; tok2 = tok2->next()) {
                 if (Token::Match(tok2, pattern.c_str())) {
+                    if (tok->str() != tok2->strAt(1))
+                        // Ticket #7916: tok is for instance "foo < bar >", a single token for an instantiation,
+                        // and tok2->strAt(1) is "foo"; bail out (TODO: we can probably handle this pattern)
+                        continue;
                     tok2 = tok2->next();
                     tok2->str(any->str());
                     tok2->deleteNext(2);
@@ -6863,6 +6868,9 @@ bool Tokenizer::simplifyRedundantParentheses()
         if (tok->str() != "(")
             continue;
 
+        if (Token::simpleMatch(tok, "( {"))
+            continue;
+
         if (Token::Match(tok->link(), ") %num%")) {
             tok = tok->link();
             continue;
@@ -7188,7 +7196,7 @@ void Tokenizer::simplifyNestedStrcat()
 // Check if this statement is a duplicate definition.  A duplicate
 // definition will hide the enumerator within it's scope so just
 // skip the entire scope of the duplicate.
-bool Tokenizer::duplicateDefinition(Token ** tokPtr) const
+bool Tokenizer::duplicateDefinition(Token ** tokPtr)
 {
     // check for an end of definition
     const Token * tok = *tokPtr;
@@ -8062,7 +8070,7 @@ const Token * Tokenizer::findGarbageCode() const
     return nullptr;
 }
 
-bool Tokenizer::isGarbageExpr(const Token *start, const Token *end) const
+bool Tokenizer::isGarbageExpr(const Token *start, const Token *end)
 {
     std::set<std::string> controlFlowKeywords;
     controlFlowKeywords.insert("goto");

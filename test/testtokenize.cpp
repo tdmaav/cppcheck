@@ -55,7 +55,6 @@ private:
         TEST_CASE(tokenize17);  // #2759
         TEST_CASE(tokenize18);  // tokenize "(X&&Y)" into "( X && Y )" instead of "( X & & Y )"
         TEST_CASE(tokenize19);  // #3006 (segmentation fault)
-        TEST_CASE(tokenize20);  // replace C99 _Bool => bool
         TEST_CASE(tokenize21);  // tokenize 0x0E-7
         TEST_CASE(tokenize22);  // special marker $ from preprocessor
         TEST_CASE(tokenize25);  // #4239 (segmentation fault)
@@ -711,10 +710,6 @@ private:
                                            "        v[dim]->f();\n"
                                            "    }\n"
                                            "};"));
-    }
-
-    void tokenize20() { // replace C99 _Bool => bool
-        ASSERT_EQUALS("bool a ; a = true ;", tokenizeAndStringify("_Bool a = true;"));
     }
 
     void tokenize21() { // tokenize 0x0E-7
@@ -8038,7 +8033,7 @@ private:
                               "QT_WA({x=1;},{x=2;});"));
         ASSERT_EQUALS("xMACROtypeT=value1=,{({=",
                       testAst("x = { MACRO( { .type=T, .value=1 } ) }")); // don't hang: MACRO({..})
-
+        ASSERT_EQUALS("fori10=i{;;( i--", testAst("for (i=10;i;({i--;}) ) {}"));
 
         // function pointer
         TODO_ASSERT_EQUALS("todo", "va_argapvoid((,(*0=", testAst("*va_arg(ap, void(**) ()) = 0;"));

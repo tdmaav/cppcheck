@@ -241,7 +241,7 @@ static bool inBooleanFunction(const Token *tok)
             const Token *ret = func->retDef;
             while (Token::Match(ret, "static|const"))
                 ret = ret->next();
-            return ret && (ret->str() == "bool");
+            return Token::Match(ret, "bool|_Bool");
         }
     }
     return false;
@@ -257,7 +257,7 @@ void CheckCondition::checkBadBitmaskCheck()
             const Token* parent = tok->astParent();
             const bool isBoolean = Token::Match(parent, "&&|%oror%") ||
                                    (parent->str() == "?" && parent->astOperand1() == tok) ||
-                                   (parent->str() == "=" && parent->astOperand2() == tok && parent->astOperand1() && parent->astOperand1()->variable() && parent->astOperand1()->variable()->typeStartToken()->str() == "bool") ||
+                                   (parent->str() == "=" && parent->astOperand2() == tok && parent->astOperand1() && parent->astOperand1()->variable() && Token::Match(parent->astOperand1()->variable()->typeStartToken(), "bool|_Bool")) ||
                                    (parent->str() == "(" && Token::Match(parent->astOperand1(), "if|while")) ||
                                    (parent->str() == "return" && parent->astOperand1() == tok && inBooleanFunction(tok));
 
@@ -385,6 +385,8 @@ bool CheckCondition::isOverlappingCond(const Token * const cond1, const Token * 
 
         const MathLib::bigint value1 = MathLib::toLongNumber(num1->str());
         const MathLib::bigint value2 = MathLib::toLongNumber(num2->str());
+        if (cond2->str() == "&")
+            return ((value1 & value2) == value2);
         return ((value1 & value2) > 0);
     }
     return false;
@@ -471,8 +473,12 @@ void CheckCondition::oppositeInnerCondition()
             }
             if (Token::Match(tok, "%type% (") && nonlocal) // function call -> bailout if there are nonlocal variables
                 break;
-            else if ((tok->varId() && vars.find(tok->varId()) != vars.end()) ||
-                     (!tok->varId() && nonlocal)) {
+            // bailout if loop is seen.
+            // TODO: handle loops.
+            if (Token::Match(tok, "for|while|do"))
+                break;
+            if ((tok->varId() && vars.find(tok->varId()) != vars.end()) ||
+                (!tok->varId() && nonlocal)) {
                 if (Token::Match(tok, "%name% %assign%|++|--"))
                     break;
                 if (Token::Match(tok, "%name% [")) {
@@ -994,9 +1000,9 @@ void CheckCondition::alwaysTrueFalse()
                 continue;
             if (tok->link()) // don't write false positives when templates are used
                 continue;
-            if (tok->values.size() != 1U)
+            if (!tok->hasKnownIntValue())
                 continue;
-            if (!tok->values.front().isKnown())
+            if (Token::Match(tok, "[01]"))
                 continue;
 
             // Don't warn in assertions. Condition is often 'always true' by intention.
@@ -1028,6 +1034,9 @@ void CheckCondition::alwaysTrueFalse()
                     isExpandedMacro = true;
                     break;
                 }
+            }
+            for (const Token *parent = tok; parent; parent = parent->astParent()) {
+                isExpandedMacro |= parent->isExpandedMacro();
             }
             if (isExpandedMacro)
                 continue;

@@ -489,7 +489,7 @@ Library::Error Library::load(const tinyxml2::XMLDocument &doc)
                     unknown_elements.insert(typenodename);
             }
             if (platform.empty()) {
-                const PlatformType * const type_ptr = platform_type(type_name, "");
+                const PlatformType * const type_ptr = platform_type(type_name, emptyString);
                 if (type_ptr) {
                     if (*type_ptr == type)
                         return Error(DUPLICATE_PLATFORM_TYPE, type_name);
@@ -556,10 +556,12 @@ Library::Error Library::loadFunction(const tinyxml2::XMLElement * const node, co
             const char* argNrString = functionnode->Attribute("nr");
             if (!argNrString)
                 return Error(MISSING_ATTRIBUTE, "nr");
-            const bool bAnyArg = strcmp(argNrString, "any")==0;
-            const int nr = bAnyArg ? -1 : std::atoi(argNrString);
+            const bool bAnyArg = strcmp(argNrString, "any") == 0;
+            const bool bVariadicArg = strcmp(argNrString, "variadic") == 0;
+            const int nr = (bAnyArg || bVariadicArg) ? -1 : std::atoi(argNrString);
             ArgumentChecks &ac = func.argumentChecks[nr];
             ac.optional  = functionnode->Attribute("default") != nullptr;
+            ac.variadic = bVariadicArg;
             for (const tinyxml2::XMLElement *argnode = functionnode->FirstChildElement(); argnode; argnode = argnode->NextSiblingElement()) {
                 const std::string argnodename = argnode->Name();
                 if (argnodename == "not-bool")
@@ -942,7 +944,7 @@ bool Library::matchArguments(const Token *ftok, const std::string &functionName)
         if (it2->second.optional && (firstOptionalArg == -1 || firstOptionalArg > it2->first))
             firstOptionalArg = it2->first;
 
-        if (it2->second.formatstr)
+        if (it2->second.formatstr || it2->second.variadic)
             return args <= callargs;
     }
     return (firstOptionalArg < 0) ? args == callargs : (callargs >= firstOptionalArg-1 && callargs <= args);

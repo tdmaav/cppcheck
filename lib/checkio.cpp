@@ -349,7 +349,6 @@ void CheckIO::ioWithoutPositioningError(const Token *tok)
 
 void CheckIO::readWriteOnlyFileError(const Token *tok)
 {
-
     reportError(tok, Severity::error,
                 "readWriteOnlyFile", "Read operation on a file that was opened only for writing.", CWE664, false);
 }
@@ -1198,7 +1197,7 @@ void CheckIO::checkFormatString(const Token * const tok,
                                     if (argInfo.isArrayOrPointer() && !argInfo.element) {
                                         // use %p on pointers and arrays
                                         invalidPrintfArgTypeError_uint(tok, numFormat, specifier, &argInfo);
-                                    } else if (!argInfo.typeToken->isUnsigned() && argInfo.typeToken->str() != "bool") {
+                                    } else if (!argInfo.typeToken->isUnsigned() && !Token::Match(argInfo.typeToken, "bool|_Bool")) {
                                         if (!(!argInfo.isArrayOrPointer() && argInfo.element))
                                             invalidPrintfArgTypeError_uint(tok, numFormat, specifier, &argInfo);
                                     } else if (!Token::Match(argInfo.typeToken, "bool|char|short|long|int")) {
@@ -1398,14 +1397,14 @@ CheckIO::ArgumentInfo::ArgumentInfo(const Token * tok, const Settings *settings,
 
     // Use AST type info
     // TODO: This is a bailout so that old code is used in simple cases. Remove the old code and always use the AST type.
-    if (!Token::Match(tok, "%str%|%name% ,|)")) {
+    if (!Token::Match(tok, "%str% ,|)") && !(Token::Match(tok,"%var%") && tok->variable() && tok->variable()->isArray())) {
         const Token *top = tok;
-        while (top->astParent() && top->astParent()->str() != "," && !(top->astParent()->str() == "(" && top->astParent()->astOperand2()))
+        while (top->astParent() && top->astParent()->str() != "," && top->astParent() != tok->previous())
             top = top->astParent();
         const ValueType *valuetype = top->argumentType();
         if (valuetype && valuetype->type >= ValueType::Type::BOOL) {
             typeToken = tempToken = new Token(0);
-            if (valuetype->constness & 1) {
+            if (valuetype->pointer && valuetype->constness & 1) {
                 tempToken->str("const");
                 tempToken->insertToken("a");
                 tempToken = tempToken->next();
@@ -2001,7 +2000,7 @@ void CheckIO::invalidPrintfArgTypeError_float(const Token* tok, unsigned int num
     reportError(tok, severity, "invalidPrintfArgType_float", errmsg.str(), CWE686, false);
 }
 
-Severity::SeverityType CheckIO::getSeverity(const CheckIO::ArgumentInfo *argInfo) const
+Severity::SeverityType CheckIO::getSeverity(const CheckIO::ArgumentInfo *argInfo)
 {
     return (argInfo && argInfo->typeToken && !argInfo->typeToken->originalName().empty()) ? Severity::portability : Severity::warning;
 }

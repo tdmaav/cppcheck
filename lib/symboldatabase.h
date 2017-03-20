@@ -31,11 +31,11 @@
 #include "config.h"
 #include "token.h"
 #include "mathlib.h"
+#include "library.h"
 
 class Tokenizer;
 class Settings;
 class ErrorLogger;
-class Library;
 
 class Scope;
 class SymbolDatabase;
@@ -579,6 +579,8 @@ public:
     bool isEnumType() const {
         return type() && type()->isEnumType();
     }
+
+    void setFlags(const ValueType &valuetype);
 
 private:
     // only symbol database can change the type
@@ -1157,19 +1159,22 @@ private:
 class CPPCHECKLIB ValueType {
 public:
     enum Sign {UNKNOWN_SIGN, SIGNED, UNSIGNED} sign;
-    enum Type {UNKNOWN_TYPE, NONSTD, VOID, BOOL, CHAR, SHORT, INT, LONG, LONGLONG, UNKNOWN_INT, FLOAT, DOUBLE, LONGDOUBLE} type;
+    enum Type {UNKNOWN_TYPE, NONSTD, RECORD, CONTAINER, ITERATOR, VOID, BOOL, CHAR, SHORT, INT, LONG, LONGLONG, UNKNOWN_INT, FLOAT, DOUBLE, LONGDOUBLE} type;
     unsigned int pointer; // 0=>not pointer, 1=>*, 2=>**, 3=>***, etc
     unsigned int constness;  // bit 0=data, bit 1=*, bit 2=**
     const Scope *typeScope;
+    const Library::Container *container;
     std::string originalTypeName;
 
-    ValueType() : sign(UNKNOWN_SIGN), type(UNKNOWN_TYPE), pointer(0U), constness(0U), typeScope(nullptr) {}
-    ValueType(const ValueType &vt) : sign(vt.sign), type(vt.type), pointer(vt.pointer), constness(vt.constness), typeScope(vt.typeScope), originalTypeName(vt.originalTypeName) {}
-    ValueType(enum Sign s, enum Type t, unsigned int p) : sign(s), type(t), pointer(p), constness(0U), typeScope(nullptr) {}
-    ValueType(enum Sign s, enum Type t, unsigned int p, unsigned int c) : sign(s), type(t), pointer(p), constness(c), typeScope(nullptr) {}
-    ValueType(enum Sign s, enum Type t, unsigned int p, unsigned int c, const std::string &otn) : sign(s), type(t), pointer(p), constness(c), typeScope(nullptr), originalTypeName(otn) {}
+    ValueType() : sign(UNKNOWN_SIGN), type(UNKNOWN_TYPE), pointer(0U), constness(0U), typeScope(nullptr), container(nullptr) {}
+    ValueType(const ValueType &vt) : sign(vt.sign), type(vt.type), pointer(vt.pointer), constness(vt.constness), typeScope(vt.typeScope), container(vt.container), originalTypeName(vt.originalTypeName) {}
+    ValueType(enum Sign s, enum Type t, unsigned int p) : sign(s), type(t), pointer(p), constness(0U), typeScope(nullptr), container(nullptr) {}
+    ValueType(enum Sign s, enum Type t, unsigned int p, unsigned int c) : sign(s), type(t), pointer(p), constness(c), typeScope(nullptr), container(nullptr) {}
+    ValueType(enum Sign s, enum Type t, unsigned int p, unsigned int c, const std::string &otn) : sign(s), type(t), pointer(p), constness(c), typeScope(nullptr), container(nullptr), originalTypeName(otn) {}
 
     static ValueType parseDecl(const Token *type, const Settings *settings);
+
+    static Type typeFromString(const std::string &typestr, bool longType);
 
     bool isIntegral() const {
         return (type >= ValueType::Type::BOOL && type <= ValueType::Type::UNKNOWN_INT);

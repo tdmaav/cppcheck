@@ -1981,7 +1981,7 @@ static void valueFlowAfterAssign(TokenList *tokenlist, SymbolDatabase* symboldat
             std::list<ValueFlow::Value> values = tok->astOperand2()->values;
             const bool constValue = tok->astOperand2()->isNumber();
 
-            if (tokenlist->isCPP() && Token::simpleMatch(var->typeStartToken(), "bool")) {
+            if (tokenlist->isCPP() && Token::Match(var->typeStartToken(), "bool|_Bool")) {
                 std::list<ValueFlow::Value>::iterator it;
                 for (it = values.begin(); it != values.end(); ++it) {
                     if (it->isIntValue())
@@ -2125,8 +2125,16 @@ static void valueFlowAfterCondition(TokenList *tokenlist, SymbolDatabase* symbol
                 }
 
                 if (startToken) {
+                    if (values.size() == 1U && Token::Match(tok, "==|!")) {
+                        const Token *parent = tok->astParent();
+                        while (parent && parent->str() == "&&")
+                            parent = parent->astParent();
+                        if (parent && parent->str() == "(")
+                            values.front().setKnown();
+                    }
                     if (!valueFlowForward(startToken->next(), startToken->link(), var, varid, values, true, false, tokenlist, errorLogger, settings))
                         continue;
+                    values.front().setPossible();
                     if (isVariableChanged(startToken, startToken->link(), varid, settings)) {
                         // TODO: The endToken should not be startToken->link() in the valueFlowForward call
                         if (settings->debugwarnings)

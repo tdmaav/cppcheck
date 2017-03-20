@@ -1193,7 +1193,7 @@ void CheckOther::checkVariableScope()
             if (tok->str() == "(") {
                 forHead = true;
                 break;
-            } else if (tok->str() == "{" || tok->str() == ";" || tok->str() == "}")
+            } else if (Token::Match(tok, "[;{}]"))
                 break;
         }
         if (forHead)
@@ -1206,7 +1206,7 @@ void CheckOther::checkVariableScope()
                 continue;
         }
         // bailout if initialized with function call that has possible side effects
-        if (tok->str() == "(" && Token::simpleMatch(tok->astOperand2(), "("))
+        if (Token::Match(tok, "[(=]") && Token::simpleMatch(tok->astOperand2(), "("))
             continue;
         bool reduce = true;
         bool used = false; // Don't warn about unused variables
@@ -1455,7 +1455,7 @@ void CheckOther::checkPassByReference()
         const Token* const tok = var->typeStartToken();
         if (var->isStlStringType()) {
             ;
-        } else if (var->isStlType() && Token::Match(tok, "std :: %type% <") && !Token::simpleMatch(tok->linkAt(3), "> ::") && tok->strAt(2) != "initializer_list") {
+        } else if (var->isStlType() && Token::Match(tok, "std :: %type% <") && !Token::simpleMatch(tok->linkAt(3), "> ::") && !Token::Match(tok->tokAt(2), "initializer_list|weak_ptr|auto_ptr")) {
             ;
         } else if (var->type() && !var->type()->isEnumType()) { // Check if type is a struct or class.
             // Ensure that it is a large object.
@@ -1509,7 +1509,15 @@ void CheckOther::checkPassByReference()
                         }
                     } else if (parent->isConstOp())
                         ;
-                    else if (Token::Match(tok2, "%var% . %name% (")) {
+                    else if (parent->isAssignmentOp()) {
+                        if (parent->astOperand1() == tok2)
+                            isConst = false;
+                        else if (parent->astOperand1()->str() == "&") {
+                            const Variable* assignedVar = parent->previous()->variable();
+                            if (!assignedVar || !assignedVar->isConst())
+                                isConst = false;
+                        }
+                    } else if (Token::Match(tok2, "%var% . %name% (")) {
                         const Function* func = tok2->tokAt(2)->function();
                         if (func && (func->isConst() || func->isStatic()))
                             ;
@@ -2385,7 +2393,7 @@ void CheckOther::checkIncompleteArrayFill()
                     if ((size != 1 && size != 100 && size != 0) || var->isPointer()) {
                         if (printWarning)
                             incompleteArrayFillError(tok, var->name(), tok->str(), false);
-                    } else if (var->typeStartToken()->str() == "bool" && printPortability) // sizeof(bool) is not 1 on all platforms
+                    } else if (Token::Match(var->typeStartToken(), "bool|_Bool") && printPortability) // sizeof(bool) is not 1 on all platforms
                         incompleteArrayFillError(tok, var->name(), tok->str(), true);
                 }
             }
@@ -2795,7 +2803,7 @@ void CheckOther::checkFuncArgNamesDifferent()
         if (!function || function->argCount() == 0)
             continue;
 
-        // only check functions with seperate declarations and definitions
+        // only check functions with separate declarations and definitions
         if (function->argDef == function->arg)
             continue;
 
