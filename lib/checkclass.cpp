@@ -1734,7 +1734,7 @@ void CheckClass::checkConst()
                     continue;
             } else if (func->isOperator() && Token::Match(previous, ";|{|}|public:|private:|protected:")) { // Operator without return type: conversion operator
                 const std::string& opName = func->tokenDef->str();
-                if (opName.compare(8, 5, "const") != 0 && opName.back() == '&')
+                if (opName.compare(8, 5, "const") != 0 && (opName.back() == '&' || opName.back() == '*'))
                     continue;
             } else {
                 // don't warn for unknown types..
@@ -2339,7 +2339,7 @@ void CheckClass::duplInheritedMembersError(const Token *tok1, const Token* tok2,
 // Check that copy constructor and operator defined together
 //---------------------------------------------------------------------------
 
-void CheckClass::checkCopyCtorAndEqOperator() 
+void CheckClass::checkCopyCtorAndEqOperator()
 {
     if (!_settings->isEnabled("warning"))
         return;
@@ -2347,9 +2347,9 @@ void CheckClass::checkCopyCtorAndEqOperator()
     const std::size_t classes = symbolDatabase->classAndStructScopes.size();
     for (std::size_t i = 0; i < classes; ++i) {
         const Scope * scope = symbolDatabase->classAndStructScopes[i];
-        
+
         if (scope->varlist.empty())
-        	continue;
+            continue;
 
         int hasCopyCtor = 0;
         int hasAssignmentOperator = 0;
