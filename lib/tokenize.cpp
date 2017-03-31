@@ -1737,7 +1737,7 @@ bool Tokenizer::simplifyTokens1(const std::string &configuration)
         }
     }
 
-    SymbolDatabase::setValueTypeInTokenList(list.front(), isCPP(), _settings);
+    _symbolDatabase->setValueTypeInTokenList();
     ValueFlow::setValues(&list, _symbolDatabase, _errorLogger, _settings);
 
     printDebugOutput(1);
@@ -3666,7 +3666,7 @@ bool Tokenizer::simplifyTokenList2()
     // Clear AST,ValueFlow. These will be created again at the end of this function.
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         tok->clearAst();
-        tok->values.clear();
+        tok->clearValueFlow();
     }
 
     // f(x=g())   =>   x=g(); f(x)
@@ -3791,7 +3791,7 @@ bool Tokenizer::simplifyTokenList2()
 
     // Create symbol database and then remove const keywords
     createSymbolDatabase();
-    SymbolDatabase::setValueTypeInTokenList(list.front(), isCPP(), _settings);
+    _symbolDatabase->setValueTypeInTokenList();
 
     ValueFlow::setValues(&list, _symbolDatabase, _errorLogger, _settings);
 
@@ -3904,8 +3904,8 @@ void Tokenizer::dump(std::ostream &out) const
             out << " variable=\"" << tok->variable() << '\"';
         if (tok->function())
             out << " function=\"" << tok->function() << '\"';
-        if (!tok->values.empty())
-            out << " values=\"" << &tok->values << '\"';
+        if (!tok->values().empty())
+            out << " values=\"" << &tok->values() << '\"';
         if (tok->type())
             out << " type-scope=\"" << tok->type()->classScope << '\"';
         if (tok->astParent())
