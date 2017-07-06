@@ -19,9 +19,18 @@
 
 //---------------------------------------------------------------------------
 #include "checktype.h"
-#include "mathlib.h"
-#include "symboldatabase.h"
 
+#include "errorlogger.h"
+#include "mathlib.h"
+#include "platform.h"
+#include "settings.h"
+#include "symboldatabase.h"
+#include "token.h"
+#include "tokenize.h"
+
+#include <cstddef>
+#include <list>
+#include <ostream>
 #include <stack>
 //---------------------------------------------------------------------------
 
@@ -44,9 +53,6 @@ static const struct CWE CWE190(190U);   // Integer Overflow or Wraparound
 
 void CheckType::checkTooBigBitwiseShift()
 {
-    const bool printWarnings = _settings->isEnabled(Settings::WARNING);
-    const bool printInconclusive = _settings->inconclusive;
-
     // unknown sizeof(int) => can't run this checker
     if (_settings->platformType == Settings::Unspecified)
         return;
@@ -82,28 +88,27 @@ void CheckType::checkTooBigBitwiseShift()
 
             // Get biggest rhs value. preferably a value which doesn't have 'condition'.
             const ValueFlow::Value *value = tok->astOperand2()->getValueGE(lhsbits, _settings);
-            if (!value)
-                continue;
-            if (value->condition && !printWarnings)
-                continue;
-            if (value->inconclusive && !printInconclusive)
-                continue;
-            tooBigBitwiseShiftError(tok, lhsbits, *value);
+            if (value && _settings->isEnabled(value, false))
+                tooBigBitwiseShiftError(tok, lhsbits, *value);
         }
     }
 }
 
 void CheckType::tooBigBitwiseShiftError(const Token *tok, int lhsbits, const ValueFlow::Value &rhsbits)
 {
-    std::list<const Token*> callstack;
-    callstack.push_back(tok);
-    if (rhsbits.condition)
-        callstack.push_back(rhsbits.condition);
+    if (!tok) {
+        reportError(tok, Severity::error, "shiftTooManyBits", "Shifting 32-bit value by 40 bits is undefined behaviour", CWE758, false);
+        return;
+    }
+
+    const ErrorPath errorPath = getErrorPath(tok, &rhsbits, "Shift");
+
     std::ostringstream errmsg;
     errmsg << "Shifting " << lhsbits << "-bit value by " << rhsbits.intvalue << " bits is undefined behaviour";
     if (rhsbits.condition)
         errmsg << ". See condition at line " << rhsbits.condition->linenr() << ".";
-    reportError(callstack, rhsbits.condition ? Severity::warning : Severity::error, "shiftTooManyBits", errmsg.str(), CWE758, rhsbits.inconclusive);
+
+    reportError(errorPath, rhsbits.errorSeverity() ? Severity::error : Severity::warning, "shiftTooManyBits", errmsg.str(), CWE758, rhsbits.inconclusive);
 }
 
 //---------------------------------------------------------------------------
@@ -136,7 +141,7 @@ void CheckType::checkIntegerOverflow()
             const ValueFlow::Value *value = tok->getValueGE(maxint + 1, _settings);
             if (!value)
                 value = tok->getValueLE(-maxint - 2, _settings);
-            if (!value)
+            if (!value || !_settings->isEnabled(value,false))
                 continue;
 
             // For left shift, it's common practice to shift into the sign bit
@@ -159,8 +164,8 @@ void CheckType::integerOverflowError(const Token *tok, const ValueFlow::Value &v
     else
         msg = "Signed integer overflow for expression '" + expr + "'.";
 
-    reportError(tok,
-                value.condition ? Severity::warning : Severity::error,
+    reportError(getErrorPath(tok, &value, "Integer overflow"),
+                value.errorSeverity() ? Severity::error : Severity::warning,
                 "integerOverflow",
                 msg,
                 CWE190,
@@ -340,7 +345,7 @@ void CheckType::checkFloatToIntegerOverflow()
             for (std::list<ValueFlow::Value>::const_iterator it = op1->values().begin(); it != op1->values().end(); ++it) {
                 if (it->valueType != ValueFlow::Value::FLOAT)
                     continue;
-                if (it->inconclusive && !_settings->inconclusive)
+                if (!_settings->isEnabled(&(*it), false))
                     continue;
                 if (it->floatValue > ~0ULL)
                     floatToIntegerOverflowError(tok, *it);
@@ -371,9 +376,9 @@ void CheckType::checkFloatToIntegerOverflow()
 void CheckType::floatToIntegerOverflowError(const Token *tok, const ValueFlow::Value &value)
 {
     std::ostringstream errmsg;
-    errmsg << "Undefined behaviour: float (" << value.floatValue << ") conversion overflow.";
-    reportError(tok,
-                Severity::error,
+    errmsg << "Undefined behaviour: float (" << value.floatValue << ") to integer conversion overflow.";
+    reportError(getErrorPath(tok, &value, "float to integer conversion"),
+                value.errorSeverity() ? Severity::error : Severity::warning,
                 "floatConversionOverflow",
                 errmsg.str(), CWE190, value.inconclusive);
 }

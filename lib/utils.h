@@ -22,6 +22,8 @@
 //---------------------------------------------------------------------------
 
 #include <algorithm>
+#include <cstddef>
+#include <string>
 
 /*! Helper class to aid in the initializing global const data */
 template < typename Cont >
@@ -63,6 +65,17 @@ inline bool endsWith(const std::string &str, char c)
 inline bool endsWith(const std::string &str, const char end[], std::size_t endlen)
 {
     return (str.size() >= endlen) && (str.compare(str.size()-endlen, endlen, end)==0);
+}
+
+inline static const char *getOrdinalText(int i)
+{
+    if (i == 1)
+        return "st";
+    if (i == 2)
+        return "nd";
+    if (i == 3)
+        return "rd";
+    return "th";
 }
 
 #endif

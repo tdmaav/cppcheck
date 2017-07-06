@@ -25,8 +25,8 @@
 #include <string>
 #include <vector>
 
-class Settings;
 class Library;
+class Settings;
 class Token;
 
 /** Is expression a 'signed char' if no promotion is used */
@@ -62,7 +62,8 @@ bool isSameExpression(bool cpp, bool macro, const Token *tok1, const Token *tok2
  * @param cpp    c++ file
  * @param cond1  condition1
  * @param cond2  condition2
- * @param constFunctions  constFunctions
+ * @param library files data
+ * @param pure
  */
 bool isOppositeCond(bool isNot, bool cpp, const Token * const cond1, const Token * const cond2, const Library& library, bool pure);
 

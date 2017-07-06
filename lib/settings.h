@@ -21,18 +21,23 @@
 #define settingsH
 //---------------------------------------------------------------------------
 
-#include <list>
-#include <vector>
-#include <string>
-#include <set>
 #include "config.h"
+#include "errorlogger.h"
+#include "importproject.h"
 #include "library.h"
 #include "platform.h"
-#include "importproject.h"
-#include "suppressions.h"
 #include "standards.h"
-#include "errorlogger.h"
+#include "suppressions.h"
 #include "timer.h"
+
+#include <list>
+#include <set>
+#include <string>
+#include <vector>
+
+namespace ValueFlow {
+    class Value;
+}
 
 /// @addtogroup Core
 /// @{
@@ -56,9 +61,6 @@ public:
     };
 
 private:
-    /** @brief Code to append in the checks */
-    std::string _append;
-
     /** @brief enable extra checks by id */
     int _enabled;
 
@@ -130,10 +132,16 @@ public:
     /** @brief Paths used as base for conversion to relative paths. */
     std::vector<std::string> basePaths;
 
+    /** @brief write results (--output-file=&lt;file&gt;) */
+    std::string outputFile;
+
+    /** @brief plist output (--plist-output=&lt;dir&gt;) */
+    std::string plistOutput;
+
     /** @brief write XML results (--xml) */
     bool xml;
 
-    /** @brief XML version (--xmlver=..) */
+    /** @brief XML version (--xml-version=..) */
     int xml_version;
 
     /** @brief How many processes/threads should do checking at the same
@@ -161,12 +169,6 @@ public:
         for finding include files inside source files. (-I) */
     std::list<std::string> includePaths;
 
-    /** @brief assign append code (--append) */
-    bool append(const std::string &filename);
-
-    /** @brief get append code (--append) */
-    const std::string &append() const;
-
     /** @brief Maximum number of configurations to check before bailing.
         Default is 12. (--max-configs=N) */
     unsigned int maxConfigs;
@@ -174,7 +176,7 @@ public:
     /**
      * @brief Returns true if given id is in the list of
      * enabled extra checks (--enable)
-     * @param check group to be enabled
+     * @param group group to be enabled
      * @return true if the check is enabled.
      */
     bool isEnabled(EnabledGroup group) const {
@@ -186,6 +188,12 @@ public:
     * @return true if the check is enabled.
     */
     bool isEnabled(Severity::SeverityType severity) const;
+
+    /**
+    * @brief Returns true if given value can be shown
+    * @return true if the value can be shown
+    */
+    bool isEnabled(const ValueFlow::Value *value, bool inconclusiveCheck=false) const;
 
     /**
      * @brief Enable extra checks by id. See isEnabled()

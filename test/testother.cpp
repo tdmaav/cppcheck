@@ -16,14 +16,19 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "preprocessor.h"
-#include "tokenize.h"
-#include "symboldatabase.h"
 #include "checkother.h"
+#include "library.h"
+#include "platform.h"
+#include "settings.h"
+#include "standards.h"
 #include "testsuite.h"
-#include "testutils.h"
-#include <tinyxml2.h>
+#include "tokenize.h"
 
+#include <simplecpp.h>
+#include <tinyxml2.h>
+#include <map>
+#include <string>
+#include <vector>
 
 class TestOther : public TestFixture {
 public:
@@ -225,6 +230,47 @@ private:
             tokenizer.simplifyTokenList2();
             checkOther.runSimplifiedChecks(&tokenizer, settings, this);
         }
+    }
+
+    void check(const char code[], Settings *s) {
+        check(code,"test.cpp",false,true,true,s);
+    }
+
+    void checkP(const char code[], const char *filename = "test.cpp") {
+        // Clear the error buffer..
+        errout.str("");
+
+        Settings* settings = &_settings;
+        settings->addEnabled("style");
+        settings->addEnabled("warning");
+        settings->addEnabled("portability");
+        settings->addEnabled("performance");
+        settings->standards.c = Standards::CLatest;
+        settings->standards.cpp = Standards::CPPLatest;
+        settings->inconclusive = true;
+        settings->experimental = false;
+
+        // Raw tokens..
+        std::vector<std::string> files;
+        files.push_back(filename);
+        std::istringstream istr(code);
+        const simplecpp::TokenList tokens1(istr, files, files[0]);
+
+        // Preprocess..
+        simplecpp::TokenList tokens2(files);
+        std::map<std::string, simplecpp::TokenList*> filedata;
+        simplecpp::preprocess(tokens2, tokens1, files, filedata, simplecpp::DUI());
+
+        // Tokenizer..
+        Tokenizer tokenizer(settings, this);
+        tokenizer.createTokens(&tokens2);
+        tokenizer.simplifyTokens1("");
+
+        // Check..
+        CheckOther checkOther(&tokenizer, settings, this);
+        checkOther.runChecks(&tokenizer, settings, this);
+        tokenizer.simplifyTokenList2();
+        checkOther.runSimplifiedChecks(&tokenizer, settings, this);
     }
 
     void checkposix(const char code[]) {
@@ -579,7 +625,7 @@ private:
         check("void f()\n"
               "{\n"
               "   double x = 3.0 / 0.0 + 1.0\n"
-              "   printf(\"%f\n\", x);\n"
+              "   printf(\"%f\", x);\n"
               "}");
         ASSERT_EQUALS(
             "[test.cpp:3]: (style) Using NaN/Inf in a computation.\n", errout.str());
@@ -587,7 +633,7 @@ private:
         check("void f()\n"
               "{\n"
               "   double x = 3.0 / 0.0 - 1.0\n"
-              "   printf(\"%f\n\", x);\n"
+              "   printf(\"%f\", x);\n"
               "}");
         ASSERT_EQUALS(
             "[test.cpp:3]: (style) Using NaN/Inf in a computation.\n", errout.str());
@@ -595,7 +641,7 @@ private:
         check("void f()\n"
               "{\n"
               "   double x = 1.0 + 3.0 / 0.0\n"
-              "   printf(\"%f\n\", x);\n"
+              "   printf(\"%f\", x);\n"
               "}");
         ASSERT_EQUALS(
             "[test.cpp:3]: (style) Using NaN/Inf in a computation.\n", errout.str());
@@ -603,7 +649,7 @@ private:
         check("void f()\n"
               "{\n"
               "   double x = 1.0 - 3.0 / 0.0\n"
-              "   printf(\"%f\n\", x);\n"
+              "   printf(\"%f\", x);\n"
               "}");
         ASSERT_EQUALS(
             "[test.cpp:3]: (style) Using NaN/Inf in a computation.\n", errout.str());
@@ -611,7 +657,7 @@ private:
         check("void f()\n"
               "{\n"
               "   double x = 3.0 / 0.0\n"
-              "   printf(\"%f\n\", x);\n"
+              "   printf(\"%f\", x);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
 
@@ -1509,14 +1555,46 @@ private:
         ASSERT_EQUALS("", errout.str());
 
         check("class X {\n"
-              "    uint64_t i;\n"
+              "    char a[1024];\n"
               "};\n"
               "class Y : X {\n"
-              "    uint64_t j;\n"
+              "    char b;\n"
+              "};\n"
+              "void f(Y y) {\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:7]: (performance) Function parameter 'y' should be passed by reference.\n", errout.str());
+
+        check("class X {\n"
+              "    void* a;\n"
+              "    void* b;\n"
+              "};\n"
+              "class Y {\n"
+              "    void* a;\n"
+              "    void* b;\n"
+              "    char c;\n"
               "};\n"
               "void f(X x, Y y) {\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:7]: (performance) Function parameter 'y' should be passed by reference.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:10]: (performance) Function parameter 'y' should be passed by reference.\n", errout.str());
+
+        {
+            // 8-byte data should be passed by reference on 32-bit platform but not on 64-bit platform
+            const char code[] = "class X {\n"
+                                "    uint64_t a;\n"
+                                "    uint64_t b;\n"
+                                "};\n"
+                                "void f(X x) {}";
+
+            Settings s32(_settings);
+            s32.platform(cppcheck::Platform::Unix32);
+            check(code, &s32);
+            ASSERT_EQUALS("[test.cpp:5]: (performance) Function parameter 'x' should be passed by reference.\n", errout.str());
+
+            Settings s64(_settings);
+            s64.platform(cppcheck::Platform::Unix64);
+            check(code, &s64);
+            ASSERT_EQUALS("", errout.str());
+        }
     }
 
     void switchRedundantAssignmentTest() {
@@ -2709,17 +2787,17 @@ private:
         ASSERT_EQUALS("", errout.str());
 
         check("void foo(int c) {\n"
-              "    printf(\"%i\n\", ({x==0;}));\n"
+              "    printf(\"%i\", ({x==0;}));\n"
               "}");
         ASSERT_EQUALS("", errout.str());
 
         check("void foo(int x) {\n"
-              "    printf(\"%i\n\", ({int x = do_something(); x == 0;}));\n"
+              "    printf(\"%i\", ({int x = do_something(); x == 0;}));\n"
               "}");
         ASSERT_EQUALS("", errout.str());
 
         check("void foo(int x) {\n"
-              "    printf(\"%i\n\", ({x == 0; x > 0 ? 10 : 20}));\n"
+              "    printf(\"%i\", ({x == 0; x > 0 ? 10 : 20}));\n"
               "}");
         ASSERT_EQUALS("[test.cpp:2]: (warning, inconclusive) Found suspicious equality comparison. Did you intend to assign a value instead?\n", errout.str());
 
@@ -2764,7 +2842,7 @@ private:
               "void foo(A* a1, A* a2) {\n"
               "    a1->b = a1->b;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:3]: (warning) Redundant assignment of 'a1.b' to itself.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (warning) Redundant assignment of 'a1->b' to itself.\n", errout.str());
 
         // #4073 (segmentation fault)
         check("void Foo::myFunc( int a )\n"
@@ -2834,7 +2912,7 @@ private:
               "void Foo::func() {\n"
               "    this->var = var;\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:6]: (warning) Redundant assignment of 'this.var' to itself.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:6]: (warning) Redundant assignment of 'this->var' to itself.\n", errout.str());
 
         check("class Foo {\n"
               "    int var;\n"
@@ -3332,12 +3410,14 @@ private:
     }
 
     void duplicateBranch2() {
-        check("void f(int x) {\n" // #4329
-              "  if (x)\n"
-              "    $;\n"
-              "  else\n"
-              "    $;\n"
-              "}");
+        checkP("#define DOSTUFF1 ;\n"
+               "#define DOSTUFF2 ;\n"
+               "void f(int x) {\n" // #4329
+               "  if (x)\n"
+               "    DOSTUFF1\n"
+               "  else\n"
+               "    DOSTUFF2\n"
+               "}");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -6014,10 +6094,11 @@ private:
 
     void testEvaluationOrderMacro() {
         // macro, don't bailout (#7233)
-        check((std::string("void f(int x) {\n"
-                           "  return x + ") + Preprocessor::macroChar + "x++;\n"
-               "}").c_str(), "test.c");
-        ASSERT_EQUALS("[test.c:2]: (error) Expression 'x+x++' depends on order of evaluation of side effects\n", errout.str());
+        checkP("#define X x\n"
+               "void f(int x) {\n"
+               "  return x + X++;\n"
+               "}", "test.c");
+        ASSERT_EQUALS("[test.c:3]: (error) Expression 'x+x++' depends on order of evaluation of side effects\n", errout.str());
     }
 
     void testEvaluationOrderSequencePointsFunctionCall() {

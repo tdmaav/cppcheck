@@ -37,7 +37,7 @@ static std::string builddir(std::string filename)
 
 static std::string objfile(std::string cppfile)
 {
-    cppfile.erase(cppfile.rfind("."));
+    cppfile.erase(cppfile.rfind('.'));
     return builddir(cppfile + ".o");
 }
 
@@ -50,15 +50,15 @@ static void getDeps(const std::string &filename, std::vector<std::string> &depfi
     std::ifstream f(filename.c_str());
     if (! f.is_open()) {
         if (filename.compare(0, 4, "cli/") == 0 || filename.compare(0, 5, "test/") == 0)
-            getDeps("lib" + filename.substr(filename.find("/")), depfiles);
+            getDeps("lib" + filename.substr(filename.find('/')), depfiles);
         return;
     }
     if (filename.find(".c") == std::string::npos)
         depfiles.push_back(filename);
 
     std::string path(filename);
-    if (path.find("/") != std::string::npos)
-        path.erase(1 + path.rfind("/"));
+    if (path.find('/') != std::string::npos)
+        path.erase(1 + path.rfind('/'));
 
     std::string line;
     while (std::getline(f, line)) {
@@ -67,7 +67,7 @@ static void getDeps(const std::string &filename, std::vector<std::string> &depfi
             continue;
         pos1 += 10;
 
-        std::string::size_type pos2 = line.find("\"", pos1);
+        std::string::size_type pos2 = line.find('\"', pos1);
         std::string hfile(path + line.substr(pos1, pos2 - pos1));
         if (hfile.find("/../") != std::string::npos)    // TODO: Ugly fix
             hfile.erase(0, 4 + hfile.find("/../"));
@@ -238,7 +238,7 @@ int main(int argc, char **argv)
          << "        CPPCHK_GLIBCXX_DEBUG=\n"
          << "    endif # !CPPCHK_GLIBCXX_DEBUG\n"
          << "\n"
-         << "    ifeq ($(MSYSTEM),MINGW32)\n"
+         << "    ifeq ($(MSYSTEM),MINGW32 MINGW64)\n"
          << "        LDFLAGS=-lshlwapi\n"
          << "    else\n"
          << "        RDYNAMIC=-lshlwapi\n"
@@ -275,7 +275,7 @@ int main(int argc, char **argv)
 
     // skip "-D_GLIBCXX_DEBUG" if clang, since it breaks the build
     makeConditionalVariable(fout, "CXX", "g++");
-    fout << "ifeq ($(CXX), clang++)\n"
+    fout << "ifeq (clang++, $(findstring clang++,$(CXX)))\n"
          << "    CPPCHK_GLIBCXX_DEBUG=\n"
          << "endif\n";
 
@@ -315,9 +315,9 @@ int main(int argc, char **argv)
                                 "-g");
     }
 
-    fout << "ifeq ($(CXX), g++)\n"
+    fout << "ifeq (g++, $(findstring g++,$(CXX)))\n"
          << "    override CXXFLAGS += -std=c++0x\n"
-         << "else ifeq ($(CXX), clang++)\n"
+         << "else ifeq (clang++, $(findstring clang++,$(CXX)))\n"
          << "    override CXXFLAGS += -std=c++0x\n"
          << "else ifeq ($(CXX), c++)\n"
          << "    ifeq ($(shell uname -s), Darwin)\n"
@@ -364,25 +364,25 @@ int main(int argc, char **argv)
         fout << " \\\n" << std::string(14, ' ') << objfile(testfiles[i]);
     fout << "\n\n";
 
-    fout << ".PHONY: run-dmake\n\n";
+    fout << ".PHONY: run-dmake tags\n\n";
     fout << "\n###### Targets\n\n";
     fout << "cppcheck: $(LIBOBJ) $(CLIOBJ) $(EXTOBJ)\n";
-    fout << "\t$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o cppcheck $(CLIOBJ) $(LIBOBJ) $(EXTOBJ) $(LIBS) $(LDFLAGS) $(RDYNAMIC)\n\n";
+    fout << "\t$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $(CLIOBJ) $(LIBOBJ) $(EXTOBJ) $(LIBS) $(LDFLAGS) $(RDYNAMIC)\n\n";
     fout << "all:\tcppcheck testrunner\n\n";
     fout << "testrunner: $(TESTOBJ) $(LIBOBJ) $(EXTOBJ) cli/threadexecutor.o cli/cmdlineparser.o cli/cppcheckexecutor.o cli/filelister.o\n";
-    fout << "\t$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o testrunner $(TESTOBJ) $(LIBOBJ) cli/threadexecutor.o cli/cppcheckexecutor.o cli/cmdlineparser.o cli/filelister.o $(EXTOBJ) $(LIBS) $(LDFLAGS) $(RDYNAMIC)\n\n";
+    fout << "\t$(CXX) $(CPPFLAGS) $(CXXFLAGS) -o $@ $(TESTOBJ) $(LIBOBJ) cli/threadexecutor.o cli/cppcheckexecutor.o cli/cmdlineparser.o cli/filelister.o $(EXTOBJ) $(LIBS) $(LDFLAGS) $(RDYNAMIC)\n\n";
     fout << "test:\tall\n";
     fout << "\t./testrunner\n\n";
     fout << "check:\tall\n";
     fout << "\t./testrunner -q\n\n";
     fout << "checkcfg:\tcppcheck\n";
     fout << "\t./test/cfg/runtests.sh\n\n";
-    fout << "dmake:\ttools/dmake.o cli/filelister.o lib/pathmatch.o lib/path.o\n";
-    fout << "\t$(CXX) $(CXXFLAGS) -o dmake tools/dmake.o cli/filelister.o lib/pathmatch.o lib/path.o -Ilib $(LDFLAGS)\n\n";
+    fout << "dmake:\ttools/dmake.o cli/filelister.o $(SRCDIR)/pathmatch.o $(SRCDIR)/path.o externals/simplecpp/simplecpp.o\n";
+    fout << "\t$(CXX) $(CXXFLAGS) -o $@ tools/dmake.o cli/filelister.o $(SRCDIR)/pathmatch.o $(SRCDIR)/path.o externals/simplecpp/simplecpp.o -Ilib $(LDFLAGS)\n\n";
     fout << "run-dmake: dmake\n";
     fout << "\t./dmake\n\n";
     fout << "reduce:\ttools/reduce.o $(LIBOBJ) $(EXTOBJ)\n";
-    fout << "\t$(CXX) $(CPPFLAGS) $(CXXFLAGS) -g -o reduce tools/reduce.o $(INCLUDE_FOR_LIB) $(LIBOBJ) $(LIBS) $(EXTOBJ) $(LDFLAGS) $(RDYNAMIC)\n\n";
+    fout << "\t$(CXX) $(CPPFLAGS) $(CXXFLAGS) -g -o $@ tools/reduce.o $(INCLUDE_FOR_LIB) $(LIBOBJ) $(LIBS) $(EXTOBJ) $(LDFLAGS) $(RDYNAMIC)\n\n";
     fout << "clean:\n";
     fout << "\trm -f build/*.o lib/*.o cli/*.o test/*.o tools/*.o externals/*/*.o testrunner reduce dmake cppcheck cppcheck.1\n\n";
     fout << "man:\tman/cppcheck.1\n\n";
@@ -400,6 +400,14 @@ int main(int argc, char **argv)
     fout << "\tinstall -d ${DESTDIR}${CFGDIR}\n";
     fout << "\tinstall -m 644 cfg/* ${DESTDIR}${CFGDIR}\n";
     fout << "endif\n\n";
+    fout << "# Validation of library files:\n";
+    fout << "ConfigFiles := $(wildcard cfg/*.cfg)\n";
+    fout << "ConfigFilesCHECKED := $(patsubst %.cfg,%.checked,$(ConfigFiles))\n";
+    fout << ".PHONY: validateCFG\n";
+    fout << "%.checked:%.cfg\n";
+    fout << "\txmllint --noout --relaxng cfg/cppcheck-cfg.rng $<\n";
+    fout << "validateCFG: ${ConfigFilesCHECKED}\n\n";
+
 
     fout << "\n###### Build\n\n";
 

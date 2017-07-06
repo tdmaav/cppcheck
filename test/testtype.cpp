@@ -16,14 +16,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "preprocessor.h"
-#include "tokenize.h"
-#include "symboldatabase.h"
 #include "checktype.h"
+#include "platform.h"
+#include "settings.h"
 #include "testsuite.h"
-#include "testutils.h"
-#include <tinyxml2.h>
+#include "tokenize.h"
 
+#include <string>
 
 class TestType : public TestFixture {
 public:
@@ -34,7 +33,8 @@ private:
 
 
     void run() {
-        TEST_CASE(checkTooBigShift);
+        TEST_CASE(checkTooBigShift_Unix32);
+        TEST_CASE(checkTooBigShift_AVR8);
         TEST_CASE(checkIntegerOverflow);
         TEST_CASE(signConversion);
         TEST_CASE(longCastAssign);
@@ -62,7 +62,59 @@ private:
         checkType.runChecks(&tokenizer, settings, this);
     }
 
-    void checkTooBigShift() {
+    void checkTooBigShift_AVR8() {
+        Settings settings;
+        settings.platform(Settings::AVR8);
+
+        // int, short and size_t on AVR is 2 bytes long
+        {
+            check("int foo(int x) { return x << 17;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 16-bit value by 17 bits is undefined behaviour\n", errout.str());
+            check("int foo(int x) { return x << 16;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 16-bit value by 16 bits is undefined behaviour\n", errout.str());
+            check("int foo(int x) { return x << 15;}",&settings);
+            ASSERT_EQUALS("", errout.str());
+            check("short foo(int x) { return x << 17;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 16-bit value by 17 bits is undefined behaviour\n", errout.str());
+            check("short foo(int x) { return x << 16;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 16-bit value by 16 bits is undefined behaviour\n", errout.str());
+            check("short foo(int x) { return x << 15;}",&settings);
+            ASSERT_EQUALS("", errout.str());
+            check("size_t foo(int x) { return x << 17;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 16-bit value by 17 bits is undefined behaviour\n", errout.str());
+            check("size_t foo(int x) { return x << 16;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 16-bit value by 16 bits is undefined behaviour\n", errout.str());
+            check("size_t foo(int x) { return x << 15;}",&settings);
+            ASSERT_EQUALS("", errout.str());
+        }
+        // long has four 4 bytes long
+        {
+            // downcast to int
+            check("long foo(long x) { return (int)x << 33;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 16-bit value by 33 bits is undefined behaviour\n", errout.str());
+            check("long foo(long x) { return x << 33;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 32-bit value by 33 bits is undefined behaviour\n", errout.str());
+            check("long foo(long x) { return x << 32;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 32-bit value by 32 bits is undefined behaviour\n", errout.str());
+            check("long foo(long x) { return x << 31;}",&settings);
+        }
+        // long long is 8 bytes long
+        {
+            // downcast to int
+            check("long long foo(long long x) { return (int)x << 65;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 16-bit value by 65 bits is undefined behaviour\n", errout.str());
+            // downcast to long
+            check("long long foo(long long x) { return (long)x << 65;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 32-bit value by 65 bits is undefined behaviour\n", errout.str());
+            check("long long foo(long long x) { return x << 65;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 64-bit value by 65 bits is undefined behaviour\n", errout.str());
+            check("long long foo(long long x) { return x << 64;}",&settings);
+            ASSERT_EQUALS("[test.cpp:1]: (error) Shifting 64-bit value by 64 bits is undefined behaviour\n", errout.str());
+            check("long long foo(long long x) { return x << 63;}",&settings);
+        }
+    }
+
+    void checkTooBigShift_Unix32() {
         Settings settings;
         settings.platform(Settings::Unix32);
 
@@ -124,13 +176,13 @@ private:
               "   if (x==123456) {}\n"
               "   return x * x;\n"
               "}",&settings);
-        ASSERT_EQUALS("[test.cpp:3]: (warning) Either the condition 'x==123456' is redundant or there is signed integer overflow for expression 'x*x'.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Either the condition 'x==123456' is redundant or there is signed integer overflow for expression 'x*x'.\n", errout.str());
 
         check("int foo(signed int x) {\n"
               "   if (x==123456) {}\n"
               "   return -123456 * x;\n"
               "}",&settings);
-        ASSERT_EQUALS("[test.cpp:3]: (warning) Either the condition 'x==123456' is redundant or there is signed integer overflow for expression '-123456*x'.\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Either the condition 'x==123456' is redundant or there is signed integer overflow for expression '-123456*x'.\n", errout.str());
 
         check("int foo(signed int x) {\n"
               "   if (x==123456) {}\n"
@@ -222,7 +274,7 @@ private:
     // be stringified differently.
     static std::string removeFloat(const std::string& msg) {
         std::string::size_type pos1 = msg.find("float (");
-        std::string::size_type pos2 = msg.find(") conversion");
+        std::string::size_type pos2 = msg.find(") to integer conversion");
         if (pos1 == std::string::npos || pos2 == std::string::npos || pos1 > pos2)
             return msg;
         return msg.substr(0,pos1+7) + msg.substr(pos2);
@@ -232,22 +284,22 @@ private:
         check("void f(void) {\n"
               "  return (int)1E100;\n"
               "}\n");
-        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () conversion overflow.\n", removeFloat(errout.str()));
+        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () to integer conversion overflow.\n", removeFloat(errout.str()));
 
         check("void f(void) {\n"
               "  return (int)-1E100;\n"
               "}\n");
-        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () conversion overflow.\n", removeFloat(errout.str()));
+        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () to integer conversion overflow.\n", removeFloat(errout.str()));
 
         check("void f(void) {\n"
               "  return (short)1E6;\n"
               "}\n");
-        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () conversion overflow.\n", removeFloat(errout.str()));
+        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () to integer conversion overflow.\n", removeFloat(errout.str()));
 
         check("void f(void) {\n"
               "  return (unsigned char)256.0;\n"
               "}\n");
-        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () conversion overflow.\n", removeFloat(errout.str()));
+        ASSERT_EQUALS("[test.cpp:2]: (error) Undefined behaviour: float () to integer conversion overflow.\n", removeFloat(errout.str()));
 
         check("void f(void) {\n"
               "  return (unsigned char)255.5;\n"

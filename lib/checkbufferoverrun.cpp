@@ -22,17 +22,23 @@
 
 #include "checkbufferoverrun.h"
 
-#include "tokenize.h"
-#include "mathlib.h"
-#include "symboldatabase.h"
 #include "astutils.h"
+#include "library.h"
+#include "mathlib.h"
+#include "settings.h"
+#include "symboldatabase.h"
+#include "token.h"
+#include "tokenize.h"
+#include "tokenlist.h"
+#include "utils.h"
+#include "valueflow.h"
 
-#include <algorithm>
-#include <sstream>
-#include <list>
-#include <cstdlib>
-#include <stack>
 #include <tinyxml2.h>
+#include <algorithm>
+#include <cstdlib>
+#include <sstream>
+#include <stack>
+#include <utility>
 
 //---------------------------------------------------------------------------
 
@@ -77,10 +83,33 @@ void CheckBufferOverrun::arrayIndexOutOfBoundsError(const Token *tok, const Arra
 
 void CheckBufferOverrun::arrayIndexOutOfBoundsError(const Token *tok, const ArrayInfo &arrayInfo, const std::vector<ValueFlow::Value> &index)
 {
+    bool inconclusive = false;
     const Token *condition = nullptr;
     for (std::size_t i = 0; i < index.size(); ++i) {
+        inconclusive |= index[i].inconclusive;
         if (condition == nullptr)
             condition = index[i].condition;
+    }
+
+    std::list<ErrorPathItem> errorPath;
+    if (_settings->xml || _settings->outputFormat == "daca2") {
+        for (std::size_t i = 0; i < index.size(); ++i) {
+            const ErrorPath &e = getErrorPath(tok, &index[i], "");
+            for (ErrorPath::const_iterator it = e.begin(); it != e.end(); ++it) {
+                const std::string &info = it->second;
+                if (info.empty())
+                    continue;
+                std::string nr;
+                if (index.size() > 1U)
+                    nr = "(" + MathLib::toString(i + 1) + getOrdinalText(i+1) + " array index) ";
+                errorPath.push_back(ErrorPathItem(it->first, nr + info));
+            }
+        }
+        errorPath.push_back(ErrorPathItem(tok,"Array index out of bounds"));
+    } else {
+        errorPath.push_back(ErrorPathItem(tok, "Array index out of bounds"));
+        if (condition)
+            errorPath.push_back(ErrorPathItem(condition, "Assuming that condition '" + condition->expressionString() + "' is not redundant"));
     }
 
     if (condition != nullptr) {
@@ -100,10 +129,7 @@ void CheckBufferOverrun::arrayIndexOutOfBoundsError(const Token *tok, const Arra
             errmsg << " is out of bounds.";
         }
 
-        std::list<const Token *> callstack;
-        callstack.push_back(tok);
-        callstack.push_back(condition);
-        reportError(callstack, Severity::warning, "arrayIndexOutOfBoundsCond", errmsg.str(), CWE119, false);
+        reportError(errorPath, Severity::warning, "arrayIndexOutOfBoundsCond", errmsg.str(), CWE119, inconclusive);
     } else {
         std::ostringstream errmsg;
         errmsg << "Array '" << arrayInfo.varname();
@@ -118,7 +144,7 @@ void CheckBufferOverrun::arrayIndexOutOfBoundsError(const Token *tok, const Arra
             errmsg << " out of bounds.";
         }
 
-        reportError(tok, Severity::error, "arrayIndexOutOfBounds", errmsg.str(), CWE119, false);
+        reportError(errorPath, Severity::error, "arrayIndexOutOfBounds", errmsg.str(), CWE119, inconclusive);
     }
 }
 
@@ -1619,7 +1645,7 @@ MathLib::biguint CheckBufferOverrun::countSprintfLength(const std::string &input
                 input_string_size += tempDigits;
 
             parameterLength = 0;
-            digits_string = "";
+            digits_string.clear();
             i_d_x_f_found = false;
             percentCharFound = false;
             handleNextParameter = false;
@@ -1780,11 +1806,14 @@ void CheckBufferOverrun::negativeIndexError(const Token *tok, MathLib::bigint in
 
 void CheckBufferOverrun::negativeIndexError(const Token *tok, const ValueFlow::Value &index)
 {
-    std::ostringstream ostr;
-    ostr << "Array index " << index.intvalue << " is out of bounds.";
+    const ErrorPath errorPath = getErrorPath(tok, &index, "Negative array index");
+    std::ostringstream errmsg;
     if (index.condition)
-        ostr << " Otherwise there is useless condition at line " << index.condition->linenr() << ".";
-    reportError(tok, index.condition ? Severity::warning : Severity::error, "negativeIndex", ostr.str(), CWE786, index.inconclusive);
+        errmsg << ValueFlow::eitherTheConditionIsRedundant(index.condition)
+               << ", otherwise there is negative array index " << index.intvalue << ".";
+    else
+        errmsg << "Array index " << index.intvalue << " is out of bounds.";
+    reportError(errorPath, index.errorSeverity() ? Severity::error : Severity::warning, "negativeIndex", errmsg.str(), CWE786, index.inconclusive);
 }
 
 CheckBufferOverrun::ArrayInfo::ArrayInfo()

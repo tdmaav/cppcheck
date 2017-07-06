@@ -16,10 +16,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "testsuite.h"
-#include "tokenize.h"
-#include "token.h"
+#include "platform.h"
 #include "settings.h"
+#include "testsuite.h"
+#include "token.h"
+#include "tokenize.h"
+#include "tokenlist.h"
+
+#include <ostream>
+#include <string>
 
 
 class TestSimplifyTokens : public TestFixture {
@@ -1966,6 +1971,12 @@ private:
                                      "}";
             ASSERT_EQUALS(expected, tok(code));
         }
+
+        {
+            const char code[]     = "tr = (struct reg){ .a = (1), .c = (2) };";
+            const char expected[] = "tr = ( struct reg ) { . a = 1 , . c = 2 } ;";
+            ASSERT_EQUALS(expected, tok(code));
+        }
     }
 
     void simplifyConditionOperator() {
@@ -2612,6 +2623,19 @@ private:
                                 "}\n";
 
             ASSERT_EQUALS("void f ( ) { ; }", tok(code));
+        }
+
+        {
+            // #7849
+            const char code[] =
+                "void f() {\n"
+                "if (-1e-2 == -0.01) \n"
+                "    g();\n"
+                "else\n"
+                "    h();\n"
+                "}";
+            ASSERT_EQUALS("void f ( ) { if ( -1e-2 == -0.01 ) { g ( ) ; } else { h ( ) ; } }",
+                          tok(code));
         }
     }
 
@@ -3464,12 +3488,12 @@ private:
 
     void simplifyCharAt() { // ticket #4481
         ASSERT_EQUALS("'h' ;", tok("\"hello\"[0] ;"));
-        ASSERT_EQUALS("'\n' ;", tok("\"\n\"[0] ;"));
+        ASSERT_EQUALS("'\\n' ;", tok("\"\\n\"[0] ;"));
         ASSERT_EQUALS("'\\0' ;", tok("\"hello\"[5] ;"));
         ASSERT_EQUALS("'\\0' ;", tok("\"\"[0] ;"));
         ASSERT_EQUALS("'\\0' ;", tok("\"\\0\"[0] ;"));
         ASSERT_EQUALS("'\\n' ;", tok("\"hello\\nworld\"[5] ;"));
-        ASSERT_EQUALS("'w' ;", tok("\"hello\nworld\"[6] ;"));
+        ASSERT_EQUALS("'w' ;", tok("\"hello world\"[6] ;"));
         ASSERT_EQUALS("\"hello\" [ 7 ] ;", tok("\"hello\"[7] ;"));
         ASSERT_EQUALS("\"hello\" [ -1 ] ;", tok("\"hello\"[-1] ;"));
     }
@@ -3479,11 +3503,11 @@ private:
                             "  int c, t;\n"
                             "again:\n"
                             "   do {\n"
-                            "      if ((c = macroid(c)) == EOF_CHAR || c == '\n') {\n"
+                            "      if ((c = macroid(c)) == EOF_CHAR || c == '\\n') {\n"
                             "      }\n"
                             "   } while ((t = type[c]) == LET && catenate());\n"
                             "}\n";
-        ASSERT_EQUALS("int evallex ( ) { int c ; int t ; again : ; do { c = macroid ( c ) ; if ( c == EOF_CHAR || c == '\n' ) { } t = type [ c ] ; } while ( t == LET && catenate ( ) ) ; }",
+        ASSERT_EQUALS("int evallex ( ) { int c ; int t ; again : ; do { c = macroid ( c ) ; if ( c == EOF_CHAR || c == '\\n' ) { } t = type [ c ] ; } while ( t == LET && catenate ( ) ) ; }",
                       tok(code, true));
     }
 

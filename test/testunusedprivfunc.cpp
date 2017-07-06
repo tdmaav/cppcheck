@@ -16,11 +16,15 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-
-#include "tokenize.h"
 #include "checkclass.h"
+#include "platform.h"
+#include "settings.h"
 #include "testsuite.h"
+#include "tokenize.h"
 
+#include <simplecpp.h>
+#include <map>
+#include <vector>
 
 class TestUnusedPrivateFunction : public TestFixture {
 public:
@@ -85,10 +89,21 @@ private:
 
         settings.platform(platform);
 
+        // Raw tokens..
+        std::vector<std::string> files;
+        files.push_back("test.cpp");
+        std::istringstream istr(code);
+        const simplecpp::TokenList tokens1(istr, files, files[0]);
+
+        // Preprocess..
+        simplecpp::TokenList tokens2(files);
+        std::map<std::string, simplecpp::TokenList*> filedata;
+        simplecpp::preprocess(tokens2, tokens1, files, filedata, simplecpp::DUI());
+
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp");
+        tokenizer.createTokens(&tokens2);
+        tokenizer.simplifyTokens1("");
         tokenizer.simplifyTokenList2();
 
         // Check for unused private functions..
@@ -115,7 +130,7 @@ private:
 
         ASSERT_EQUALS("[test.cpp:4]: (style) Unused private function: 'Fred::f'\n", errout.str());
 
-        check("#file \"p.h\"\n"
+        check("#line 1 \"p.h\"\n"
               "class Fred\n"
               "{\n"
               "private:\n"
@@ -124,7 +139,7 @@ private:
               "    Fred();\n"
               "};\n"
               "\n"
-              "#endfile\n"
+              "#line 1 \"p.cpp\"\n"
               "Fred::Fred()\n"
               "{ }\n"
               "\n"
@@ -133,7 +148,7 @@ private:
 
         ASSERT_EQUALS("[p.h:4]: (style) Unused private function: 'Fred::f'\n", errout.str());
 
-        check("#file \"p.h\"\n"
+        check("#line 1 \"p.h\"\n"
               "class Fred\n"
               "{\n"
               "private:\n"
@@ -141,7 +156,7 @@ private:
               "};\n"
               "\n"
               "\n"
-              "#endfile\n"
+              "#line 1 \"p.cpp\"\n"
               "\n"
               "void Fred::f()\n"
               "{\n"
@@ -149,7 +164,7 @@ private:
         ASSERT_EQUALS("[p.h:4]: (style) Unused private function: 'Fred::f'\n", errout.str());
 
         // Don't warn about include files which implementation we don't see
-        check("#file \"p.h\"\n"
+        check("#line 1 \"p.h\"\n"
               "class Fred\n"
               "{\n"
               "private:\n"
@@ -157,7 +172,7 @@ private:
               "void g() {}\n"
               "};\n"
               "\n"
-              "#endfile\n"
+              "#line 1 \"p.cpp\"\n"
               "\n"
               "int main()\n"
               "{\n"

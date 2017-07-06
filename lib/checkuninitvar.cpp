@@ -19,13 +19,24 @@
 
 //---------------------------------------------------------------------------
 #include "checkuninitvar.h"
+
 #include "astutils.h"
-#include "mathlib.h"
 #include "checknullpointer.h"   // CheckNullPointer::isPointerDeref
+#include "errorlogger.h"
+#include "library.h"
+#include "mathlib.h"
+#include "settings.h"
 #include "symboldatabase.h"
-#include <map>
+#include "token.h"
+#include "tokenize.h"
+#include "valueflow.h"
+
 #include <cassert>
+#include <cstddef>
+#include <list>
+#include <map>
 #include <stack>
+#include <utility>
 //---------------------------------------------------------------------------
 
 // Register this check class (by creating a static instance of it)
@@ -640,7 +651,7 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
                 tok = tok->next();
             }
 
-            return bool(noreturn==nullptr);
+            return (noreturn == nullptr);
         }
 
         // variable is seen..
@@ -752,68 +763,82 @@ bool CheckUninitVar::checkLoopBody(const Token *tok, const Variable& var, const 
     assert(tok->str() == "{");
 
     for (const Token * const end = tok->link(); tok != end; tok = tok->next()) {
-        if (tok->varId() == var.declarationId()) {
-            if (!membervar.empty()) {
-                if (isMemberVariableAssignment(tok, membervar)) {
-                    bool assign = true;
-                    bool rhs = false;
-                    for (const Token *tok2 = tok->next(); tok2; tok2 = tok2->next()) {
-                        if (tok2->str() == "=")
-                            rhs = true;
-                        if (tok2->str() == ";")
-                            break;
-                        if (rhs && tok2->varId() == var.declarationId() && isMemberVariableUsage(tok2, var.isPointer(), alloc, membervar)) {
-                            assign = false;
-                            break;
-                        }
-                    }
-                    if (assign)
-                        return true;
-                }
-
-                if (Token::Match(tok, "%name% ="))
-                    return true;
-
-                if (isMemberVariableUsage(tok, var.isPointer(), alloc, membervar))
-                    usetok = tok;
-                else if (Token::Match(tok->previous(), "[(,] %name% [,)]"))
-                    return true;
-            } else {
-                if (isVariableUsage(tok, var.isPointer(), alloc))
-                    usetok = tok;
-                else if (tok->strAt(1) == "=") {
-                    // Is var used in rhs?
-                    bool rhs = false;
-                    std::stack<const Token *> tokens;
-                    tokens.push(tok->next()->astOperand2());
-                    while (!tokens.empty()) {
-                        const Token *t = tokens.top();
-                        tokens.pop();
-                        if (!t)
-                            continue;
-                        if (t->varId() == var.declarationId()) {
-                            // var is used in rhs
-                            rhs = true;
-                            break;
-                        }
-                        if (Token::simpleMatch(t->previous(),"sizeof ("))
-                            continue;
-                        tokens.push(t->astOperand1());
-                        tokens.push(t->astOperand2());
-                    }
-                    if (!rhs)
-                        return true;
-                } else {
-                    return true;
-                }
-            }
-        }
-
-        if (Token::Match(tok, "sizeof|typeof ("))
+        if (Token::Match(tok, "sizeof|typeof (")) {
             tok = tok->next()->link();
+            continue;
+        }
 
         if (Token::Match(tok, "asm ( %str% ) ;"))
             return true;
+
+        if (tok->varId() != var.declarationId())
+            continue;
+
+        if (!membervar.empty()) {
+            if (isMemberVariableAssignment(tok, membervar)) {
+                bool assign = true;
+                bool rhs = false;
+                // Used for tracking if an ")" is inner or outer
+                const Token *rpar = nullptr;
+                for (const Token *tok2 = tok->next(); tok2; tok2 = tok2->next()) {
+                    if (tok2->str() == "=")
+                        rhs = true;
+
+                    // Look at inner expressions but not outer expressions
+                    if (!rpar && tok2->str() == "(")
+                        rpar = tok2->link();
+                    else if (tok2->str() == ")") {
+                        // No rpar => this is an outer right parenthesis
+                        if (!rpar)
+                            break;
+                        if (rpar == tok2)
+                            rpar = nullptr;
+                    }
+
+                    if (tok2->str() == ";" || (!rpar && tok2->str() == ","))
+                        break;
+                    if (rhs && tok2->varId() == var.declarationId() && isMemberVariableUsage(tok2, var.isPointer(), alloc, membervar)) {
+                        assign = false;
+                        break;
+                    }
+                }
+                if (assign)
+                    return true;
+            }
+
+            if (isMemberVariableUsage(tok, var.isPointer(), alloc, membervar))
+                usetok = tok;
+            else if (Token::Match(tok->previous(), "[(,] %name% [,)]"))
+                return true;
+        } else {
+            if (isVariableUsage(tok, var.isPointer(), alloc))
+                usetok = tok;
+            else if (tok->strAt(1) == "=") {
+                // Is var used in rhs?
+                bool rhs = false;
+                std::stack<const Token *> tokens;
+                tokens.push(tok->next()->astOperand2());
+                while (!tokens.empty()) {
+                    const Token *t = tokens.top();
+                    tokens.pop();
+                    if (!t)
+                        continue;
+                    if (t->varId() == var.declarationId()) {
+                        // var is used in rhs
+                        rhs = true;
+                        break;
+                    }
+                    if (Token::simpleMatch(t->previous(),"sizeof ("))
+                        continue;
+                    tokens.push(t->astOperand1());
+                    tokens.push(t->astOperand2());
+                }
+                if (!rhs)
+                    return true;
+            } else {
+                return true;
+            }
+        }
     }
 
     if (!suppressErrors && usetok) {
@@ -1033,12 +1058,14 @@ int CheckUninitVar::isFunctionParUsage(const Token *vartok, bool pointer, Alloc 
             ++argumentNumber;
         start = start->previous();
     }
+    if (!start)
+        return -1;
 
     if (Token::simpleMatch(start->link(), ") {"))
         return (!pointer || alloc == NO_ALLOC);
 
     // is this a function call?
-    if (start && Token::Match(start->previous(), "%name% (")) {
+    if (Token::Match(start->previous(), "%name% (")) {
         const bool address(vartok->previous()->str() == "&");
         const bool array(vartok->variable() && vartok->variable()->isArray());
         // check how function handle uninitialized data arguments..
@@ -1200,6 +1227,11 @@ void CheckUninitVar::uninitStructMemberError(const Token *tok, const std::string
 
 void CheckUninitVar::valueFlowUninit()
 {
+    // FIXME: #8036, #8041
+    // When this is fixed, #7293 can be closed
+    if (!_settings->experimental)
+        return;
+
     const SymbolDatabase *symbolDatabase = _tokenizer->getSymbolDatabase();
     std::list<Scope>::const_iterator scope;
 
@@ -1208,13 +1240,14 @@ void CheckUninitVar::valueFlowUninit()
         if (!scope->isExecutable())
             continue;
         for (const Token* tok = scope->classStart; tok != scope->classEnd; tok = tok->next()) {
-            if (!tok->variable())
+            if (!tok->variable() || tok->values().size() != 1U)
                 continue;
-            if (tok->values().size() != 1U || tok->values().front().valueType != ValueFlow::Value::UNINIT)
+            const ValueFlow::Value &v = tok->values().front();
+            if (v.valueType != ValueFlow::Value::UNINIT || v.inconclusive)
                 continue;
             if (!isVariableUsage(tok, tok->variable()->isPointer(), NO_ALLOC))
                 continue;
-            uninitvarError(tok,tok->str());
+            uninitvarError(tok, tok->str());
         }
     }
 }

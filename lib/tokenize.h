@@ -21,19 +21,23 @@
 #define tokenizeH
 //---------------------------------------------------------------------------
 
+#include "config.h"
 #include "errorlogger.h"
 #include "tokenlist.h"
-#include "config.h"
 
-#include <string>
-#include <map>
-#include <set>
-#include <list>
 #include <ctime>
+#include <list>
+#include <map>
+#include <string>
 
 class Settings;
 class SymbolDatabase;
 class TimerResults;
+class Token;
+
+namespace simplecpp {
+    class TokenList;
+}
 
 /// @addtogroup Core
 /// @{
@@ -72,8 +76,8 @@ public:
      */
     bool IsScopeNoReturn(const Token *endScopeToken, bool *unknown = nullptr) const;
 
-    bool createTokens(std::istream &code,
-                      const std::string& FileName);
+    bool createTokens(std::istream &code, const std::string& FileName);
+    void createTokens(const simplecpp::TokenList *tokenList);
 
     bool simplifyTokens1(const std::string &configuration);
     /**
@@ -95,7 +99,6 @@ public:
      *
      * @param FileName The filename
      * @param configuration E.g. "A" for code where "#ifdef A" is true
-     * @param noSymbolDB_AST Disable creation of SymbolDatabase and AST
      * @return false if source code contains syntax errors
      */
     bool tokenize(std::istream &code,

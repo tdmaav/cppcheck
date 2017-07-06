@@ -16,12 +16,27 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "library.h"
+#include "platform.h"
+#include "settings.h"
+#include "symboldatabase.h"
 #include "testsuite.h"
 #include "testutils.h"
-#include "symboldatabase.h"
+#include "token.h"
+#include "tokenize.h"
+#include "tokenlist.h"
 #include "utils.h"
+
+#include <cstddef>
+#include <list>
+#include <map>
+#include <set>
 #include <sstream>
 #include <stdexcept>
+#include <string>
+#include <vector>
+
+struct InternalError;
 
 #define GET_SYMBOL_DB(code) \
     Tokenizer tokenizer(&settings1, this); \
@@ -254,6 +269,7 @@ private:
         TEST_CASE(symboldatabase54); // #7257
         TEST_CASE(symboldatabase55); // #7767 (return unknown macro)
         TEST_CASE(symboldatabase56); // #7909
+        TEST_CASE(symboldatabase57);
 
         TEST_CASE(enum1);
         TEST_CASE(enum2);
@@ -329,6 +345,7 @@ private:
         TEST_CASE(auto6); // #7963 (segmentation fault)
         TEST_CASE(auto7);
         TEST_CASE(auto8);
+        TEST_CASE(auto9); // #8044 (segmentation fault)
     }
 
     void array() {
@@ -1614,6 +1631,12 @@ private:
             ASSERT_EQUALS("", errout.str());
         }
         {
+            GET_SYMBOL_DB("void g(int*) { }"); // unnamed pointer argument (#8052)
+            const Scope* g = db->findScopeByName("g");
+            ASSERT(g && g->type == Scope::eFunction && g->function && g->function->argumentList.size() == 1 && g->function->argumentList.front().nameToken() == nullptr && g->function->argumentList.front().isPointer());
+            ASSERT_EQUALS("", errout.str());
+        }
+        {
             GET_SYMBOL_DB("void g(int* const) { }"); // 'const' is not the name of the variable - #5882
             const Scope* g = db->findScopeByName("g");
             ASSERT(g && g->type == Scope::eFunction && g->function && g->function->argumentList.size() == 1 && g->function->argumentList.front().nameToken() == nullptr);
@@ -2751,6 +2774,27 @@ private:
             if (db) {
                 ASSERT_EQUALS(2U, db->scopeList.size());
                 ASSERT_EQUALS(2U, db->scopeList.begin()->functionList.size());
+            }
+        }
+    }
+
+    void symboldatabase57() {
+        GET_SYMBOL_DB("int bar(bool b)\n"
+                      "{\n"
+                      "    if(b)\n"
+                      "         return 1;\n"
+                      "    else\n"
+                      "         return 1;\n"
+                      "}");
+        ASSERT(db != nullptr);
+        if (db) {
+            ASSERT(db->scopeList.size() == 4U);
+            if (db->scopeList.size() == 4U) {
+                std::list<Scope>::const_iterator it = db->scopeList.begin();
+                ASSERT(it->type == Scope::eGlobal);
+                ASSERT((++it)->type == Scope::eFunction);
+                ASSERT((++it)->type == Scope::eIf);
+                ASSERT((++it)->type == Scope::eElse);
             }
         }
     }
@@ -5135,6 +5179,31 @@ private:
             ASSERT_EQUALS(ValueType::UNKNOWN_SIGN, vartok->valueType()->sign);
             ASSERT_EQUALS(ValueType::ITERATOR, vartok->valueType()->type);
         }
+    }
+
+    void auto9() { // #8044 (segmentation fault)
+        GET_SYMBOL_DB("class DHTTokenTracker {\n"
+                      "  static const size_t SECRET_SIZE = 4;\n"
+                      "  unsigned char secret_[2][SECRET_SIZE];\n"
+                      "  void validateToken();\n"
+                      "};\n"
+                      "template <typename T> struct DerefEqual<T> derefEqual(const T& t) {\n"
+                      "  return DerefEqual<T>(t);\n"
+                      "}\n"
+                      "template <typename T>\n"
+                      "struct RefLess {\n"
+                      "  bool operator()(const std::shared_ptr<T>& lhs,\n"
+                      "                  const std::shared_ptr<T>& rhs)\n"
+                      "  {\n"
+                      "    return lhs.get() < rhs.get();\n"
+                      "  }\n"
+                      "};\n"
+                      "void DHTTokenTracker::validateToken()\n"
+                      "{\n"
+                      "  for (auto& elem : secret_) {\n"
+                      "  }\n"
+                      "}");
+        ASSERT_EQUALS(true,  db != nullptr); // not null
     }
 
 };

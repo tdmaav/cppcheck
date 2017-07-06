@@ -16,11 +16,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "testsuite.h"
-#include "tokenize.h"
-#include "token.h"
+
+#include "config.h"
+#include "platform.h"
 #include "settings.h"
 #include "templatesimplifier.h"
+#include "testsuite.h"
+#include "token.h"
+#include "tokenize.h"
+
+struct InternalError;
 
 
 class TestSimplifyTemplate : public TestFixture {
@@ -90,6 +95,8 @@ private:
         TEST_CASE(template55);  // #6604 - simplify "const const" to "const" in template instantiations
         TEST_CASE(template56);  // #7117 - const ternary operator simplification as template parameter
         TEST_CASE(template57);  // #7891
+        TEST_CASE(template58);  // #6021 - use after free (deleted tokens in simplifyCalculations)
+        TEST_CASE(template59);  // #8051 - TemplateSimplifier::simplifyTemplateInstantiation failure
         TEST_CASE(template_enum);  // #6299 Syntax error in complex enum declaration (including template)
         TEST_CASE(template_unhandled);
         TEST_CASE(template_default_parameter);
@@ -98,6 +105,7 @@ private:
         TEST_CASE(template_constructor);    // #3152 - template constructor is removed
         TEST_CASE(syntax_error_templates_1);
         TEST_CASE(template_member_ptr); // Ticket #5786 - crash upon valid code
+        TEST_CASE(template_namespace);
 
         // Test TemplateSimplifier::templateParameters
         TEST_CASE(templateParameters);
@@ -1042,6 +1050,49 @@ private:
         ASSERT_EQUALS(exp, tok(code));
     }
 
+    void template58() { // #6021
+        const char code[] = "template <typename A>\n"
+                            "void TestArithmetic() {\n"
+                            "  x(1 * CheckedNumeric<A>());\n"
+                            "}\n"
+                            "void foo() {\n"
+                            "  TestArithmetic<int>();\n"
+                            "}";
+        const char exp[] = "void foo ( ) {"
+                           " TestArithmetic < int > ( ) ; "
+                           "} "
+                           "void TestArithmetic < int > ( ) {"
+                           " x ( CheckedNumeric < int > ( ) ) ; "
+                           "}";
+        ASSERT_EQUALS(exp, tok(code));
+    }
+
+    void template59() { // #8051
+        const char code[] = "template<int N>\n"
+                            "struct Factorial {\n"
+                            "    enum FacHelper { value = N * Factorial<N - 1>::value };\n"
+                            "};\n"
+                            "template <>\n"
+                            "struct Factorial<0> {\n"
+                            "    enum FacHelper { value = 1 };\n"
+                            "};\n"
+                            "template<int DiagonalDegree>\n"
+                            "int diagonalGroupTest() {\n"
+                            "    return Factorial<DiagonalDegree>::value;\n"
+                            "}\n"
+                            "int main () {\n"
+                            "    return diagonalGroupTest<4>();\n"
+                            "}";
+        const char exp[] = "struct Factorial < 0 > { enum FacHelper { value = 1 } ; } ; "
+                           "int main ( ) { return diagonalGroupTest < 4 > ( ) ; } "
+                           "int diagonalGroupTest < 4 > ( ) { return Factorial < 4 > :: value ; } "
+                           "struct Factorial < 4 > { enum FacHelper { value = 4 * Factorial < 3 > :: value } ; } ; "
+                           "struct Factorial < 3 > { enum FacHelper { value = 3 * Factorial < 2 > :: value } ; } ; "
+                           "struct Factorial < 2 > { enum FacHelper { value = 2 * Factorial < 1 > :: value } ; } ; "
+                           "struct Factorial < 1 > { enum FacHelper { value = Factorial < 0 > :: value } ; } ;";
+        ASSERT_EQUALS(exp, tok(code));
+    }
+
     void template_enum() {
         const char code1[] = "template <class T>\n"
                              "struct Unconst {\n"
@@ -1324,6 +1375,16 @@ private:
             "};");
     }
 
+    void template_namespace() {
+        // #6570
+        const char code[] = "namespace {\n"
+                            "  template<class T> void Fred(T value) { }\n"
+                            "}\n"
+                            "Fred<int>(123);";
+        ASSERT_EQUALS("namespace { } "
+                      "Fred < int > ( 123 ) ; "
+                      "void Fred < int > ( int value ) { }", tok(code));
+    }
 
     unsigned int templateParameters(const char code[]) {
         Tokenizer tokenizer(&settings, this);
@@ -1359,11 +1420,14 @@ private:
     }
 
     // Helper function to unit test TemplateSimplifier::getTemplateNamePosition
-    int templateNamePositionHelper(const char code[], unsigned offset = 0) {
+    int templateNamePositionHelper(const char code[], unsigned offset = 0, bool onlyCreateTokens = false) {
         Tokenizer tokenizer(&settings, this);
 
         std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp", emptyString);
+        if (onlyCreateTokens)
+            tokenizer.createTokens(istr, "test.cpp");
+        else
+            tokenizer.tokenize(istr, "test.cpp", emptyString);
 
         const Token *_tok = tokenizer.tokens();
         for (unsigned i = 0 ; i < offset ; ++i)
@@ -1398,6 +1462,11 @@ private:
                       "template<class T> unsigned A<T>::foo() { return 0; }", 19));
         ASSERT_EQUALS(9, templateNamePositionHelper("template<class T, class U> class A { unsigned foo(); }; "
                       "template<class T, class U> unsigned A<T, U>::foo() { return 0; }", 25));
+        ASSERT_EQUALS(9, templateNamePositionHelper("template<class T, class U> class A { unsigned foo(); }; "
+                      "template<class T, class U> unsigned A<T, U>::foo() { return 0; }", 25, /*onlyCreateTokens=*/true));
+        ASSERT_EQUALS(12, templateNamePositionHelper("template<class T> class v {}; "
+                      "template<class T, class U> class A { unsigned foo(); }; "
+                      "template<> unsigned A<int, v<char> >::foo() { return 0; }", 30, /*onlyCreateTokens=*/true));
     }
 
     void expandSpecialized() {

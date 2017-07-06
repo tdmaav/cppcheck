@@ -22,13 +22,14 @@
 //---------------------------------------------------------------------------
 
 #include "config.h"
-#include "simplecpp.h"
 
-#include <map>
+#include <simplecpp.h>
 #include <istream>
-#include <string>
 #include <list>
+#include <map>
 #include <set>
+#include <string>
+#include <vector>
 
 class ErrorLogger;
 class Settings;
@@ -135,6 +136,8 @@ public:
      */
     void preprocess(std::istream &srcCodeStream, std::string &processedFile, std::list<std::string> &resultConfigurations, const std::string &filename, const std::list<std::string> &includePaths);
 
+    simplecpp::TokenList preprocess(const simplecpp::TokenList &tokens1, const std::string &cfg, std::vector<std::string> &files);
+
     std::string getcode(const simplecpp::TokenList &tokens1, const std::string &cfg, std::vector<std::string> &files, const bool writeLocations);
 
     /**
@@ -169,7 +172,11 @@ public:
      */
     unsigned int calculateChecksum(const simplecpp::TokenList &tokens1, const std::string &toolinfo) const;
 
+    void simplifyPragmaAsm(simplecpp::TokenList *tokenList);
+
 private:
+
+    static void simplifyPragmaAsmPrivate(simplecpp::TokenList *tokenList);
 
     /**
      * Remove space that has new line character on left or right side of it.

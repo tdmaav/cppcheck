@@ -16,10 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "checkunusedvar.h"
+#include "settings.h"
 #include "testsuite.h"
 #include "tokenize.h"
-#include "checkunusedvar.h"
 
+#include <string>
 
 class TestUnusedVar : public TestFixture {
 public:
@@ -100,6 +102,7 @@ private:
         TEST_CASE(localvar47); // ticket #6603
         TEST_CASE(localvar48); // ticket #6954
         TEST_CASE(localvar49); // ticket #7594
+        TEST_CASE(localvar50); // ticket #6261 : dostuff(cond ? buf1 : buf2)
         TEST_CASE(localvaralias1);
         TEST_CASE(localvaralias2); // ticket #1637
         TEST_CASE(localvaralias3); // ticket #1639
@@ -123,6 +126,7 @@ private:
         TEST_CASE(localvararray2);  // ticket #3438
         TEST_CASE(localvararray3);  // ticket #3980
         TEST_CASE(localvararray4);  // ticket #4839
+        TEST_CASE(localvararray5);  // ticket #7092
         TEST_CASE(localvarstring1);
         TEST_CASE(localvarstring2); // ticket #2929
         TEST_CASE(localvarconst1);
@@ -419,7 +423,7 @@ private:
                                "} var = {0};\n"
                                "int main(int argc, char *argv[])\n"
                                "{\n"
-                               "    printf(\"var.struct1.a = %d\n\", var.struct1.a);\n"
+                               "    printf(\"var.struct1.a = %d\", var.struct1.a);\n"
                                "    return 1;\n"
                                "}\n");
         ASSERT_EQUALS("", errout.str());
@@ -2013,6 +2017,29 @@ private:
                               "    const std::string x = Bar();\n"
                               "}");
         ASSERT_EQUALS("[test.cpp:16]: (style) Variable 'x' is assigned a value that is never used.\n", errout.str());
+    }
+
+    void localvar50() { // #6261, #6542
+        // #6261 - ternary operator in function call
+        functionVariableUsage("void foo() {\n"
+                              "  char buf1[10];\n"
+                              "  dostuff(cond?buf1:buf2);\n"
+                              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        functionVariableUsage("void foo() {\n"
+                              "  char buf1[10];\n"
+                              "  dostuff(cond?buf2:buf1);\n"
+                              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        // #6542 - ternary operator
+        functionVariableUsage("void foo(int c) {\n"
+                              "  char buf1[10], buf2[10];\n"
+                              "  char *p = c ? buf1 : buf2;\n"
+                              "  dostuff(p);\n"
+                              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void localvaralias1() {
@@ -3720,6 +3747,14 @@ private:
                               "    int *pp[0];\n"
                               "    p[0] = 1;\n"
                               "    *pp[0] = p[0];\n"
+                              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
+    void localvararray5() {
+        functionVariableUsage("int foo() {\n"
+                              "    int p[5][5];\n"
+                              "    dostuff(*p);\n"
                               "}");
         ASSERT_EQUALS("", errout.str());
     }

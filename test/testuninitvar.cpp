@@ -16,10 +16,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "testsuite.h"
 #include "checkuninitvar.h"
-#include "tokenize.h"
+#include "library.h"
 #include "settings.h"
+#include "testsuite.h"
+#include "tokenize.h"
+
+#include <sstream>
+#include <string>
+
+struct InternalError;
 
 
 class TestUninitVar : public TestFixture {
@@ -3340,6 +3346,13 @@ private:
                        "}");
         ASSERT_EQUALS("[test.cpp:4]: (error) Uninitialized struct member: ab.a\n", errout.str());
 
+        checkUninitVar("struct AB { int a; };\n"
+                       "void f() {\n"
+                       "    struct AB ab;\n"
+                       "    while (x) { init(&ab); z = ab.a; }\n"
+                       "}");
+        ASSERT_EQUALS("", errout.str());
+
         // address of member
         checkUninitVar("struct AB { int a[10]; int b; };\n"
                        "void f() {\n"
@@ -3784,14 +3797,14 @@ private:
         ASSERT_THROW(checkUninitVar(code), InternalError);
     }
 
-    void trac_5970() { // Ticket #5073
+    void trac_5970() { // Ticket #5970
         checkUninitVar("void DES_ede3_ofb64_encrypt() {\n"
                        "  DES_cblock d; \n"
                        "  char *dp; \n"
                        "  dp=(char *)d; \n"
                        "  init(dp); \n"
                        "}", "test.c");
-        ASSERT_EQUALS("", errout.str());
+        TODO_ASSERT_EQUALS("", "[test.c:4]: (error) Uninitialized variable: d\n", errout.str());
     }
 
 
@@ -3816,6 +3829,13 @@ private:
                        "  switch (x) {}\n"
                        "}");
         ASSERT_EQUALS("[test.cpp:3]: (error) Uninitialized variable: x\n", errout.str());
+
+        checkUninitVar("int f() {\n"
+                       "  int x;\n"
+                       "  init(x);\n"
+                       "  return x;\n" // TODO: inconclusive ?
+                       "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void isVariableUsageDeref() {

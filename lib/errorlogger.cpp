@@ -17,18 +17,21 @@
  */
 
 #include "errorlogger.h"
-#include "path.h"
+
 #include "cppcheck.h"
-#include "tokenlist.h"
+#include "mathlib.h"
+#include "path.h"
 #include "token.h"
+#include "tokenlist.h"
 #include "utils.h"
 
 #include <tinyxml2.h>
-
-#include <cassert>
-#include <iomanip>
-#include <sstream>
 #include <array>
+#include <cassert>
+#include <cctype>
+#include <cstdlib>
+#include <cstring>
+#include <iomanip>
 
 InternalError::InternalError(const Token *tok, const std::string &errorMsg, Type type) :
     token(tok), errorMessage(errorMsg)
@@ -111,6 +114,25 @@ ErrorLogger::ErrorMessage::ErrorMessage(const std::list<const Token*>& callstack
     setmsg(msg);
 }
 
+ErrorLogger::ErrorMessage::ErrorMessage(const ErrorPath &errorPath, const TokenList *tokenList, Severity::SeverityType severity, const char id[], const std::string &msg, const CWE &cwe, bool inconclusive)
+    : _id(id), _severity(severity), _cwe(cwe.id), _inconclusive(inconclusive)
+{
+    // Format callstack
+    for (ErrorPath::const_iterator it = errorPath.begin(); it != errorPath.end(); ++it) {
+        const Token *tok = it->first;
+        const std::string &info = it->second;
+
+        // --errorlist can provide null values here
+        if (tok)
+            _callStack.push_back(ErrorLogger::ErrorMessage::FileLocation(tok, info, tokenList));
+    }
+
+    if (tokenList && !tokenList->getFiles().empty())
+        file0 = tokenList->getFiles()[0];
+
+    setmsg(msg);
+}
+
 ErrorLogger::ErrorMessage::ErrorMessage(const tinyxml2::XMLElement * const errmsg)
     : _id(errmsg->Attribute("id")),
       _severity(Severity::fromString(errmsg->Attribute("severity"))),
@@ -125,7 +147,10 @@ ErrorLogger::ErrorMessage::ErrorMessage(const tinyxml2::XMLElement * const errms
     _inconclusive = attr && (std::strcmp(attr, "true") == 0);
     for (const tinyxml2::XMLElement *e = errmsg->FirstChildElement(); e; e = e->NextSiblingElement()) {
         if (std::strcmp(e->Name(),"location")==0) {
-            _callStack.push_back(ErrorLogger::ErrorMessage::FileLocation(e->Attribute("file"), std::atoi(e->Attribute("line"))));
+            const char *strfile = e->Attribute("file");
+            const char *strinfo = e->Attribute("info");
+            const char *strline = e->Attribute("line");
+            _callStack.push_back(ErrorLogger::ErrorMessage::FileLocation(strfile, strinfo ? strinfo : "", std::atoi(strline)));
         }
     }
 }
@@ -171,9 +196,9 @@ std::string ErrorLogger::ErrorMessage::serialize() const
     oss << saneVerboseMessage.length() << " " << saneVerboseMessage;
     oss << _callStack.size() << " ";
 
-    for (std::list<ErrorLogger::ErrorMessage::FileLocation>::const_iterator tok = _callStack.begin(); tok != _callStack.end(); ++tok) {
+    for (std::list<ErrorLogger::ErrorMessage::FileLocation>::const_iterator loc = _callStack.begin(); loc != _callStack.end(); ++loc) {
         std::ostringstream smallStream;
-        smallStream << (*tok).line << ":" << (*tok).getfile();
+        smallStream << (*loc).line << ':' << (*loc).getfile() << '\t' << loc->getinfo();
         oss << smallStream.str().length() << " " << smallStream.str();
     }
 
@@ -238,11 +263,19 @@ bool ErrorLogger::ErrorMessage::deserialize(const std::string &data)
         const std::string::size_type colonPos = temp.find(':');
         if (colonPos == std::string::npos)
             throw InternalError(0, "Internal Error: No colon found in <filename:line> pattern");
+        const std::string::size_type tabPos = temp.find('\t');
+        if (tabPos == std::string::npos)
+            throw InternalError(0, "Internal Error: No tab found in <filename:line> pattern");
 
+        const std::string tempinfo = temp.substr(tabPos + 1);
+        temp.erase(tabPos);
+        const std::string tempfile = temp.substr(colonPos + 1);
+        temp.erase(colonPos);
+        const std::string templine = temp;
         ErrorLogger::ErrorMessage::FileLocation loc;
-        loc.setfile(temp.substr(colonPos + 1));
-        temp = temp.substr(0, colonPos);
-        std::istringstream fiss(temp);
+        loc.setfile(tempfile);
+        loc.setinfo(tempinfo);
+        std::istringstream fiss(templine);
         fiss >> loc.line;
 
         _callStack.push_back(loc);
@@ -344,6 +377,8 @@ std::string ErrorLogger::ErrorMessage::toXML(bool verbose, int version) const
                 printer.PushAttribute("file0", Path::toNativeSeparators(file0).c_str());
             printer.PushAttribute("file", (*it).getfile().c_str());
             printer.PushAttribute("line", (*it).line);
+            if (!it->getinfo().empty())
+                printer.PushAttribute("info", it->getinfo().c_str());
             printer.CloseElement(false);
         }
         printer.CloseElement(false);
@@ -367,7 +402,7 @@ std::string ErrorLogger::ErrorMessage::toString(bool verbose, const std::string 
     // Save this ErrorMessage in plain text.
 
     // No template is given
-    if (outputFormat.length() == 0) {
+    if (outputFormat.empty()) {
         std::ostringstream text;
         if (!_callStack.empty())
             text << callStackToString(_callStack) << ": ";
@@ -378,6 +413,38 @@ std::string ErrorLogger::ErrorMessage::toString(bool verbose, const std::string 
             text << ") ";
         }
         text << (verbose ? _verboseMessage : _shortMessage);
+        return text.str();
+    }
+
+    else if (outputFormat == "daca2") {
+        // This is a clang-like output format for daca2
+        std::ostringstream text;
+        if (_callStack.empty()) {
+            text << "nofile:0:0: ";
+        } else {
+            const ErrorLogger::ErrorMessage::FileLocation &loc = _callStack.back();
+            text << loc.getfile() << ':' << loc.line << ':' << loc.col << ": ";
+        }
+
+        if (_inconclusive)
+            text << "inconclusive ";
+        text << Severity::toString(_severity) << ": ";
+
+        text << (verbose ? _verboseMessage : _shortMessage)
+             << " [" << _id << ']';
+
+        if (_callStack.size() <= 1U)
+            return text.str();
+
+        for (std::list<FileLocation>::const_iterator loc = _callStack.begin(); loc != _callStack.end(); ++loc)
+            text << std::endl
+                 << loc->getfile()
+                 << ':'
+                 << loc->line
+                 << ':'
+                 << loc->col
+                 << ": note: "
+                 << (loc->getinfo().empty() ? _shortMessage : loc->getinfo());
         return text.str();
     }
 
@@ -448,8 +515,13 @@ std::string ErrorLogger::callStackToString(const std::list<ErrorLogger::ErrorMes
 }
 
 
-ErrorLogger::ErrorMessage::FileLocation::FileLocation(const Token* tok, const TokenList* list)
-    : line(tok->linenr()), _file(list->file(tok))
+ErrorLogger::ErrorMessage::FileLocation::FileLocation(const Token* tok, const TokenList* tokenList)
+    : fileIndex(tok->fileIndex()), line(tok->linenr()), col(tok->col()), _file(tokenList->file(tok))
+{
+}
+
+ErrorLogger::ErrorMessage::FileLocation::FileLocation(const Token* tok, const std::string &info, const TokenList* tokenList)
+    : fileIndex(tok->fileIndex()), line(tok->linenr()), col(tok->col()), _file(tokenList->file(tok)), _info(info)
 {
 }
 
@@ -509,3 +581,105 @@ std::string ErrorLogger::toxml(const std::string &str)
     }
     return xml.str();
 }
+
+std::string ErrorLogger::plistHeader(const std::string &version, const std::vector<std::string> &files)
+{
+    std::ostringstream ostr;
+    ostr << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n"
+         << "<!DOCTYPE plist PUBLIC \"-//Apple Computer//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\r\n"
+         << "<plist version=\"1.0\">\r\n"
+         << "<dict>\r\n"
+         << " <key>clang_version</key>\r\n"
+         << "<string>cppcheck version " << version << "</string>\r\n"
+         << " <key>files</key>\r\n"
+         << " <array>\r\n";
+    for (unsigned int i = 0; i < files.size(); ++i)
+        ostr << "  <string>" << ErrorLogger::toxml(files[i]) << "</string>\r\n";
+    ostr       << " </array>\r\n"
+               << " <key>diagnostics</key>\r\n"
+               << " <array>\r\n";
+    return ostr.str();
+}
+
+static std::string plistLoc(const char indent[], const ErrorLogger::ErrorMessage::FileLocation &loc)
+{
+    std::ostringstream ostr;
+    ostr << indent << "<dict>\r\n"
+         << indent << ' ' << "<key>line</key><integer>" << loc.line << "</integer>\r\n"
+         << indent << ' ' << "<key>col</key><integer>" << loc.col << "</integer>\r\n"
+         << indent << ' ' << "<key>file</key><integer>" << loc.fileIndex << "</integer>\r\n"
+         << indent << "</dict>\r\n";
+    return ostr.str();
+}
+
+std::string ErrorLogger::plistData(const ErrorLogger::ErrorMessage &msg)
+{
+    std::ostringstream plist;
+    plist << "  <dict>\r\n"
+          << "   <key>path</key>\r\n"
+          << "   <array>\r\n";
+
+    std::list<ErrorLogger::ErrorMessage::FileLocation>::const_iterator prev = msg._callStack.begin();
+
+    for (std::list<ErrorLogger::ErrorMessage::FileLocation>::const_iterator it = msg._callStack.begin(); it != msg._callStack.end(); ++it) {
+        if (prev != it) {
+            plist << "    <dict>\r\n"
+                  << "     <key>kind</key><string>control</string>\r\n"
+                  << "     <key>edges</key>\r\n"
+                  << "      <array>\r\n"
+                  << "       <dict>\r\n"
+                  << "        <key>start</key>\r\n"
+                  << "         <array>\r\n"
+                  << plistLoc("          ", *prev)
+                  << plistLoc("          ", *prev)
+                  << "         </array>\r\n"
+                  << "        <key>end</key>\r\n"
+                  << "         <array>\r\n"
+                  << plistLoc("          ", *it)
+                  << plistLoc("          ", *it)
+                  << "         </array>\r\n"
+                  << "       </dict>\r\n"
+                  << "      </array>\r\n"
+                  << "    </dict>\r\n";
+            prev = it;
+        }
+
+        std::list<ErrorLogger::ErrorMessage::FileLocation>::const_iterator next = it;
+        ++next;
+        const std::string message = (it->getinfo().empty() && next == msg._callStack.end() ? msg.shortMessage() : it->getinfo());
+
+        plist << "    <dict>\r\n"
+              << "     <key>kind</key><string>event</string>\r\n"
+              << "     <key>location</key>\r\n"
+              << plistLoc("     ", *it)
+              << "     <key>ranges</key>\r\n"
+              << "     <array>\r\n"
+              << "       <array>\r\n"
+              << plistLoc("        ", *it)
+              << plistLoc("        ", *it)
+              << "       </array>\r\n"
+              << "     </array>\r\n"
+              << "     <key>depth</key><integer>0</integer>\r\n"
+              << "     <key>extended_message</key>\r\n"
+              << "     <string>" << ErrorLogger::toxml(message) << "</string>\r\n"
+              << "     <key>message</key>\r"
+              << "     <string>" << ErrorLogger::toxml(message) << "</string>\r\n"
+              << "    </dict>\r\n";
+    }
+
+    plist << "   </array>\r\n"
+          << "   <key>description</key><string>" << ErrorLogger::toxml(msg.shortMessage()) << "</string>\r\n"
+          << "   <key>category</key><string>" << Severity::toString(msg._severity) << "</string>\r\n"
+          << "   <key>type</key><string>" << ErrorLogger::toxml(msg.shortMessage()) << "</string>\r\n"
+          << "   <key>check_name</key><string>" << msg._id << "</string>\r\n"
+          << "   <!-- This hash is experimental and going to change! -->\r\n"
+          << "   <key>issue_hash_content_of_line_in_context</key><string>" << 0 << "</string>\r\n"
+          << "  <key>issue_context_kind</key><string></string>\r\n"
+          << "  <key>issue_context</key><string></string>\r\n"
+          << "  <key>issue_hash_function_offset</key><string></string>\r\n"
+          << "  <key>location</key>\r\n"
+          << plistLoc("  ", msg._callStack.back())
+          << "  </dict>\r\n";
+    return plist.str();
+}
+

@@ -222,8 +222,6 @@ void MainWindow::HandleCLIParams(const QStringList &params)
         index = params.indexOf("-p");
         if ((index + 1) < params.length())
             LoadProjectFile(params[index + 1]);
-    } else if ((index = params.indexOf(QRegExp(".*\\.cppcheck$", Qt::CaseInsensitive), 0)) >= 0 && index < params.length() && QFile(params[index]).exists()) {
-        LoadProjectFile(params[index]);
     } else if (params.contains("-l")) {
         QString logFile;
         index = params.indexOf("-l");
@@ -240,6 +238,8 @@ void MainWindow::HandleCLIParams(const QStringList &params)
         } else {
             LoadResults(logFile);
         }
+    } else if ((index = params.indexOf(QRegExp(".*\\.cppcheck$", Qt::CaseInsensitive), 0)) >= 0 && index < params.length() && QFile(params[index]).exists()) {
+        LoadProjectFile(params[index]);
     } else if ((index = params.indexOf(QRegExp(".*\\.xml$", Qt::CaseInsensitive), 0)) >= 0 && index < params.length() && QFile(params[index]).exists()) {
         LoadResults(params[index],QDir::currentPath());
     } else
@@ -657,6 +657,19 @@ Library::Error MainWindow::LoadLibrary(Library *library, QString filename)
     if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
         return ret;
 
+#ifdef CFGDIR
+    // Try to load the library from CFGDIR..
+    const QString cfgdir = CFGDIR;
+    if (!cfgdir.isEmpty()) {
+        ret = library->load(NULL, (cfgdir+"/"+filename).toLatin1());
+        if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
+            return ret;
+        ret = library->load(NULL, (cfgdir+"/cfg/"+filename).toLatin1());
+        if (ret.errorcode != Library::ErrorCode::FILE_NOT_FOUND)
+            return ret;
+    }
+#endif
+
     // Try to load the library from the cfg subfolder..
     const QString datadir = mSettings->value("DATADIR", QString()).toString();
     if (!datadir.isEmpty()) {
@@ -803,7 +816,7 @@ Settings MainWindow::GetCppcheckSettings()
         windows = TryLoadLibrary(&result.library, "windows.cfg");
 
     if (!std || !posix || !windows)
-        QMessageBox::critical(this, tr("Error"), tr("Failed to load %1. Your Cppcheck installation is broken. You can use --data-dir=<directory> at the command line to specify where this file is located.").arg(!std ? "std.cfg" : !posix ? "posix.cfg" : "windows.cfg"));
+        QMessageBox::critical(this, tr("Error"), tr("Failed to load %1. Your Cppcheck installation is broken. You can use --data-dir=<directory> at the command line to specify where this file is located. Please note that --data-dir is supposed to be used by installation scripts and therefore the GUI does not start when it is used, all that happens is that the setting is configured.").arg(!std ? "std.cfg" : !posix ? "posix.cfg" : "windows.cfg"));
 
     if (result.jobs <= 1) {
         result.jobs = 1;

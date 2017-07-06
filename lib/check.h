@@ -22,32 +22,24 @@
 //---------------------------------------------------------------------------
 
 #include "config.h"
+#include "errorlogger.h"
+#include "settings.h"
 #include "token.h"
 #include "tokenize.h"
-#include "settings.h"
-#include "errorlogger.h"
+#include "valueflow.h"
 
 #include <list>
-#include <set>
-
-/**
- * Use this macro Cppcheck data can be wrong and you need a to check if that happens to avoid crash/hang
- * Using this macro we can make sure that released binaries don't crash/hang but the problem is not hidden
- * in debug builds.
- */
-#ifdef NDEBUG
-#define CHECK_WRONG_DATA(X)   (X)
-#else
-#define CHECK_WRONG_DATA(X)   (1)
-#endif
+#include <string>
 
 namespace tinyxml2 {
     class XMLElement;
 }
 
+/** Use WRONG_DATA in checkers to mark conditions that check that data is correct */
+#define WRONG_DATA(COND, TOK)  (wrongData((TOK), (COND), #COND))
+
 /// @addtogroup Core
 /// @{
-
 
 /**
  * @brief Interface class that cppcheck uses to communicate with the checks.
@@ -161,6 +153,36 @@ protected:
             reportError(errmsg);
     }
 
+    void reportError(const ErrorPath &errorPath, Severity::SeverityType severity, const char id[], const std::string &msg, const CWE &cwe, bool inconclusive) {
+        const ErrorLogger::ErrorMessage errmsg(errorPath, _tokenizer ? &_tokenizer->list : nullptr, severity, id, msg, cwe, inconclusive);
+        if (_errorLogger)
+            _errorLogger->reportErr(errmsg);
+        else
+            reportError(errmsg);
+    }
+
+    ErrorPath getErrorPath(const Token *errtok, const ValueFlow::Value *value, const std::string &bug) const {
+        ErrorPath errorPath;
+        if (!value) {
+            errorPath.push_back(ErrorPathItem(errtok,bug));
+        } else if (_settings->verbose || _settings->xml || _settings->outputFormat == "daca2") {
+            errorPath = value->errorPath;
+            errorPath.push_back(ErrorPathItem(errtok,bug));
+        } else {
+            if (value->condition)
+                errorPath.push_back(ErrorPathItem(value->condition, "condition '" + value->condition->expressionString() + "'"));
+            //else if (!value->isKnown() || value->defaultArg)
+            //    errorPath = value->callstack;
+            errorPath.push_back(ErrorPathItem(errtok,bug));
+        }
+        return errorPath;
+    }
+
+    /**
+     * Use WRONG_DATA in checkers when you check for wrong data. That
+     * will call this method
+     */
+    bool wrongData(const Token *tok, bool condition, const char *str);
 private:
     const std::string _name;
 

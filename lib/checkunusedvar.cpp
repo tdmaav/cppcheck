@@ -19,9 +19,21 @@
 
 //---------------------------------------------------------------------------
 #include "checkunusedvar.h"
+
+#include "errorlogger.h"
+#include "settings.h"
 #include "symboldatabase.h"
+#include "token.h"
+#include "tokenize.h"
+#include "valueflow.h"
+
 #include <algorithm>
+#include <cctype>
+#include <cstddef>
+#include <list>
+#include <set>
 #include <utility>
+#include <vector>
 //---------------------------------------------------------------------------
 
 // Register this check class (by creating a static instance of it)
@@ -679,7 +691,10 @@ static void useFunctionArgs(const Token *tok, Variables& variables)
     // TODO: Match function args to see if they are const or not. Assume that const data is not written.
     if (!tok)
         return;
-    if (Token::Match(tok, "[,+]")) {
+    if (tok->str() == ",") {
+        useFunctionArgs(tok->astOperand1(), variables);
+        useFunctionArgs(tok->astOperand2(), variables);
+    } else if (Token::Match(tok, "[+:]") && (!tok->valueType() || tok->valueType()->pointer)) {
         useFunctionArgs(tok->astOperand1(), variables);
         useFunctionArgs(tok->astOperand2(), variables);
     } else if (tok->variable() && tok->variable()->isArray()) {
@@ -706,7 +721,7 @@ void CheckUnusedVar::checkFunctionVariableUsage_iterateScopes(const Scope* const
             else if (i->isArray() && i->nameToken()->previous()->str() == "&")
                 type = Variables::referenceArray;
             else if (i->isArray())
-                type = Variables::array;
+                type = (i->dimensions().size() == 1U) ? Variables::array : Variables::pointerArray;
             else if (i->isReference())
                 type = Variables::reference;
             else if (i->nameToken()->previous()->str() == "*" && i->nameToken()->strAt(-2) == "*")
@@ -1133,6 +1148,13 @@ void CheckUnusedVar::checkFunctionVariableUsage_iterateScopes(const Scope* const
 
         else if (tok->varId() && Token::Match(tok, "%var% .")) {
             variables.use(tok->varId(), tok);   // use = read + write
+        }
+
+        else if (tok->str() == ":" && (!tok->valueType() || tok->valueType()->pointer)) {
+            if (tok->astOperand1())
+                variables.use(tok->astOperand1()->varId(), tok->astOperand1());
+            if (tok->astOperand2())
+                variables.use(tok->astOperand2()->varId(), tok->astOperand2());
         }
 
         else if (tok->isExtendedOp() && tok->next() && tok->next()->varId() && tok->strAt(2) != "=") {

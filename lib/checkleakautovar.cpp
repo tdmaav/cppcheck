@@ -21,14 +21,24 @@
 //---------------------------------------------------------------------------
 
 #include "checkleakautovar.h"
+
+#include "astutils.h"
 #include "checkmemoryleak.h"  // <- CheckMemoryLeak::memoryLeak
 #include "checknullpointer.h" // <- CheckNullPointer::isPointerDeRef
-#include "tokenize.h"
+#include "errorlogger.h"
+#include "mathlib.h"
+#include "settings.h"
 #include "symboldatabase.h"
-#include "astutils.h"
+#include "token.h"
+#include "tokenize.h"
+#include "valueflow.h"
 
+#include <cstddef>
 #include <iostream>
+#include <list>
 #include <stack>
+#include <utility>
+
 //---------------------------------------------------------------------------
 
 // Register this check class (by creating a static instance of it)
@@ -290,7 +300,7 @@ void CheckLeakAutoVar::checkScope(const Token * const startToken,
                     alloctype[varTok->varId()].type = f->groupId;
                     alloctype[varTok->varId()].status = VarInfo::ALLOC;
                 }
-            } else if (_tokenizer->isCPP() && varTok->strAt(2) == "new") {
+            } else if (_tokenizer->isCPP() && Token::Match(varTok->tokAt(2), "new !!(")) {
                 const Token* tok2 = varTok->tokAt(2)->astOperand1();
                 bool arrayNew = (tok2 && (tok2->str() == "[" || (tok2->str() == "(" && tok2->astOperand1() && tok2->astOperand1()->str() == "[")));
                 alloctype[varTok->varId()].type = arrayNew ? -2 : -1;
@@ -340,6 +350,24 @@ void CheckLeakAutoVar::checkScope(const Token * const startToken,
                     }
                     if (tok3->str() == "(" && Token::Match(tok3->astOperand1(), "UNLIKELY|LIKELY")) {
                         tokens.push(tok3->astOperand2());
+                        continue;
+                    } else if (tok3->str() == "(" && Token::Match(tok3->previous(), "%name%")) {
+                        const std::vector<const Token *> params = getArguments(tok3->previous());
+                        for (unsigned int i = 0; i < params.size(); ++i) {
+                            const Token *par = params[i];
+                            if (!par->isComparisonOp())
+                                continue;
+                            const Token *vartok = nullptr;
+                            if (astIsVariableComparison(par, "!=", "0", &vartok) ||
+                                astIsVariableComparison(par, "==", "0", &vartok) ||
+                                astIsVariableComparison(par, "<", "0", &vartok) ||
+                                astIsVariableComparison(par, ">", "0", &vartok) ||
+                                astIsVariableComparison(par, "==", "-1", &vartok) ||
+                                astIsVariableComparison(par, "!=", "-1", &vartok)) {
+                                varInfo1.erase(vartok->varId());
+                                varInfo2.erase(vartok->varId());
+                            }
+                        }
                         continue;
                     }
 
@@ -483,7 +511,8 @@ void CheckLeakAutoVar::checkScope(const Token * const startToken,
                 tok = tok->next();
             while (Token::Match(tok, "%name% ::|."))
                 tok = tok->tokAt(2);
-            if (tok->varId() && tok->strAt(1) != "[") {
+            const bool isnull = tok->hasKnownIntValue() && tok->values().front().intvalue == 0;
+            if (!isnull && tok->varId() && tok->strAt(1) != "[") {
                 VarInfo::AllocInfo allocation(arrayDelete ? -2 : -1, VarInfo::DEALLOC);
                 changeAllocStatus(varInfo, allocation, tok, tok);
             }

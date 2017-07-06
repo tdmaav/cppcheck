@@ -17,13 +17,18 @@
  */
 
 #include "importproject.h"
+
 #include "path.h"
 #include "settings.h"
-#include "tokenize.h"
-#include "token.h"
 #include "tinyxml2.h"
+#include "token.h"
+#include "tokenize.h"
+#include "tokenlist.h"
 #include "utils.h"
+
+#include <cstring>
 #include <fstream>
+#include <utility>
 
 void ImportProject::ignorePaths(const std::vector<std::string> &ipaths)
 {
@@ -91,7 +96,7 @@ void ImportProject::FileSettings::setDefines(std::string defs)
     defines.swap(defs);
 }
 
-static bool simplifyPathWithVariables(std::string &s, const std::map<std::string, std::string> &variables)
+static bool simplifyPathWithVariables(std::string &s, std::map<std::string, std::string> &variables)
 {
     std::set<std::string> expanded;
     std::string::size_type start = 0;
@@ -104,9 +109,17 @@ static bool simplifyPathWithVariables(std::string &s, const std::map<std::string
             break;
         expanded.insert(var);
         std::map<std::string, std::string>::const_iterator it1 = variables.find(var);
-        if (it1 == variables.end())
-            break;
-        s = s.substr(0,start) + it1->second + s.substr(end+1);
+        // variable was not found within defined variables
+        if (it1 == variables.end()) {
+            const char *envValue = std::getenv(var.c_str());
+            if (!envValue) {
+                //! @TODO generate a debug/info message about undefined variable
+                break;
+            }
+            variables[var] = std::string(envValue);
+            it1 = variables.find(var);
+        }
+        s = s.substr(0, start) + it1->second + s.substr(end + 1);
     }
     if (s.find("$(") != std::string::npos)
         return false;
@@ -114,10 +127,15 @@ static bool simplifyPathWithVariables(std::string &s, const std::map<std::string
     return true;
 }
 
-void ImportProject::FileSettings::setIncludePaths(const std::string &basepath, const std::list<std::string> &in, const std::map<std::string, std::string> &variables)
+void ImportProject::FileSettings::setIncludePaths(const std::string &basepath, const std::list<std::string> &in, std::map<std::string, std::string> &variables)
 {
     std::list<std::string> I;
-    for (std::list<std::string>::const_iterator it = in.begin(); it != in.end(); ++it) {
+    // only parse each includePath once - so remove duplicates
+    std::list<std::string> uniqueIncludePaths = in;
+    uniqueIncludePaths.sort();
+    uniqueIncludePaths.unique();
+
+    for (std::list<std::string>::const_iterator it = uniqueIncludePaths.begin(); it != uniqueIncludePaths.end(); ++it) {
         if (it->empty())
             continue;
         if (it->compare(0,2,"%(")==0)
@@ -250,14 +268,22 @@ namespace {
                 if (e->GetText()) {
                     if (std::strcmp(e->Name(),"Configuration")==0)
                         configuration = e->GetText();
-                    else if (std::strcmp(e->Name(),"Platform")==0)
-                        platform = e->GetText();
+                    else if (std::strcmp(e->Name(),"Platform")==0) {
+                        platformStr = e->GetText();
+                        if (platformStr == "Win32")
+                            platform = Win32;
+                        else if (platformStr == "x64")
+                            platform = x64;
+                        else
+                            platform = Unknown;
+                    }
                 }
             }
         }
         std::string name;
         std::string configuration;
-        std::string platform;
+        enum { Win32, x64, Unknown } platform;
+        std::string platformStr;
     };
 
     struct ItemDefinitionGroup {
@@ -295,7 +321,7 @@ namespace {
                 return true;
             std::string c = '(' + condition + ");";
             replaceAll(c, "$(Configuration)", p.configuration);
-            replaceAll(c, "$(Platform)", p.platform);
+            replaceAll(c, "$(Platform)", p.platformStr);
 
             // TODO : Better evaluation
             Settings s;
@@ -369,7 +395,7 @@ static void importPropertyGroup(const tinyxml2::XMLElement *node, std::map<std::
 static void loadVisualStudioProperties(const std::string &props, std::map<std::string,std::string> *variables, std::string *includePath, const std::string &additionalIncludeDirectories, std::list<ItemDefinitionGroup> &itemDefinitionGroupList)
 {
     std::string filename(props);
-    if (!simplifyPathWithVariables(filename,*variables))
+    if (!simplifyPathWithVariables(filename, *variables))
         return;
     tinyxml2::XMLDocument doc;
     if (doc.LoadFile(filename.c_str()) != tinyxml2::XML_SUCCESS)
@@ -396,7 +422,7 @@ static void loadVisualStudioProperties(const std::string &props, std::map<std::s
     }
 }
 
-void ImportProject::importVcxproj(const std::string &filename, std::map<std::string, std::string> variables, const std::string &additionalIncludeDirectories)
+void ImportProject::importVcxproj(const std::string &filename, std::map<std::string, std::string> &variables, const std::string &additionalIncludeDirectories)
 {
     variables["ProjectDir"] = Path::simplifyPath(Path::getPathFromFilename(filename));
 
@@ -418,8 +444,11 @@ void ImportProject::importVcxproj(const std::string &filename, std::map<std::str
         if (std::strcmp(node->Name(), "ItemGroup") == 0) {
             if (node->Attribute("Label") && std::strcmp(node->Attribute("Label"), "ProjectConfigurations") == 0) {
                 for (const tinyxml2::XMLElement *cfg = node->FirstChildElement(); cfg; cfg = cfg->NextSiblingElement()) {
-                    if (std::strcmp(cfg->Name(), "ProjectConfiguration") == 0)
-                        projectConfigurationList.push_back(ProjectConfiguration(cfg));
+                    if (std::strcmp(cfg->Name(), "ProjectConfiguration") == 0) {
+                        ProjectConfiguration p(cfg);
+                        if (p.platform != ProjectConfiguration::Unknown)
+                            projectConfigurationList.push_back(ProjectConfiguration(cfg));
+                    }
                 }
             } else {
                 for (const tinyxml2::XMLElement *e = node->FirstChildElement(); e; e = e->NextSiblingElement()) {
@@ -450,9 +479,9 @@ void ImportProject::importVcxproj(const std::string &filename, std::map<std::str
             fs.filename = Path::simplifyPath(Path::getPathFromFilename(filename) + *c);
             fs.cfg = p->name;
             fs.defines = "_MSC_VER=1900;_WIN32=1";
-            if (p->platform == "Win32")
+            if (p->platform == ProjectConfiguration::Win32)
                 fs.platformType = cppcheck::Platform::Win32W;
-            else if (p->platform == "x64") {
+            else if (p->platform == ProjectConfiguration::x64) {
                 fs.platformType = cppcheck::Platform::Win64;
                 fs.defines += ";_WIN64=1";
             }

@@ -15,13 +15,23 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+#include "checkmemoryleak.h"
+#include "preprocessor.h"
+#include "settings.h"
+#include "simplecpp.h"
+#include "standards.h"
+#include "symboldatabase.h"
+#include "testsuite.h"
+#include "token.h"
 #include "tokenize.h"
 #include "tokenlist.h"
-#include "checkmemoryleak.h"
-#include "testsuite.h"
-#include "symboldatabase.h"
-#include "preprocessor.h"
+
+#include <list>
+#include <ostream>
+#include <string>
+#include <vector>
+
+struct InternalError;
 
 
 class TestMemleak : private TestFixture {
@@ -5963,17 +5973,19 @@ private:
         // Clear the error buffer..
         errout.str("");
 
+        std::istringstream istr(code);
+        std::vector<std::string> files;
+        files.push_back("test.cpp");
+        const simplecpp::TokenList tokens1(istr, files, files[0]);
+
         // Preprocess...
         Preprocessor preprocessor(settings, this);
-        std::istringstream istrpreproc(code);
-        std::map<std::string, std::string> actual;
-        preprocessor.preprocess(istrpreproc, actual, "test.cpp");
+        const simplecpp::TokenList &tokens2 = preprocessor.preprocess(tokens1, "", files);
 
-        // Tokenize..
+        // Tokenizer..
         Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(actual[""]);
-        tokenizer.tokenize(istr, "test.cpp");
-
+        tokenizer.createTokens(&tokens2);
+        tokenizer.simplifyTokenList1(files[0].c_str());
         tokenizer.simplifyTokenList2();
 
         // Check for memory leaks..

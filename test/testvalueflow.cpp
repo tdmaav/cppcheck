@@ -16,15 +16,22 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "library.h"
+#include "platform.h"
+#include "settings.h"
 #include "testsuite.h"
-#include "testutils.h"
-#include "valueflow.h"
-#include "tokenize.h"
 #include "token.h"
+#include "tokenize.h"
+#include "valueflow.h"
 
-#include <vector>
-#include <string>
+#include <simplecpp.h>
 #include <cmath>
+#include <list>
+#include <map>
+#include <ostream>
+#include <string>
+#include <utility>
+#include <vector>
 
 class TestValueFlow : public TestFixture {
 public:
@@ -51,6 +58,8 @@ private:
         TEST_CASE(valueFlowBitAnd);
 
         TEST_CASE(valueFlowCalculations);
+
+        TEST_CASE(valueFlowErrorPath);
 
         TEST_CASE(valueFlowBeforeCondition);
         TEST_CASE(valueFlowBeforeConditionAndAndOrOrGuard);
@@ -107,6 +116,30 @@ private:
         return false;
     }
 
+    std::string getErrorPathForX(const char code[], unsigned int linenr) {
+        // Tokenize..
+        Tokenizer tokenizer(&settings, this);
+        std::istringstream istr(code);
+        tokenizer.tokenize(istr, "test.cpp");
+
+        for (const Token *tok = tokenizer.tokens(); tok; tok = tok->next()) {
+            if (tok->str() != "x" || tok->linenr() != linenr)
+                continue;
+
+            std::ostringstream ostr;
+            std::list<ValueFlow::Value>::const_iterator it;
+            for (it = tok->values().begin(); it != tok->values().end(); ++it) {
+                for (ValueFlow::Value::ErrorPath::const_iterator ep = it->errorPath.begin(); ep != it->errorPath.end(); ++ep) {
+                    const Token *eptok = ep->first;
+                    const std::string &msg = ep->second;
+                    ostr << eptok->linenr() << ',' << msg << '\n';
+                }
+            }
+            return ostr.str();
+        }
+
+        return "";
+    }
 
     bool testValueOfX(const char code[], unsigned int linenr, const char value[]) {
         // Tokenize..
@@ -167,12 +200,21 @@ private:
 
     void bailout(const char code[]) {
         settings.debugwarnings = true;
+        errout.str("");
+
+        std::vector<std::string> files;
+        files.push_back("test.cpp");
+        std::istringstream istr(code);
+        const simplecpp::TokenList tokens1(istr, files, files[0]);
+
+        simplecpp::TokenList tokens2(files);
+        std::map<std::string, simplecpp::TokenList*> filedata;
+        simplecpp::preprocess(tokens2, tokens1, files, filedata, simplecpp::DUI());
 
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(code);
-        errout.str("");
-        tokenizer.tokenize(istr, "test.cpp");
+        tokenizer.createTokens(&tokens2);
+        tokenizer.simplifyTokens1("");
 
         settings.debugwarnings = false;
     }
@@ -552,6 +594,46 @@ private:
         ASSERT_EQUALS(1, values.front().intvalue);
     }
 
+    void valueFlowErrorPath() {
+        const char *code;
+
+        code = "void f() {\n"
+               "  int x = 53;\n"
+               "  a = x;\n"
+               "}\n";
+        ASSERT_EQUALS("2,Assignment 'x=53', assigned value is 53\n",
+                      getErrorPathForX(code, 3U));
+
+        code = "void f(int y) {\n"
+               "  int x = y;\n"
+               "  a = x;\n"
+               "  y += 12;\n"
+               "  if (y == 32) {}"
+               "}\n";
+        ASSERT_EQUALS("5,Assuming that condition 'y==32' is not redundant\n"
+                      "2,Assignment 'x=y', assigned value is 20\n",
+                      getErrorPathForX(code, 3U));
+
+        code = "void f1(int x) {\n"
+               "  a = x;\n"
+               "}\n"
+               "void f2() {\n"
+               "  int x = 3;\n"
+               "  f1(x+1);\n"
+               "}\n";
+        ASSERT_EQUALS("5,Assignment 'x=3', assigned value is 3\n"
+                      "6,Calling function 'f1', 1st argument 'x' value is 4\n",
+                      getErrorPathForX(code, 2U));
+
+        code = "void f(int a) {\n"
+               "  int x;\n"
+               "  for (x = a; x < 50; x++) {}\n"
+               "  b = x;\n"
+               "}\n";
+        ASSERT_EQUALS("3,After for loop, x has value 50\n",
+                      getErrorPathForX(code, 4U));
+    }
+
     void valueFlowBeforeCondition() {
         const char *code;
 
@@ -627,6 +709,35 @@ private:
                "   if (x == 4);\n"
                "}";
         ASSERT_EQUALS(true, testValueOfX(code, 2U, 3));
+
+        // compound assignment += , -= , ...
+        code = "void f(int x) {\n"
+               "   a = x;\n"
+               "   x += 2;\n"
+               "   if (x == 4);\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 2U, 2));
+
+        code = "void f(int x) {\n"
+               "   a = x;\n"
+               "   x -= 2;\n"
+               "   if (x == 4);\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 2U, 6));
+
+        code = "void f(int x) {\n"
+               "   a = x;\n"
+               "   x *= 2;\n"
+               "   if (x == 42);\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 2U, 21));
+
+        code = "void f(int x) {\n"
+               "   a = x;\n"
+               "   x /= 5;\n"
+               "   if (x == 42);\n"
+               "}";
+        ASSERT(tokenValues(code, "x ;").empty());
 
         // bailout: assignment
         bailout("void f(int x) {\n"
@@ -864,11 +975,12 @@ private:
 
     void valueFlowBeforeConditionMacro() {
         // bailout: condition is a expanded macro
-        bailout("void f(int x) {\n"
+        bailout("#define M  if (x==123) {}\n"
+                "void f(int x) {\n"
                 "    a = x;\n"
-                "    $if ($x==$123){}\n"
+                "    M;\n"
                 "}");
-        ASSERT_EQUALS("[test.cpp:3]: (debug) ValueFlow bailout: variable x, condition is defined in macro\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:4]: (debug) ValueFlow bailout: variable x, condition is defined in macro\n", errout.str());
     }
 
     void valueFlowBeforeConditionGoto() {
@@ -2133,6 +2245,13 @@ private:
         ASSERT_EQUALS(9, value.intvalue);
         ASSERT(value.isPossible());
 
+        code = "void f(int c) {\n"
+               "  int x = 0;\n"
+               "  if (c) {} else { x++; }\n"
+               "  return x + 2;\n" // <- possible value
+               "}";
+        ASSERT(isNotKnownValues(code, "+"));
+
         code = "void f() {\n"
                "  int x = 0;\n"
                "  fred.dostuff(x);\n"
@@ -2377,16 +2496,29 @@ private:
     }
 
     void valueFlowUninit() {
+        const char* code;
         std::list<ValueFlow::Value> values;
 
-        const char* code = "void f() {\n"
-                           "    int x;\n"
-                           "    switch (x) {}\n"
-                           "}";
-
+        code = "void f() {\n"
+               "    int x;\n"
+               "    switch (x) {}\n"
+               "}";
         values = tokenValues(code, "x )");
-        ASSERT_EQUALS(1U, values.size());
-        ASSERT_EQUALS(ValueFlow::Value::UNINIT, values.empty() ? 0 : values.front().valueType);
+        ASSERT_EQUALS(true, values.size()==1U && values.front().isUninitValue());
+
+        code = "void f() {\n"
+               "    C *c;\n"
+               "    if (c->x() == 4) {}\n"
+               "}";
+        values = tokenValues(code, "c .");
+        ASSERT_EQUALS(true, values.size()==1U && values.front().isUninitValue());
+
+        code = "void f() {\n"
+               "    int **x;\n"
+               "    y += 10;\n"
+               "    x = dostuff(sizeof(*x)*y);\n"
+               "}";
+        ASSERT_EQUALS(0U, tokenValues(code, "x )").size());
     }
 };
 

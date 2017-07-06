@@ -16,11 +16,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "testsuite.h"
-#include "tokenize.h"
-#include "token.h"
-#include "settings.h"
 #include "check.h"
+#include "errorlogger.h"
+#include "settings.h"
+#include "testsuite.h"
+#include "token.h"
+#include "tokenize.h"
+
+#include <list>
 
 
 class TestGarbage : public TestFixture {
@@ -219,6 +222,7 @@ private:
         TEST_CASE(templateSimplifierCrashes);
         TEST_CASE(syntaxErrorFirstToken); // Make sure syntax errors are detected and reported
         TEST_CASE(syntaxErrorLastToken); // Make sure syntax errors are detected and reported
+        TEST_CASE(enumTrailingComma);
     }
 
     std::string checkCode(const char code[], bool cpp = true) {
@@ -358,7 +362,7 @@ private:
 
         ASSERT_THROW(checkCode("void f() {switch (n) { case 0?1;:{2} : z(); break;}}"), InternalError);
 
-        checkCode("void f() {switch (n) { case 0?(1?{3:4}):2 : z(); break;}}");
+        ASSERT_THROW(checkCode("void f() {switch (n) { case 0?(1?{3:4}):2 : z(); break;}}"), InternalError);
 
         //ticket #4234
         ASSERT_THROW(checkCode("( ) { switch break ; { switch ( x ) { case } y break ; : } }"), InternalError);
@@ -558,8 +562,8 @@ private:
         checkCode("{ } < class template < > , { = } ; class... >\n"
                   "struct Y { }\n"
                   "class Types { }\n"
-                  "( X < int > \"uses template\" ) ( < ( ) \"uses ; \n"
-                  "( int int ::primary \"uses template\" ) int double \"uses )\n"
+                  "( X < int > \"uses template\" ) ( < ( ) \"uses ;"
+                  "( int int ::primary \"uses template\" ) int double \"uses )"
                   "::primary , \"uses template\" ;\n");
     }
 
@@ -606,7 +610,7 @@ private:
     }
 
     void garbageCode48() { // #6712
-        checkCode(" { d\n\" ) d ...\n\" } int main ( ) { ( ) catch ( A a ) { { } catch ( ) \"\" } }");
+        checkCode(" { d\" ) d ...\" } int main ( ) { ( ) catch ( A a ) { { } catch ( ) \"\" } }");
     }
 
     void garbageCode49() { // #6715
@@ -1035,7 +1039,8 @@ private:
     }
 
     void garbageCode136() { // #7033
-        checkCode("{ } () { void f() { node_t * n; for (; -n) {} } } { }");
+        ASSERT_THROW(checkCode("{ } () { void f() { node_t * n; for (; -n) {} } } { }"),
+                     InternalError);
     }
 
     void garbageCode137() { // #7034
@@ -1089,7 +1094,7 @@ private:
     }
 
     void garbageCode144() { // #6865
-        //ASSERT_THROW(checkCode("template < typename > struct A { } ; template < typename > struct A < INVALID > : A < int[ > { }] ;"), InternalError);
+        checkCode("template < typename > struct A { } ; template < typename > struct A < INVALID > : A < int[ > { }] ;");
     }
 
     void garbageCode146() { // #7081
@@ -1326,7 +1331,7 @@ private:
 
     void garbageCode165() {
         //7235
-        checkCode("for(;..)", false);
+        ASSERT_THROW(checkCode("for(;..)", false),InternalError);
     }
 
     void garbageCode167() {
@@ -1464,6 +1469,10 @@ private:
         ASSERT_THROW(checkCode("{} const const\n"), InternalError); // #2637
 
         // ASSERT_THROW(  , InternalError)
+    }
+
+    void enumTrailingComma() {
+        ASSERT_THROW(checkCode("enum ssl_shutdown_t {ssl_shutdown_none = 0,ssl_shutdown_close_notify = , } ;"), InternalError); // #8079
     }
 };
 

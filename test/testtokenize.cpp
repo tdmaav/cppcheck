@@ -16,14 +16,22 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "testsuite.h"
-#include "tokenize.h"
-#include "token.h"
-#include "settings.h"
-#include "path.h"
+#include "config.h"
+#include "platform.h"
 #include "preprocessor.h" // usually tests here should not use preprocessor...
-#include <cstring>
+#include "settings.h"
+#include "standards.h"
+#include "testsuite.h"
+#include "token.h"
+#include "tokenize.h"
+#include "tokenlist.h"
+
+#include <list>
+#include <set>
 #include <sstream>
+#include <string>
+
+struct InternalError;
 
 class TestTokenizer : public TestFixture {
 public:
@@ -51,6 +59,7 @@ private:
         TEST_CASE(tokenize11);
         TEST_CASE(tokenize13);  // bailout if the code contains "@" - that is not handled well.
         TEST_CASE(tokenize14);  // tokenize "0X10" => 16
+        TEST_CASE(tokenizeHexWithSuffix);  // tokenize 0xFFFFFFul
         TEST_CASE(tokenize15);  // tokenize ".123"
         TEST_CASE(tokenize17);  // #2759
         TEST_CASE(tokenize18);  // tokenize "(X&&Y)" into "( X && Y )" instead of "( X & & Y )"
@@ -63,6 +72,7 @@ private:
         TEST_CASE(tokenize31);  // #3503 (Wrong handling of member function taking function pointer as argument)
         TEST_CASE(tokenize32);  // #5884 (fsanitize=undefined: left shift of negative value -10000 in lib/templatesimplifier.cpp:852:46)
         TEST_CASE(tokenize33);  // #5780 Various crashes on valid template code
+        TEST_CASE(tokenize34);  // #8031
 
         TEST_CASE(validate);
 
@@ -197,10 +207,6 @@ private:
         TEST_CASE(simplifyKnownVariablesPointerAliasFunctionCall); // #7440
         TEST_CASE(simplifyExternC);
         TEST_CASE(simplifyKeyword); // #5842 - remove C99 static keyword between []
-
-        TEST_CASE(file1);
-        TEST_CASE(file2);
-        TEST_CASE(file3);
 
         TEST_CASE(isZeroNumber);
         TEST_CASE(isOneNumber);
@@ -439,6 +445,7 @@ private:
 
         // AST data
         TEST_CASE(astexpr);
+        TEST_CASE(astexpr2); // limit large expressions
         TEST_CASE(astpar);
         TEST_CASE(astnewdelete);
         TEST_CASE(astbrackets);
@@ -447,6 +454,7 @@ private:
         TEST_CASE(asttemplate);
         TEST_CASE(astcast);
         TEST_CASE(astlambda);
+        TEST_CASE(astcase);
 
         TEST_CASE(startOfExecutableScope);
 
@@ -678,6 +686,18 @@ private:
         ASSERT_EQUALS("; 292 ;", tokenizeAndStringify(";0444;"));
     }
 
+    // Ticket #8050
+    void tokenizeHexWithSuffix() {
+        ASSERT_EQUALS("; 16777215 ;", tokenizeAndStringify(";0xFFFFFF;"));
+        ASSERT_EQUALS("; 16777215U ;", tokenizeAndStringify(";0xFFFFFFu;"));
+        ASSERT_EQUALS("; 16777215UL ;", tokenizeAndStringify(";0xFFFFFFul;"));
+
+        // Number of digits decides about internal representation...
+        ASSERT_EQUALS("; 4294967295U ;", tokenizeAndStringify(";0xFFFFFFFF;"));
+        ASSERT_EQUALS("; 4294967295U ;", tokenizeAndStringify(";0xFFFFFFFFu;"));
+        ASSERT_EQUALS("; 4294967295UL ;", tokenizeAndStringify(";0xFFFFFFFFul;"));
+    }
+
     // Ticket #2429: 0.125
     void tokenize15() {
         ASSERT_EQUALS("0.125 ;", tokenizeAndStringify(".125;"));
@@ -722,10 +742,10 @@ private:
     }
 
     void tokenize22() { // tokenize special marker $ from preprocessor
-        ASSERT_EQUALS("a $b", tokenizeAndStringify("a$b"));
+        ASSERT_EQUALS("a$b", tokenizeAndStringify("a$b"));
         ASSERT_EQUALS("a $b\nc", tokenizeAndStringify("a $b\nc"));
         ASSERT_EQUALS("a = $0 ;", tokenizeAndStringify("a = $0;"));
-        ASSERT_EQUALS("a $++ ;", tokenizeAndStringify("a$++;"));
+        ASSERT_EQUALS("a$ ++ ;", tokenizeAndStringify("a$++;"));
         ASSERT_EQUALS("$if ( ! p )", tokenizeAndStringify("$if(!p)"));
     }
 
@@ -785,12 +805,46 @@ private:
         tokenizeAndStringify(code, true);
     }
 
+    void tokenize34() { // #8031
+        {
+            const char code[] = "struct Containter {\n"
+                                "  Containter();\n"
+                                "  int* mElements;\n"
+                                "};\n"
+                                "Containter::Containter() : mElements(nullptr) {}\n"
+                                "Containter intContainer;";
+            const char exp [] = "1: struct Containter {\n"
+                                "2: Containter ( ) ;\n"
+                                "3: int * mElements@1 ;\n"
+                                "4: } ;\n"
+                                "5: Containter :: Containter ( ) : mElements@1 ( nullptr ) { }\n"
+                                "6: Containter intContainer@2 ;\n";
+            ASSERT_EQUALS(exp, tokenizeDebugListing(code, /*simplify=*/true));
+        }
+        {
+            const char code[] = "template<class T> struct Containter {\n"
+                                "  Containter();\n"
+                                "  int* mElements;\n"
+                                "};\n"
+                                "template <class T> Containter<T>::Containter() : mElements(nullptr) {}\n"
+                                "Containter<int> intContainer;";
+            const char exp [] = "5: template < class T > Containter < T > :: Containter ( ) : mElements ( nullptr ) { }\n"
+                                "6: Containter < int > intContainer@1 ; struct Containter < int > {\n"
+                                "2: Containter < int > ( ) ;\n"
+                                "3: int * mElements@2 ;\n"
+                                "4: } ;\n"
+                                "5: Containter < int > :: Containter ( ) : mElements@2 ( nullptr ) { }\n";
+            ASSERT_EQUALS(exp, tokenizeDebugListing(code, /*simplify=*/true));
+        }
+    }
+
     void validate() {
         // C++ code in C file
         ASSERT_THROW(tokenizeAndStringify(";using namespace std;",false,false,Settings::Native,"test.c"), InternalError);
         ASSERT_THROW(tokenizeAndStringify(";std::map<int,int> m;",false,false,Settings::Native,"test.c"), InternalError);
         ASSERT_THROW(tokenizeAndStringify(";template<class T> class X { };",false,false,Settings::Native,"test.c"), InternalError);
         ASSERT_THROW(tokenizeAndStringify("int X<Y>() {};",false,false,Settings::Native,"test.c"), InternalError);
+        ASSERT_THROW(tokenizeAndStringify("void foo(int i) { reinterpret_cast<char>(i) };",false,false,Settings::Native,"test.h"), InternalError);
     }
 
     void syntax_case_default() { // correct syntax
@@ -976,7 +1030,8 @@ private:
         ASSERT_EQUALS("asm ( \"\"ddd\"\" ) ;", tokenizeAndStringify(" __asm __volatile (\"ddd\") ;"));
         ASSERT_EQUALS("asm ( \"\"mov ax,bx\"\" ) ;", tokenizeAndStringify("__asm__ volatile ( \"mov ax,bx\" );"));
         ASSERT_EQUALS("asm ( \"mov ax , bx\" ) ; int a ;", tokenizeAndStringify("asm { mov ax,bx } int a;"));
-        ASSERT_EQUALS("asm\n\n( \"mov ax , bx __endasm\" ) ;", tokenizeAndStringify("__asm\nmov ax,bx\n__endasm;"));
+        ASSERT_EQUALS("asm\n\n( \"mov ax , bx\" ) ;", tokenizeAndStringify("__asm\nmov ax,bx\n__endasm;"));
+        ASSERT_EQUALS("asm\n\n( \"push b ; for if\" ) ;", tokenizeAndStringify("__asm\npush b ; for if\n__endasm;"));
 
         // 'asm ( ) ;' should be in the same line
         ASSERT_EQUALS(";\n\nasm ( \"\"mov ax,bx\"\" ) ;", tokenizeAndStringify(";\n\n__asm__ volatile ( \"mov ax,bx\" );", true));
@@ -2309,6 +2364,20 @@ private:
         }
 
         {
+            const char code[] = "void f() {\n"
+                                "   char a[10];\n"
+                                "   strcpy(a, \"hello\");\n"
+                                "   strcat(a, \"!\");\n"
+                                "}";
+            const char expected[] = "void f ( ) {\n"
+                                    "char a [ 10 ] ;\n"
+                                    "strcpy ( a , \"hello\" ) ;\n"
+                                    "strcat ( a , \"!\" ) ;\n"
+                                    "}";
+            ASSERT_EQUALS(expected, tokenizeAndStringify(code, true, true, Settings::Native, "test.c"));
+        }
+
+        {
             const char code[] = "void f() {"
                                 "    char *s = malloc(10);"
                                 "    strcpy(s, \"\");"
@@ -2934,78 +3003,6 @@ private:
     void simplifyExternC() {
         ASSERT_EQUALS("int foo ( ) ;", tokenizeAndStringify("extern \"C\" int foo();"));
         ASSERT_EQUALS("int foo ( ) ;", tokenizeAndStringify("extern \"C\" { int foo(); }"));
-    }
-
-
-    void file1() {
-        const char code[] = "a1\n"
-                            "#file \"b\"\n"
-                            "b1\n"
-                            "b2\n"
-                            "#endfile\n"
-                            "a3\n";
-
-        errout.str("");
-
-        // tokenize..
-        Tokenizer tokenizer(&settings0, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, "a");
-
-        for (const Token *tok = tokenizer.tokens(); tok; tok = tok->next()) {
-            std::ostringstream ostr;
-            ostr << char('a' + tok->fileIndex()) << tok->linenr();
-            ASSERT_EQUALS(tok->str(), ostr.str());
-        }
-    }
-
-
-    void file2() {
-        const char code[] = "a1\n"
-                            "#file \"b\"\n"
-                            "b1\n"
-                            "b2\n"
-                            "#file \"c\"\n"
-                            "c1\n"
-                            "c2\n"
-                            "#endfile\n"
-                            "b4\n"
-                            "#endfile\n"
-                            "a3\n"
-                            "#file \"d\"\n"
-                            "d1\n"
-                            "#endfile\n"
-                            "a5\n";
-
-        errout.str("");
-
-        // tokenize..
-        Tokenizer tokenizer(&settings0, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, "a");
-
-        for (const Token *tok = tokenizer.tokens(); tok; tok = tok->next()) {
-            std::ostringstream ostr;
-            ostr << char('a' + tok->fileIndex()) << tok->linenr();
-            ASSERT_EQUALS(tok->str(), ostr.str());
-        }
-    }
-
-
-
-    void file3() {
-        const char code[] = "#file \"c:\\a.h\"\n"
-                            "123 ;\n"
-                            "#endfile\n";
-
-        errout.str("");
-
-        // tokenize..
-        Tokenizer tokenizer(&settings0, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, "a.cpp");
-
-        ASSERT_EQUALS(Path::toNativeSeparators("[c:\\a.h:1]"), tokenizer.list.fileLine(tokenizer.tokens()));
     }
 
     void simplifyFunctionParameters() {
@@ -4595,6 +4592,19 @@ private:
             ASSERT_EQUALS(true, tok1->link() == tok2);
             ASSERT_EQUALS(true, tok2->link() == tok1);
         }
+
+        {
+            // #8006
+            const char code[] = "C<int> && a = b;";
+            errout.str("");
+            Tokenizer tokenizer(&settings0, this);
+            std::istringstream istr(code);
+            tokenizer.tokenize(istr, "test.cpp");
+            const Token *tok1 = tokenizer.tokens()->next();
+            const Token *tok2 = tok1->tokAt(2);
+            ASSERT_EQUALS(true, tok1->link() == tok2);
+            ASSERT_EQUALS(true, tok2->link() == tok1);
+        }
     }
 
     void simplifyString() {
@@ -5737,11 +5747,25 @@ private:
         // #6207
         ASSERT_EQUALS("void f ( ) { if ( not = x ) { } }", tokenizeAndStringify("void f() { if (not=x){} }", false, true, Settings::Native, "test.c"));
         ASSERT_EQUALS("void f ( ) { if ( not = x ) { } }", tokenizeAndStringify("void f() { if (not=x){} }", false, true, Settings::Native, "test.cpp"));
+        // #8029
+        ASSERT_EQUALS("void f ( struct S * s ) { x = s . and + 1 ; }", tokenizeAndStringify("void f(struct S *s) { x = s->and + 1; }", false, true, Settings::Native, "test.c"));
     }
 
     void simplifyCalculations() {
         ASSERT_EQUALS("void foo ( char str [ ] ) { char x ; x = * str ; }",
                       tokenizeAndStringify("void foo ( char str [ ] ) { char x = 0 | ( * str ) ; }", true));
+        ASSERT_EQUALS("void foo ( ) { if ( b ) { } }",
+                      tokenizeAndStringify("void foo ( ) { if (b + 0) { } }", true));
+        ASSERT_EQUALS("void foo ( ) { if ( b ) { } }",
+                      tokenizeAndStringify("void foo ( ) { if (0 + b) { } }", true));
+        ASSERT_EQUALS("void foo ( ) { if ( b ) { } }",
+                      tokenizeAndStringify("void foo ( ) { if (b - 0) { } }", true));
+        ASSERT_EQUALS("void foo ( ) { if ( b ) { } }",
+                      tokenizeAndStringify("void foo ( ) { if (b * 1) { } }", true));
+        ASSERT_EQUALS("void foo ( ) { if ( b ) { } }",
+                      tokenizeAndStringify("void foo ( ) { if (1 * b) { } }", true));
+        //ASSERT_EQUALS("void foo ( ) { if ( b ) { } }",
+        //              tokenizeAndStringify("void foo ( ) { if (b / 1) { } }", true));
         ASSERT_EQUALS("void foo ( ) { if ( b ) { } }",
                       tokenizeAndStringify("void foo ( ) { if (b | 0) { } }", true));
         ASSERT_EQUALS("void foo ( ) { if ( b ) { } }",
@@ -6177,9 +6201,9 @@ private:
                             "    dst[0] = 0;"
                             "    _tcscat(dst, src);"
                             "    LPTSTR d = _tcsdup(str);"
-                            "    _tprintf(_T(\"Hello world!\n\"));"
-                            "    _stprintf(dst, _T(\"Hello!\n\"));"
-                            "    _sntprintf(dst, sizeof(dst) / sizeof(TCHAR), _T(\"Hello world!\n\"));"
+                            "    _tprintf(_T(\"Hello world!\"));"
+                            "    _stprintf(dst, _T(\"Hello!\"));"
+                            "    _sntprintf(dst, sizeof(dst) / sizeof(TCHAR), _T(\"Hello world!\"));"
                             "    _tscanf(_T(\"%s\"), dst);"
                             "    _stscanf(dst, _T(\"%s\"), dst);"
                             "}"
@@ -6198,9 +6222,9 @@ private:
                                 "dst [ 0 ] = 0 ; "
                                 "strcat ( dst , src ) ; "
                                 "char * d ; d = strdup ( str ) ; "
-                                "printf ( \"Hello world!\n\" ) ; "
-                                "sprintf ( dst , \"Hello!\n\" ) ; "
-                                "_snprintf ( dst , sizeof ( dst ) / sizeof ( char ) , \"Hello world!\n\" ) ; "
+                                "printf ( \"Hello world!\" ) ; "
+                                "sprintf ( dst , \"Hello!\" ) ; "
+                                "_snprintf ( dst , sizeof ( dst ) / sizeof ( char ) , \"Hello world!\" ) ; "
                                 "scanf ( \"%s\" , dst ) ; "
                                 "sscanf ( dst , \"%s\" , dst ) ; "
                                 "} "
@@ -6224,9 +6248,9 @@ private:
                             "    dst[0] = 0;"
                             "    _tcscat(dst, src);"
                             "    LPTSTR d = _tcsdup(str);"
-                            "    _tprintf(_T(\"Hello world!\n\"));"
-                            "    _stprintf(dst, _T(\"Hello!\n\"));"
-                            "    _sntprintf(dst, sizeof(dst) / sizeof(TCHAR), _T(\"Hello world!\n\"));"
+                            "    _tprintf(_T(\"Hello world!\"));"
+                            "    _stprintf(dst, _T(\"Hello!\"));"
+                            "    _sntprintf(dst, sizeof(dst) / sizeof(TCHAR), _T(\"Hello world!\"));"
                             "    _tscanf(_T(\"%s\"), dst);"
                             "    _stscanf(dst, _T(\"%s\"), dst);"
                             "}";
@@ -6245,9 +6269,9 @@ private:
                                 "dst [ 0 ] = 0 ; "
                                 "wcscat ( dst , src ) ; "
                                 "wchar_t * d ; d = wcsdup ( str ) ; "
-                                "wprintf ( L\"Hello world!\n\" ) ; "
-                                "swprintf ( dst , L\"Hello!\n\" ) ; "
-                                "_snwprintf ( dst , sizeof ( dst ) / sizeof ( wchar_t ) , L\"Hello world!\n\" ) ; "
+                                "wprintf ( L\"Hello world!\" ) ; "
+                                "swprintf ( dst , L\"Hello!\" ) ; "
+                                "_snwprintf ( dst , sizeof ( dst ) / sizeof ( wchar_t ) , L\"Hello world!\" ) ; "
                                 "wscanf ( L\"%s\" , dst ) ; "
                                 "swscanf ( dst , L\"%s\" , dst ) ; "
                                 "}";
@@ -7856,6 +7880,8 @@ private:
         tokenList.prepareTernaryOpForAST();
         tokenList.list.createAst();
 
+        tokenList.list.validateAst();
+
         // Basic AST validation
         for (const Token *tok = tokenList.list.front(); tok; tok = tok->next()) {
             if (tok->astOperand2() && !tok->astOperand1() && tok->str() != ";" && tok->str() != ":")
@@ -7942,6 +7968,11 @@ private:
         ASSERT_EQUALS("f\"A\"1,(",testAst("f(\"A\" B, 1);"));
         ASSERT_EQUALS("fA1,(",testAst("f(A \"B\", 1);"));
 
+        // C++ : type()
+        ASSERT_EQUALS("fint(0,(", testAst("f(int(),0);"));
+        ASSERT_EQUALS("f(0,(", testAst("f(int *(),0);"));  // typedef int* X; f(X(),0);
+        ASSERT_EQUALS("f((0,(", testAst("f((intp)int *(),0);"));
+
         // for
         ASSERT_EQUALS("for;;(", testAst("for(;;)"));
         ASSERT_EQUALS("fora0=a8<a++;;(", testAst("for(a=0;a<8;a++)"));
@@ -7970,6 +8001,69 @@ private:
         ASSERT_EQUALS("DerivedDerived::(", testAst("Derived::~Derived() {}"));
 
         ASSERT_EQUALS("ifCA_FarReadfilenew(,sizeofobjtype(,(!(", testAst("if (!CA_FarRead(file, (void far *)new, sizeof(objtype)))")); // #5910 - don't hang if C code is parsed as C++
+    }
+
+    void astexpr2() { // limit for large expressions
+        // #7724 - wrong AST causes hang
+        // Ideally a proper AST is created for this code.
+        const char code[] = "const char * a(int type) {\n"
+                            "  return (\n"
+                            "   (type == 1) ? \"\"\n"
+                            " : (type == 2) ? \"\"\n"
+                            " : (type == 3) ? \"\"\n"
+                            " : (type == 4) ? \"\"\n"
+                            " : (type == 5) ? \"\"\n"
+                            " : (type == 6) ? \"\"\n"
+                            " : (type == 7) ? \"\"\n"
+                            " : (type == 8) ? \"\"\n"
+                            " : (type == 9) ? \"\"\n"
+                            " : (type == 10) ? \"\"\n"
+                            " : (type == 11) ? \"\"\n"
+                            " : (type == 12) ? \"\"\n"
+                            " : (type == 13) ? \"\"\n"
+                            " : (type == 14) ? \"\"\n"
+                            " : (type == 15) ? \"\"\n"
+                            " : (type == 16) ? \"\"\n"
+                            " : (type == 17) ? \"\"\n"
+                            " : (type == 18) ? \"\"\n"
+                            " : (type == 19) ? \"\"\n"
+                            " : (type == 20) ? \"\"\n"
+                            " : (type == 21) ? \"\"\n"
+                            " : (type == 22) ? \"\"\n"
+                            " : (type == 23) ? \"\"\n"
+                            " : (type == 24) ? \"\"\n"
+                            " : (type == 25) ? \"\"\n"
+                            " : (type == 26) ? \"\"\n"
+                            " : (type == 27) ? \"\"\n"
+                            " : (type == 28) ? \"\"\n"
+                            " : (type == 29) ? \"\"\n"
+                            " : (type == 30) ? \"\"\n"
+                            " : (type == 31) ? \"\"\n"
+                            " : (type == 32) ? \"\"\n"
+                            " : (type == 33) ? \"\"\n"
+                            " : (type == 34) ? \"\"\n"
+                            " : (type == 35) ? \"\"\n"
+                            " : (type == 36) ? \"\"\n"
+                            " : (type == 37) ? \"\"\n"
+                            " : (type == 38) ? \"\"\n"
+                            " : (type == 39) ? \"\"\n"
+                            " : (type == 40) ? \"\"\n"
+                            " : (type == 41) ? \"\"\n"
+                            " : (type == 42) ? \"\"\n"
+                            " : (type == 43) ? \"\"\n"
+                            " : (type == 44) ? \"\"\n"
+                            " : (type == 45) ? \"\"\n"
+                            " : (type == 46) ? \"\"\n"
+                            " : (type == 47) ? \"\"\n"
+                            " : (type == 48) ? \"\"\n"
+                            " : (type == 49) ? \"\"\n"
+                            " : (type == 50) ? \"\"\n"
+                            " : (type == 51) ? \"\"\n"
+                            " : \"\");\n"
+                            "}\n";
+        // Ensure that the AST is validated for the simplified token list
+        tokenizeAndStringify(code); // this does not crash/hang
+        ASSERT_THROW(tokenizeAndStringify(code,true), InternalError); // when parentheses are simplified the AST will be wrong
     }
 
     void astnewdelete() {
@@ -8078,6 +8172,7 @@ private:
         ASSERT_EQUALS("s1a&,{2b&,{,{=", testAst("s = { {1, &a}, {2, &b} };"));
         ASSERT_EQUALS("s0[L.2[x={=", testAst("s = { [0].L[2] = x};"));
         ASSERT_EQUALS("ac.0={(=", testAst("a = (b){.c=0,};")); // <- useless comma
+        ASSERT_EQUALS("xB[1y.z.1={(&=,{={=", testAst("x = { [B] = {1, .y = &(struct s) { .z=1 } } };"));
 
         // struct initialization hang
         ASSERT_EQUALS("sbar.1{,{(={= fcmd( forfieldfield++;;(",
@@ -8097,6 +8192,8 @@ private:
         ASSERT_EQUALS("abc12,{d:?=", testAst("a=b?c<X>{1,2}:d;"));
         ASSERT_EQUALS("a::12,{", testAst("::a{1,2};")); // operator precedence
         ASSERT_EQUALS("Abc({newreturn", testAst("return new A {b(c)};"));
+        ASSERT_EQUALS("a{{return", testAst("return{{a}};"));
+        ASSERT_EQUALS("a{b{,{return", testAst("return{{a},{b}};"));
     }
 
     void astbrackets() { // []
@@ -8145,6 +8242,7 @@ private:
         ASSERT_EQUALS("static_casta(i[", testAst("; static_cast<char*>(a)[i];")); // #6203
         ASSERT_EQUALS("reinterpret_castreinterpret_castptr(123&(",
                       testAst(";reinterpret_cast<void*>(reinterpret_cast<unsigned>(ptr) & 123);")); // #7253
+        ASSERT_EQUALS("bcd.(=", testAst(";a<int> && b = c->d();"));
 
         // This two unit tests were added to avoid a crash. The actual correct AST result for non-executable code has not been determined so far.
         ASSERT_EQUALS("Cpublica::b:::", testAst("class C : public ::a::b<bool> { };"));
@@ -8186,6 +8284,12 @@ private:
         ASSERT_EQUALS("x{([= 0return", testAst("x = [](){return 0; };"));
 
         ASSERT_EQUALS("ab{[(= cd=", testAst("a = b([&]{c=d;});"));
+    }
+
+    void astcase() {
+        ASSERT_EQUALS("0case", testAst("case 0:"));
+        ASSERT_EQUALS("12+case", testAst("case 1+2:"));
+        ASSERT_EQUALS("xyz:?case", testAst("case (x?y:z):"));
     }
 
     void compileLimits() {

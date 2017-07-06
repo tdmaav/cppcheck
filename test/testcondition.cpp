@@ -16,11 +16,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "tokenize.h"
 #include "checkcondition.h"
+#include "library.h"
+#include "settings.h"
 #include "testsuite.h"
-#include <tinyxml2.h>
+#include "tokenize.h"
 
+#include <simplecpp.h>
+#include <tinyxml2.h>
+#include <map>
+#include <vector>
 
 class TestCondition : public TestFixture {
 public:
@@ -92,12 +97,24 @@ private:
 
         settings0.inconclusive = inconclusive;
 
-        CheckCondition checkCondition;
-
-        // Tokenize..
-        Tokenizer tokenizer(&settings0, this);
+        // Raw tokens..
+        std::vector<std::string> files;
+        files.push_back(filename);
         std::istringstream istr(code);
-        tokenizer.tokenize(istr, filename);
+        const simplecpp::TokenList tokens1(istr, files, files[0]);
+
+        // Preprocess..
+        simplecpp::TokenList tokens2(files);
+        std::map<std::string, simplecpp::TokenList*> filedata;
+        simplecpp::preprocess(tokens2, tokens1, files, filedata, simplecpp::DUI());
+
+        // Tokenizer..
+        Tokenizer tokenizer(&settings0, this);
+        tokenizer.createTokens(&tokens2);
+        tokenizer.simplifyTokens1("");
+
+        // Run checks..
+        CheckCondition checkCondition;
         checkCondition.runChecks(&tokenizer, &settings0, this);
         tokenizer.simplifyTokenList2();
         checkCondition.runSimplifiedChecks(&tokenizer, &settings0, this);
@@ -1033,8 +1050,9 @@ private:
     }
 
     void incorrectLogicOperator4() {
-        check("void f(int x) {\n"
-              "  if (x && x != $0) {}\n"
+        check("#define ZERO 0\n"
+              "void f(int x) {\n"
+              "  if (x && x != ZERO) {}\n"
               "}");
         ASSERT_EQUALS("", errout.str());
     }
@@ -1583,7 +1601,7 @@ private:
               "    if (!tok->next()->function() || \n"
               "        (tok->next()->function() && tok->next()->function()->isConstructor()));\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant condition: tok.next().function(). '!A || (A && B)' is equivalent to '!A || B'\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant condition: tok->next()->function(). '!A || (A && B)' is equivalent to '!A || B'\n", errout.str());
 
         check("void f() {\n"
               "    if (!tok->next()->function() || \n"
@@ -1601,7 +1619,7 @@ private:
               "    if (!tok->next(1)->function(1) || \n"
               "        (tok->next(1)->function(1) && tok->next(1)->function(1)->isConstructor()));\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant condition: tok.next(1).function(1). '!A || (A && B)' is equivalent to '!A || B'\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2]: (style) Redundant condition: tok->next(1)->function(1). '!A || (A && B)' is equivalent to '!A || B'\n", errout.str());
 
         check("void f() {\n"
               "    if (!tok->next()->function(1) || \n"
@@ -1791,24 +1809,39 @@ private:
                       errout.str());
 
         // Avoid FP when condition comes from macro
-        check("void f() {\n"
+        check("#define NOT !\n"
+              "void f() {\n"
               "  int x = 0;\n"
               "  if (a) { return; }\n" // <- this is just here to fool simplifyKnownVariabels
-              "  if ($!x) {}\n"
+              "  if (NOT x) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("#define M  x != 0\n"
+              "void f() {\n"
+              "  int x = 0;\n"
+              "  if (a) { return; }\n" // <- this is just here to fool simplifyKnownVariabels
+              "  if (M) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("#define IF(X)  if (X && x())\n"
+              "void f() {\n"
+              "  IF(1) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        // Avoid FP for sizeof condition
+        check("void f() {\n"
+              "  if (sizeof(char) != 123) {}\n"
               "}");
         ASSERT_EQUALS("", errout.str());
 
         check("void f() {\n"
-              "  int x = 0;\n"
-              "  if (a) { return; }\n" // <- this is just here to fool simplifyKnownVariabels
-              "  if ($x != $0) {}\n"
+              "  int x = 123;\n"
+              "  if (sizeof(char) != x) {}\n"
               "}");
-        ASSERT_EQUALS("", errout.str());
-
-        check("void f() {\n"
-              "  $if $( 1 $&& $x()) {}\n"
-              "}");
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS("[test.cpp:3]: (style) Condition 'sizeof(char)!=x' is always true\n", errout.str());
 
         // Don't warn in assertions. Condition is often 'always true' by intention.
         // If platform,defines,etc cause an 'always false' assertion then that is not very dangerous neither

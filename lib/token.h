@@ -21,21 +21,23 @@
 #define tokenH
 //---------------------------------------------------------------------------
 
+#include "config.h"
+#include "mathlib.h"
+#include "valueflow.h"
+
+#include <cstddef>
 #include <list>
+#include <ostream>
 #include <string>
 #include <vector>
-#include <ostream>
-#include "config.h"
-#include "valueflow.h"
-#include "mathlib.h"
 
-class Scope;
-class Type;
-class Function;
-class Variable;
-class ValueType;
-class Settings;
 class Enumerator;
+class Function;
+class Scope;
+class Settings;
+class Type;
+class ValueType;
+class Variable;
 
 /// @addtogroup Core
 /// @{
@@ -45,7 +47,7 @@ class Enumerator;
  *
  * Tokens are stored as strings. The "if", "while", etc are stored in plain text.
  * The reason the Token class is needed (instead of using the string class) is that some extra functionality is also needed for tokens:
- *  - location of the token is stored (linenr, fileIndex)
+ *  - location of the token is stored (fileIndex, linenr, column)
  *  - functions for classifying the token (isName, isNumber, isBoolean, isStandardType)
  *
  * The Token class also has other functions for management of token list, matching tokens, etc.
@@ -435,7 +437,7 @@ public:
      * string, return value is 0. If needle was not found, return
      * value is -1.
      *
-     * @param needle Current token
+     * @param tok Current token (needle)
      * @param haystack e.g. "one|two" or "|one|two"
      * @param varid optional varid of token
      * @return 1 if needle is found from the haystack
@@ -444,6 +446,13 @@ public:
      */
     static int multiCompare(const Token *tok, const char *haystack, unsigned int varid);
 
+    unsigned int fileIndex() const {
+        return _fileIndex;
+    }
+    void fileIndex(unsigned int indexOfFile) {
+        _fileIndex = indexOfFile;
+    }
+
     unsigned int linenr() const {
         return _linenr;
     }
@@ -451,11 +460,11 @@ public:
         _linenr = lineNumber;
     }
 
-    unsigned int fileIndex() const {
-        return _fileIndex;
+    unsigned int col() const {
+        return _col;
     }
-    void fileIndex(unsigned int indexOfFile) {
-        _fileIndex = indexOfFile;
+    void col(unsigned int c) {
+        _col = c;
     }
 
     Token *next() const {
@@ -844,6 +853,7 @@ private:
     unsigned int _varId;
     unsigned int _fileIndex;
     unsigned int _linenr;
+    unsigned int _col;
 
     /**
      * A value from 0-100 that provides a rough idea about where in the token
@@ -883,7 +893,7 @@ private:
      * @return true if flag set or false in flag not set
      */
     bool getFlag(unsigned int flag_) const {
-        return bool((_flags & flag_) != 0);
+        return ((_flags & flag_) != 0);
     }
 
     /**

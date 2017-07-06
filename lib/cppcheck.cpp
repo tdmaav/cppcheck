@@ -17,22 +17,28 @@
  */
 #include "cppcheck.h"
 
-#include "preprocessor.h" // Preprocessor
-#include "simplecpp.h"
-#include "tokenize.h" // Tokenizer
-
 #include "check.h"
-#include "path.h"
-
 #include "checkunusedfunctions.h"
+#include "library.h"
+#include "mathlib.h"
+#include "path.h"
+#include "platform.h"
+#include "preprocessor.h" // Preprocessor
+#include "suppressions.h"
 #include "timer.h"
+#include "token.h"
+#include "tokenize.h" // Tokenizer
+#include "tokenlist.h"
 #include "version.h"
 
-#include <algorithm>
-#include <fstream>
-#include <sstream>
-#include <stdexcept>
+#include <simplecpp.h>
 #include <tinyxml2.h>
+#include <algorithm>
+#include <cstring>
+#include <new>
+#include <set>
+#include <stdexcept>
+#include <vector>
 
 #ifdef HAVE_RULES
 #define PCRE_STATIC
@@ -74,13 +80,13 @@ const char * CppCheck::extraVersion()
 unsigned int CppCheck::check(const std::string &path)
 {
     std::ifstream fin(path.c_str());
-    return processFile(path, emptyString, fin);
+    return processFile(Path::simplifyPath(path), emptyString, fin);
 }
 
 unsigned int CppCheck::check(const std::string &path, const std::string &content)
 {
     std::istringstream iss(content);
-    return processFile(path, emptyString, iss);
+    return processFile(Path::simplifyPath(path), emptyString, iss);
 }
 
 unsigned int CppCheck::check(const ImportProject::FileSettings &fs)
@@ -94,7 +100,7 @@ unsigned int CppCheck::check(const ImportProject::FileSettings &fs)
         temp._settings.platform(fs.platformType);
     }
     std::ifstream fin(fs.filename.c_str());
-    return temp.processFile(fs.filename, fs.cfg, fin);
+    return temp.processFile(Path::simplifyPath(fs.filename), fs.cfg, fin);
 }
 
 unsigned int CppCheck::processFile(const std::string& filename, const std::string &cfgname, std::istream& fileStream)
@@ -123,6 +129,11 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
         }
     }
 
+    if (plistFile.is_open()) {
+        plistFile << ErrorLogger::plistFooter();
+        plistFile.close();
+    }
+
     CheckUnusedFunctions checkUnusedFunctions(0,0,0);
 
     bool internalErrorFound(false);
@@ -133,7 +144,37 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
         simplecpp::OutputList outputList;
         std::vector<std::string> files;
         simplecpp::TokenList tokens1(fileStream, files, filename, &outputList);
+
+        // If there is a syntax error, report it and stop
+        for (simplecpp::OutputList::const_iterator it = outputList.begin(); it != outputList.end(); ++it) {
+            if (it->type != simplecpp::Output::SYNTAX_ERROR)
+                continue;
+            const ErrorLogger::ErrorMessage::FileLocation loc1(it->location.file(), it->location.line);
+            std::list<ErrorLogger::ErrorMessage::FileLocation> callstack;
+            callstack.push_back(loc1);
+
+            ErrorLogger::ErrorMessage errmsg(callstack,
+                                             "",
+                                             Severity::error,
+                                             it->msg,
+                                             "syntaxError",
+                                             false);
+            _errorLogger.reportErr(errmsg);
+            return 1;
+        }
+
         preprocessor.loadFiles(tokens1, files);
+
+        if (!_settings.plistOutput.empty()) {
+            std::string filename2;
+            if (filename.find('/') != std::string::npos)
+                filename2 = filename.substr(filename.rfind('/') + 1);
+            else
+                filename2 = filename;
+            filename2 = _settings.plistOutput + filename2.substr(0, filename2.find('.')) + ".plist";
+            plistFile.open(filename2);
+            plistFile << ErrorLogger::plistHeader(version(), files);
+        }
 
         // write dump file xml prolog
         std::ofstream fdump;
@@ -196,6 +237,7 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
 
         // Get directives
         preprocessor.setDirectives(tokens1);
+        preprocessor.simplifyPragmaAsm(&tokens1);
 
         preprocessor.setPlatformInfo(&tokens1);
 
@@ -267,14 +309,11 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
                 cfg = _settings.userDefines + cfg;
             }
 
-            std::string codeWithoutCfg;
-            {
-                Timer t("Preprocessor::getcode", _settings.showtime, &S_timerResults);
-                codeWithoutCfg = preprocessor.getcode(tokens1, cfg, files, true);
-            }
-            codeWithoutCfg += _settings.append();
-
             if (_settings.preprocessOnly) {
+                Timer t("Preprocessor::getcode", _settings.showtime, &S_timerResults);
+                std::string codeWithoutCfg = preprocessor.getcode(tokens1, cfg, files, true);
+                t.Stop();
+
                 if (codeWithoutCfg.compare(0,5,"#file") == 0)
                     codeWithoutCfg.insert(0U, "//");
                 std::string::size_type pos = 0;
@@ -295,12 +334,14 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
                 _tokenizer.setTimerResults(&S_timerResults);
 
             try {
+                bool result;
+
                 // Create tokens, skip rest of iteration if failed
-                std::istringstream istr(codeWithoutCfg);
                 Timer timer("Tokenizer::createTokens", _settings.showtime, &S_timerResults);
-                bool result = _tokenizer.createTokens(istr, filename);
+                const simplecpp::TokenList &tokensP = preprocessor.preprocess(tokens1, cfg, files);
+                _tokenizer.createTokens(&tokensP);
                 timer.Stop();
-                if (!result)
+                if (tokensP.empty())
                     continue;
 
                 // skip rest of iteration if just checking configuration
@@ -429,7 +470,6 @@ void CppCheck::internalError(const std::string &filename, const std::string &msg
                                          false);
 
         _errorLogger.reportErr(errmsg);
-
     } else {
         // Report on stdout
         _errorLogger.reportOut(fullmsg);
@@ -693,6 +733,9 @@ void CppCheck::reportErr(const ErrorLogger::ErrorMessage &msg)
 
     _errorLogger.reportErr(msg);
     analyzerInformation.reportErr(msg, _settings.verbose);
+    if (!_settings.plistOutput.empty() && plistFile.is_open()) {
+        plistFile << ErrorLogger::plistData(msg);
+    }
 }
 
 void CppCheck::reportOut(const std::string &outmsg)

@@ -24,8 +24,12 @@
 #include "config.h"
 #include "suppressions.h"
 
+#include <cstddef>
+#include <fstream>
 #include <list>
 #include <string>
+#include <utility>
+#include <vector>
 
 /**
  * CWE id (Common Weakness Enumeration)
@@ -40,6 +44,7 @@ struct CWE {
 
 class Token;
 class TokenList;
+
 namespace tinyxml2 {
     class XMLElement;
 }
@@ -158,11 +163,17 @@ public:
     }
 };
 
+
+typedef std::pair<const Token *, std::string> ErrorPathItem;
+typedef std::list<ErrorPathItem> ErrorPath;
+
 /**
  * @brief This is an interface, which the class responsible of error logging
  * should implement.
  */
 class CPPCHECKLIB ErrorLogger {
+protected:
+    std::ofstream plistFile;
 public:
 
     /**
@@ -178,14 +189,19 @@ public:
         class CPPCHECKLIB FileLocation {
         public:
             FileLocation()
-                : line(0) {
+                : fileIndex(0), line(0), col(0) {
             }
 
             FileLocation(const std::string &file, unsigned int aline)
-                : line(aline), _file(file) {
+                : fileIndex(0), line(aline), col(0), _file(file) {
             }
 
-            FileLocation(const Token* tok, const TokenList* list);
+            FileLocation(const std::string &file, const std::string &info, unsigned int aline)
+                : fileIndex(0), line(aline), col(0), _file(file), _info(info) {
+            }
+
+            FileLocation(const Token* tok, const TokenList* tokenList);
+            FileLocation(const Token* tok, const std::string &info, const TokenList* tokenList);
 
             /**
              * Return the filename.
@@ -205,16 +221,27 @@ public:
              */
             std::string stringify() const;
 
+            unsigned int fileIndex;
             unsigned int line;
+            unsigned int col;
+
+            std::string getinfo() const {
+                return _info;
+            }
+            void setinfo(const std::string &i) {
+                _info = i;
+            }
 
         private:
             std::string _file;
+            std::string _info;
         };
 
         ErrorMessage(const std::list<FileLocation> &callStack, const std::string& file1, Severity::SeverityType severity, const std::string &msg, const std::string &id, bool inconclusive);
         ErrorMessage(const std::list<FileLocation> &callStack, const std::string& file1, Severity::SeverityType severity, const std::string &msg, const std::string &id, const CWE &cwe, bool inconclusive);
         ErrorMessage(const std::list<const Token*>& callstack, const TokenList* list, Severity::SeverityType severity, const std::string& id, const std::string& msg, bool inconclusive);
         ErrorMessage(const std::list<const Token*>& callstack, const TokenList* list, Severity::SeverityType severity, const std::string& id, const std::string& msg, const CWE &cwe, bool inconclusive);
+        ErrorMessage(const ErrorPath &errorPath, const TokenList *tokenList, Severity::SeverityType severity, const char id[], const std::string &msg, const CWE &cwe, bool inconclusive);
         ErrorMessage();
         explicit ErrorMessage(const tinyxml2::XMLElement * const errmsg);
 
@@ -283,7 +310,12 @@ public:
     };
 
     ErrorLogger() { }
-    virtual ~ErrorLogger() { }
+    virtual ~ErrorLogger() {
+        if (plistFile.is_open()) {
+            plistFile << ErrorLogger::plistFooter();
+            plistFile.close();
+        }
+    }
 
     /**
      * Information about progress is directed here.
@@ -335,6 +367,14 @@ public:
      * @return The output string containing XML entities
      */
     static std::string toxml(const std::string &str);
+
+    static std::string plistHeader(const std::string &version, const std::vector<std::string> &files);
+    static std::string plistData(const ErrorLogger::ErrorMessage &msg);
+    static const char *plistFooter() {
+        return " </array>\r\n"
+               "</dict>\r\n"
+               "</plist>";
+    }
 };
 
 /// @}

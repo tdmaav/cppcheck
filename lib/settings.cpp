@@ -17,11 +17,8 @@
  */
 
 #include "settings.h"
-#include "preprocessor.h"       // Preprocessor
-#include "utils.h"
 
-#include <fstream>
-#include <set>
+#include "valueflow.h"
 
 bool Settings::_terminated;
 
@@ -130,21 +127,11 @@ bool Settings::isEnabled(Severity::SeverityType severity) const
     }
 }
 
-bool Settings::append(const std::string &filename)
+bool Settings::isEnabled(const ValueFlow::Value *value, bool inconclusiveCheck) const
 {
-    std::ifstream fin(filename.c_str());
-    if (!fin.is_open()) {
+    if (!isEnabled(Settings::WARNING) && (value->condition || value->defaultArg))
         return false;
-    }
-    std::string line;
-    while (std::getline(fin, line)) {
-        _append += line + "\n";
-    }
-    Preprocessor::preprocessWhitespaces(_append);
+    if (!inconclusive && (inconclusiveCheck || value->inconclusive))
+        return false;
     return true;
-}
-
-const std::string &Settings::append() const
-{
-    return _append;
 }

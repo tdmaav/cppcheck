@@ -16,9 +16,12 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "tokenize.h"
+
 #include "checkleakautovar.h"
+#include "library.h"
+#include "settings.h"
 #include "testsuite.h"
+#include "tokenize.h"
 
 
 class TestLeakAutoVar : public TestFixture {
@@ -86,6 +89,7 @@ private:
         TEST_CASE(ifelse6); // #3370
         TEST_CASE(ifelse7); // #5576 - if (fd < 0)
         TEST_CASE(ifelse8); // #5747 - if (fd == -1)
+        TEST_CASE(ifelse9); // #5273 - if (X(p==NULL, 0))
 
         // switch
         TEST_CASE(switch1);
@@ -309,6 +313,18 @@ private:
               "  if (!p) free(p);\n"
               "  return p;\n"
               "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(char *p) {\n"
+              "  if (!p) delete p;\n"
+              "  return p;\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f(char *p) {\n"
+              "  if (!p) delete [] p;\n"
+              "  return p;\n"
+              "}", true);
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -1009,6 +1025,16 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void ifelse9() { // #5273
+        check("void f() {\n"
+              "    char *p = malloc(100);\n"
+              "    if (dostuff(p==NULL,0))\n"
+              "        return;\n"
+              "    free(p);\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
     void switch1() {
         check("void f() {\n"
               "    char *p = 0;\n"
@@ -1054,6 +1080,11 @@ private:
               "    free(cPtr);\n"
               "}", true);
         ASSERT_EQUALS("[test.cpp:3]: (error) Mismatching allocation and deallocation: cPtr\n", errout.str());
+
+        check("void f() {\n"
+              "    char *cPtr = new (buf) char[100];\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
     }
 
     void return1() {

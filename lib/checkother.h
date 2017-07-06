@@ -22,10 +22,18 @@
 #define checkotherH
 //---------------------------------------------------------------------------
 
-#include "config.h"
 #include "check.h"
+#include "config.h"
+#include "valueflow.h"
 
-class Function;
+#include <cstddef>
+#include <string>
+#include <vector>
+
+class ErrorLogger;
+class Settings;
+class Token;
+class Tokenizer;
 class Variable;
 
 /// @addtogroup Checks
@@ -218,8 +226,7 @@ private:
     void unknownSignCharArrayIndexError(const Token *tok);
     void charBitOpError(const Token *tok);
     void variableScopeError(const Token *tok, const std::string &varname);
-    void zerodivError(const Token *tok, bool inconclusive);
-    void zerodivcondError(const Token *tokcond, const Token *tokdiv, bool inconclusive);
+    void zerodivError(const Token *tok, const ValueFlow::Value *value);
     void nanInArithmeticExpressionError(const Token *tok);
     void redundantAssignmentError(const Token *tok1, const Token* tok2, const std::string& var, bool inconclusive);
     void redundantAssignmentInSwitchError(const Token *tok1, const Token *tok2, const std::string &var);
@@ -258,8 +265,7 @@ private:
         CheckOther c(nullptr, settings, errorLogger);
 
         // error
-        c.zerodivError(nullptr,  false);
-        c.zerodivcondError(nullptr, 0,false);
+        c.zerodivError(nullptr, nullptr);
         c.misusedScopeObjectError(nullptr, "varname");
         c.invalidPointerCastError(nullptr,  "float", "double", false);
         c.negativeBitwiseShiftError(nullptr, 1);

@@ -21,9 +21,10 @@
 #define mathlibH
 //---------------------------------------------------------------------------
 
-#include <string>
-#include <sstream>
 #include "config.h"
+
+#include <sstream>
+#include <string>
 
 /// @addtogroup Core
 /// @{
@@ -89,6 +90,8 @@ public:
     static bool isOct(const std::string& str);
     static bool isBin(const std::string& str);
 
+    static std::string getSuffix(const std::string& value);
+    static bool isValidIntegerSuffix(const std::string& str);
     static bool isValidIntegerSuffix(std::string::const_iterator it, std::string::const_iterator end);
 
     static std::string add(const std::string & first, const std::string & second);

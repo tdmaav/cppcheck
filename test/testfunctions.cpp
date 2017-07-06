@@ -16,10 +16,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include "tokenize.h"
-#include "checkfunctions.h"
-#include "testsuite.h"
 #include <tinyxml2.h>
+
+#include "checkfunctions.h"
+#include "library.h"
+#include "settings.h"
+#include "standards.h"
+#include "testsuite.h"
+#include "tokenize.h"
 
 
 class TestFunctions : public TestFixture {
@@ -361,7 +365,7 @@ private:
         // Passed as function argument
         check("int f()\n"
               "{\n"
-              "    printf(\"Magic guess: %d\n\", getpwent());\n"
+              "    printf(\"Magic guess: %d\", getpwent());\n"
               "}");
         ASSERT_EQUALS("[test.cpp:3]: (portability) Non reentrant function 'getpwent' called. For threadsafe applications it is recommended to use the reentrant replacement function 'getpwent_r'.\n", errout.str());
 

@@ -16,10 +16,14 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include "checkother.h"
+#include "settings.h"
 #include "testsuite.h"
 #include "tokenize.h"
-#include "checkother.h"
 
+#include <simplecpp.h>
+#include <map>
+#include <vector>
 
 class TestIncompleteStatement : public TestFixture {
 public:
@@ -33,10 +37,22 @@ private:
         // Clear the error buffer..
         errout.str("");
 
+
+        // Raw tokens..
+        std::vector<std::string> files;
+        files.push_back("test.cpp");
+        std::istringstream istr(code);
+        const simplecpp::TokenList tokens1(istr, files, files[0]);
+
+        // Preprocess..
+        simplecpp::TokenList tokens2(files);
+        std::map<std::string, simplecpp::TokenList*> filedata;
+        simplecpp::preprocess(tokens2, tokens1, files, filedata, simplecpp::DUI());
+
         // Tokenize..
         Tokenizer tokenizer(&settings, this);
-        std::istringstream istr(code);
-        tokenizer.tokenize(istr, "test.cpp");
+        tokenizer.createTokens(&tokens2);
+        tokenizer.simplifyTokens1("");
         tokenizer.simplifyTokenList2();
 
         // Check for incomplete statements..
@@ -148,7 +164,8 @@ private:
         check("void f() { (void*)0; }");
         ASSERT_EQUALS("", errout.str());
 
-        check("void f() { $0; }");
+        check("#define X  0\n"
+              "void f() { X; }");
         ASSERT_EQUALS("", errout.str());
     }
 

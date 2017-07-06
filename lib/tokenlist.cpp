@@ -18,17 +18,17 @@
 
 //---------------------------------------------------------------------------
 #include "tokenlist.h"
-#include "token.h"
+
+#include "errorlogger.h"
 #include "mathlib.h"
 #include "path.h"
-#include "preprocessor.h"
 #include "settings.h"
-#include "errorlogger.h"
-#include "utils.h"
+#include "token.h"
 
-#include <cstring>
-#include <sstream>
+#include <simplecpp.h>
 #include <cctype>
+#include <cstring>
+#include <set>
 #include <stack>
 
 // How many compileExpression recursions are allowed?
@@ -129,12 +129,15 @@ void TokenList::addtoken(std::string str, const unsigned int lineno, const unsig
     }
 
     // Replace hexadecimal value with decimal
-    if (MathLib::isIntHex(str) || MathLib::isOct(str) || MathLib::isBin(str)) {
+    const bool isHex = MathLib::isIntHex(str) ;
+    if (isHex || MathLib::isOct(str) || MathLib::isBin(str)) {
         // TODO: It would be better if TokenList didn't simplify hexadecimal numbers
         std::string suffix;
-        if (str.compare(0,2,"0x") == 0 &&
+        if (isHex &&
             str.size() == (2 + _settings->int_bit / 4) &&
-            (str[2] >= '8'))  // includes A-F and a-f
+            (str[2] >= '8') &&  // includes A-F and a-f
+            MathLib::getSuffix(str).empty()
+           )
             suffix = "U";
         str = MathLib::value(str).str() + suffix;
     }
@@ -210,198 +213,78 @@ bool TokenList::createTokens(std::istream &code, const std::string& file0)
 {
     appendFileIfNew(file0);
 
-    // line number in parsed code
-    unsigned int lineno = 1;
+    simplecpp::OutputList outputList;
+    simplecpp::TokenList tokens(code, _files, file0, &outputList);
 
-    // The current token being parsed
-    std::string CurrentToken;
+    createTokens(&tokens);
 
-    // lineNumbers holds line numbers for files in fileIndexes
-    // every time an include file is completely parsed, last item in the vector
-    // is removed and lineno is set to point to that value.
-    std::stack<unsigned int> lineNumbers;
+    return outputList.empty();
+}
 
-    // fileIndexes holds index for _files vector about currently parsed files
-    // every time an include file is completely parsed, last item in the vector
-    // is removed and FileIndex is set to point to that value.
-    std::stack<unsigned int> fileIndexes;
+//---------------------------------------------------------------------------
 
-    // FileIndex. What file in the _files vector is read now?
-    unsigned int FileIndex = 0;
+void TokenList::createTokens(const simplecpp::TokenList *tokenList)
+{
+    if (tokenList->cfront())
+        _files = tokenList->cfront()->location.files;
+    else
+        _files.clear();
 
-    bool expandedMacro = false;
-
-    // Read one byte at a time from code and create tokens
-    for (char ch = (char)code.get(); code.good() && ch; ch = (char)code.get()) {
-        if (ch == Preprocessor::macroChar) {
-            while (code.peek() == Preprocessor::macroChar)
-                code.get();
-            if (!CurrentToken.empty()) {
-                addtoken(CurrentToken, lineno, FileIndex, true);
-                _back->isExpandedMacro(expandedMacro);
-                CurrentToken.clear();
-            }
-            expandedMacro = true;
-            continue;
-        }
-
-        // char/string..
-        // multiline strings are not handled. The preprocessor should handle that for us.
-        else if (ch == '\'' || ch == '\"') {
-            std::string line;
-
-            // read char
-            bool special = false;
-            char c = ch;
-            do {
-                // Append token..
-                line += c;
-
-                // Special sequence '\.'
-                if (special)
-                    special = false;
-                else
-                    special = (c == '\\');
-
-                // Get next character
-                c = (char)code.get();
-            } while (code.good() && (special || c != ch));
-            line += ch;
-
-            // Handle #file "file.h"
-            if (CurrentToken == "#file") {
-                // Extract the filename
-                line = line.substr(1, line.length() - 2);
-
-                ++lineno;
-                fileIndexes.push(FileIndex);
-                FileIndex = appendFileIfNew(line);
-                lineNumbers.push(lineno);
-                lineno = 0;
-            } else {
-                // Add previous token
-                addtoken(CurrentToken, lineno, FileIndex);
-                if (!CurrentToken.empty())
-                    _back->isExpandedMacro(expandedMacro);
-
-                // Add content of the string
-                addtoken(line, lineno, FileIndex);
-                if (!line.empty())
-                    _back->isExpandedMacro(expandedMacro);
-            }
-
-            CurrentToken.clear();
-
-            continue;
-        }
-
-        if (ch == '.' &&
-            !CurrentToken.empty() &&
-            std::isdigit((unsigned char)CurrentToken[0])) {
-            // Don't separate doubles "5.4"
-        } else if (std::strchr("+-", ch) &&
-                   CurrentToken.length() > 0 &&
-                   std::isdigit((unsigned char)CurrentToken[0]) &&
-                   (endsWith(CurrentToken,'e') ||
-                    endsWith(CurrentToken,'E')) &&
-                   !MathLib::isIntHex(CurrentToken)) {
-            // Don't separate doubles "4.2e+10"
-        } else if (CurrentToken.empty() && ch == '.' && std::isdigit((unsigned char)code.peek())) {
-            // tokenize .125 into 0.125
-            CurrentToken = "0";
-        } else if (std::strchr("+-*/%&|^?!=<>[](){};:,.~\n ", ch)) {
-            if (CurrentToken == "#file") {
-                // Handle this where strings are handled
-                continue;
-            } else if (CurrentToken == "#line") {
-                // Read to end of line
-                std::string line;
-
-                std::getline(code, line);
-
-                unsigned int row=0;
-                std::istringstream fiss(line);
-                if (fiss >> row) {
-                    // Update the current line number
-                    lineno = row;
-
-                    std::string line2;
-                    if (std::getline(fiss, line2) && line2.length() > 4U) {
-                        // _"file_name" -> file_name
-                        line2 = line2.substr(2, line2.length() - 3);
-
-                        // Update the current file
-                        FileIndex = appendFileIfNew(line2);
-                    }
-                } else
-                    ++lineno;
-                CurrentToken.clear();
-                continue;
-            } else if (CurrentToken == "#endfile") {
-                if (lineNumbers.empty() || fileIndexes.empty()) { // error
-                    deallocateTokens();
-                    return false;
-                }
-
-                lineno = lineNumbers.top();
-                lineNumbers.pop();
-                FileIndex = fileIndexes.top();
-                fileIndexes.pop();
-                CurrentToken.clear();
-                continue;
-            }
-
-            addtoken(CurrentToken, lineno, FileIndex, true);
-            if (!CurrentToken.empty()) {
-                _back->isExpandedMacro(expandedMacro);
-                expandedMacro = false;
-                CurrentToken.clear();
-            }
-
-            if (ch == '\n') {
-                if (_settings->terminated())
-                    return false;
-
-                ++lineno;
-                continue;
-            } else if (ch == ' ') {
-                continue;
-            }
-
-            CurrentToken += ch;
-            // Add "++", "--", ">>" or ... token
-            if (std::strchr("+-<>=:&|", ch) && (code.peek() == ch))
-                CurrentToken += (char)code.get();
-            addtoken(CurrentToken, lineno, FileIndex);
-            _back->isExpandedMacro(expandedMacro);
-            CurrentToken.clear();
-            expandedMacro = false;
-            continue;
-        }
-
-        CurrentToken += ch;
+    _isC = _isCPP = false;
+    if (!_files.empty()) {
+        _isC = Path::isC(getSourceFilePath());
+        _isCPP = Path::isCPP(getSourceFilePath());
     }
-    addtoken(CurrentToken, lineno, FileIndex, true);
-    if (!CurrentToken.empty())
-        _back->isExpandedMacro(expandedMacro);
+    if (_settings && _settings->enforcedLang != Settings::None) {
+        _isC = (_settings->enforcedLang == Settings::C);
+        _isCPP = (_settings->enforcedLang == Settings::CPP);
+    }
 
-    // Split up ++ and --..
-    for (Token *tok = _front; tok; tok = tok->next()) {
-        if (!Token::Match(tok, "++|--"))
-            continue;
-        if (Token::Match(tok->previous(), "%num% ++|--") ||
-            Token::Match(tok, "++|-- %num%")) {
-            tok->str(tok->str()[0]);
-            tok->insertToken(tok->str());
+    for (const simplecpp::Token *tok = tokenList->cfront(); tok; tok = tok->next) {
+
+        std::string str = tok->str;
+
+        // Replace hexadecimal value with decimal
+        // TODO: Remove this
+        const bool isHex = MathLib::isIntHex(str) ;
+        if (isHex || MathLib::isOct(str) || MathLib::isBin(str)) {
+            // TODO: It would be better if TokenList didn't simplify hexadecimal numbers
+            std::string suffix;
+            if (isHex &&
+                str.size() == (2 + _settings->int_bit / 4) &&
+                (str[2] >= '8') &&  // includes A-F and a-f
+                MathLib::getSuffix(str).empty()
+               )
+                suffix = "U";
+            str = MathLib::value(str).str() + suffix;
         }
+
+        // Float literal
+        if (str.size() > 1 && str[0] == '.' && std::isdigit(str[1]))
+            str = '0' + str;
+
+        if (_back) {
+            _back->insertToken(str);
+        } else {
+            _front = new Token(&_back);
+            _back = _front;
+            _back->str(str);
+        }
+
+        if (isCPP() && _back->str() == "delete")
+            _back->isKeyword(true);
+        _back->fileIndex(tok->location.fileIndex);
+        _back->linenr(tok->location.line);
+        _back->col(tok->location.col);
+        _back->isExpandedMacro(!tok->macro.empty());
+    }
+
+    if (_settings && _settings->relativePaths) {
+        for (std::size_t i = 0; i < _files.size(); i++)
+            _files[i] = Path::getRelativePath(_files[i], _settings->basePaths);
     }
 
     Token::assignProgressValues(_front);
-
-    for (std::size_t i = 1; i < _files.size(); i++)
-        _files[i] = Path::getRelativePath(_files[i], _settings->basePaths);
-
-    return true;
 }
 
 //---------------------------------------------------------------------------
@@ -438,7 +321,8 @@ struct AST_state {
     unsigned int inArrayAssignment;
     bool cpp;
     unsigned int assign;
-    explicit AST_state(bool cpp_) : depth(0), inArrayAssignment(0), cpp(cpp_), assign(0U) {}
+    bool inCase;
+    explicit AST_state(bool cpp_) : depth(0), inArrayAssignment(0), cpp(cpp_), assign(0U), inCase(false) {}
 };
 
 static Token * skipDecl(Token *tok)
@@ -498,24 +382,42 @@ static bool iscast(const Token *tok)
     return false;
 }
 
+// int(1), int*(2), ..
+static Token * findCppTypeInitPar(Token *tok)
+{
+    if (!tok || !Token::Match(tok->previous(), "[,()] %name%"))
+        return nullptr;
+    while (Token::Match(tok, "%name%|::|<")) {
+        if (tok->str() == "<") {
+            tok = tok->link();
+            if (!tok)
+                return nullptr;
+        }
+        tok = tok->next();
+    }
+    if (!Token::Match(tok, "[*&]"))
+        return nullptr;
+    while (Token::Match(tok, "[*&]"))
+        tok = tok->next();
+    return (tok && tok->str() == "(") ? tok : nullptr;
+}
+
 // X{} X<Y>{} etc
 static bool iscpp11init(const Token * const tok)
 {
-    const Token *nameToken = nullptr;
-    if (tok->isName())
-        nameToken = tok;
-    else if (Token::Match(tok->previous(), "%name% {"))
-        nameToken = tok->previous();
-    else if (tok->linkAt(-1) && Token::simpleMatch(tok->previous(), "> {") && Token::Match(tok->linkAt(-1)->previous(),"%name% <"))
-        nameToken = tok->linkAt(-1)->previous();
+    const Token *nameToken = tok;
+    while (nameToken && nameToken->str() == "{") {
+        nameToken = nameToken->previous();
+        if (nameToken && nameToken->str() == "," && Token::simpleMatch(nameToken->previous(), "} ,"))
+            nameToken = nameToken->linkAt(-1);
+    }
     if (!nameToken)
         return false;
-
-    if (Token::Match(nameToken, "%name% { ["))
-        return false;
+    if (nameToken->str() == ">" && nameToken->link())
+        nameToken = nameToken->link()->previous();
 
     const Token *endtok = nullptr;
-    if (Token::Match(nameToken,"%name% {"))
+    if (Token::Match(nameToken, "%name% { !!["))
         endtok = nameToken->linkAt(1);
     else if (Token::Match(nameToken,"%name% <") && Token::simpleMatch(nameToken->linkAt(1),"> {"))
         endtok = nameToken->linkAt(1)->linkAt(1);
@@ -590,7 +492,7 @@ static void compileTerm(Token *&tok, AST_state& state)
         tok->astOperand1(tok->next());
         tok = tok->tokAt(2);
     }
-    if (state.inArrayAssignment && Token::Match(tok->previous(), "[{,] [ %num% ]")) {
+    if (state.inArrayAssignment && Token::Match(tok->previous(), "[{,] [ %num%|%name% ]")) {
         state.op.push(tok);
         tok->astOperand1(tok->next());
         tok = tok->tokAt(3);
@@ -600,13 +502,21 @@ static void compileTerm(Token *&tok, AST_state& state)
         do {
             tok = tok->next();
         } while (Token::Match(tok, "%name%|%str%"));
-    } else if (tok->isName() && tok->str() != "case") {
-        if (tok->str() == "return") {
+    } else if (tok->isName()) {
+        if (Token::Match(tok, "return|case")) {
+            if (tok->str() == "case")
+                state.inCase = true;
             compileUnaryOp(tok, state, compileExpression);
             state.op.pop();
+            if (state.inCase && Token::simpleMatch(tok, ": ;"))
+                tok = tok->next();
         } else if (Token::Match(tok, "sizeof !!(")) {
             compileUnaryOp(tok, state, compileExpression);
             state.op.pop();
+        } else if (state.cpp && findCppTypeInitPar(tok))  { // int(0), int*(123), ..
+            tok = findCppTypeInitPar(tok);
+            state.op.push(tok);
+            tok = tok->tokAt(2);
         } else if (state.cpp && iscpp11init(tok)) { // X{} X<Y>{} etc
             state.op.push(tok);
             tok = tok->next();
@@ -631,8 +541,14 @@ static void compileTerm(Token *&tok, AST_state& state)
             prev = prev->link()->previous();
         if (Token::simpleMatch(tok->link(),"} [")) {
             tok = tok->next();
-        } else if (tok->previous() && tok->previous()->isName()) {
-            compileBinOp(tok, state, compileExpression);
+        } else if (state.cpp && iscpp11init(tok)) {
+            if (state.op.empty() || Token::Match(tok->previous(), "[{,]"))
+                compileUnaryOp(tok, state, compileExpression);
+            else
+                compileBinOp(tok, state, compileExpression);
+            if (Token::simpleMatch(tok, "} ,")) {
+                tok = tok->next();
+            }
         } else if (!state.inArrayAssignment && !Token::simpleMatch(prev, "=")) {
             state.op.push(tok);
             tok = tok->link()->next();
@@ -737,7 +653,7 @@ static void compilePrecedence2(Token *&tok, AST_state& state)
             const std::size_t oldOpSize = state.op.size();
             compileExpression(tok, state);
             tok = tok2;
-            if ((tok->previous() && tok->previous()->isName() && (tok->strAt(-1) != "return" && (!state.cpp || !Token::Match(tok->previous(), "throw|delete"))))
+            if ((tok->previous() && tok->previous()->isName() && (!Token::Match(tok->previous(), "return|case") && (!state.cpp || !Token::Match(tok->previous(), "throw|delete"))))
                 || (tok->strAt(-1) == "]" && (!state.cpp || !Token::Match(tok->linkAt(-1)->previous(), "new|delete")))
                 || (tok->strAt(-1) == ">" && tok->linkAt(-1))
                 || (tok->strAt(-1) == ")" && !iscast(tok->linkAt(-1))) // Don't treat brackets to clarify precedence as function calls
@@ -982,6 +898,8 @@ static void compileAssignTernary(Token *&tok, AST_state& state)
             compileBinOp(tok, state, compileAssignTernary);
             state.assign = assign;
         } else if (tok->str() == ":") {
+            if (state.depth == 1U && state.inCase)
+                break;
             if (state.assign > 0U)
                 break;
             compileBinOp(tok, state, compileAssignTernary);
@@ -1044,7 +962,7 @@ static void createAstAtTokenInner(Token * const tok1, const Token *endToken, boo
                 ;
             // struct assignment
             else if (Token::simpleMatch(tok->previous(), ") {") && Token::simpleMatch(tok->linkAt(-1), "( struct"))
-                ;
+                continue;
             // Lambda function
             else if (Token::simpleMatch(tok->astParent(), "(") &&
                      Token::simpleMatch(tok->astParent()->astParent(), "[") &&
@@ -1172,7 +1090,7 @@ static Token * createAstAtToken(Token *tok, bool cpp)
     if (Token::Match(tok, "%type% <") && !Token::Match(tok->linkAt(1), "> [({]"))
         return tok->linkAt(1);
 
-    if (tok->str() == "return" || !tok->previous() || Token::Match(tok, "%name% %op%|(|[|.|::|<|?|;") || Token::Match(tok->previous(), "[;{}] %cop%|++|--|( !!{")) {
+    if (Token::Match(tok, "return|case") || !tok->previous() || Token::Match(tok, "%name% %op%|(|[|.|::|<|?|;") || Token::Match(tok->previous(), "[;{}] %cop%|++|--|( !!{")) {
         if (cpp && (Token::Match(tok->tokAt(-2), "[;{}] new|delete %name%") || Token::Match(tok->tokAt(-3), "[;{}] :: new|delete %name%")))
             tok = tok->previous();
 

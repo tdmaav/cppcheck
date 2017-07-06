@@ -47,6 +47,19 @@ public:
 };
 
 /**
+* @brief A class containing data for one error path item
+*/
+class QErrorPathItem {
+public:
+    QErrorPathItem() : line(0), col(-1) {}
+    explicit QErrorPathItem(const ErrorLogger::ErrorMessage::FileLocation &loc);
+    QString file;
+    unsigned int line;
+    int col;
+    QString info;
+};
+
+/**
 * @brief A class containing error data for one error.
 *
 * The paths are stored with internal ("/") separators. Only when we show the
@@ -57,7 +70,7 @@ public:
 class ErrorItem {
 public:
     ErrorItem();
-    explicit ErrorItem(const ErrorLine &line);
+    explicit ErrorItem(const ErrorLogger::ErrorMessage &errmsg);
 
     /**
     * @brief Convert error item to string.
@@ -65,15 +78,14 @@ public:
     */
     QString ToString() const;
 
-    QString file;
-    QStringList files;
     QString file0;
-    QList<unsigned int> lines;
     QString errorId;
     Severity::SeverityType severity;
     bool inconclusive;
     QString summary;
     QString message;
+    int cwe;
+    QList<QErrorPathItem> errorPath;
 };
 
 Q_DECLARE_METATYPE(ErrorItem);
@@ -84,8 +96,8 @@ Q_DECLARE_METATYPE(ErrorItem);
 class ErrorLine {
 public:
     QString file;
-    QString file0;
     unsigned int line;
+    QString file0;
     QString errorId;
     bool inconclusive;
     Severity::SeverityType severity;

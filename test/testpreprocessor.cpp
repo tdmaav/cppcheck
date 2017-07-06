@@ -20,19 +20,20 @@
 // The preprocessor that Cppcheck uses is a bit special. Instead of generating
 // the code for a known configuration, it generates the code for each configuration.
 
-
-#include "testsuite.h"
+#include "platform.h"
 #include "preprocessor.h"
-#include "tokenize.h"
-#include "token.h"
 #include "settings.h"
-#include "simplecpp.h"
+#include "testsuite.h"
 
+#include <simplecpp.h>
 #include <cstring>
+#include <list>
 #include <map>
-#include <string>
 #include <set>
+#include <string>
+#include <vector>
 
+class ErrorLogger;
 
 class TestPreprocessor : public TestFixture {
 public:
@@ -78,6 +79,7 @@ private:
         TEST_CASE(error4);  // #2919 - wrong filename is reported
         TEST_CASE(error5);
         TEST_CASE(error6);
+        TEST_CASE(error7);
 
         TEST_CASE(setPlatformInfo);
 
@@ -253,6 +255,7 @@ private:
         std::vector<std::string> files;
         simplecpp::TokenList tokens(istr, files, filename, &outputList);
         tokens.removeComments();
+        preprocessor0.simplifyPragmaAsm(&tokens);
         const std::set<std::string> configs(preprocessor0.getConfigs(tokens));
         preprocessor0.setDirectives(tokens);
         for (std::set<std::string>::const_iterator it = configs.begin(); it != configs.end(); ++it) {
@@ -405,6 +408,21 @@ private:
                                  "#endif\n";
         ASSERT_EQUALS("A;B\n", getConfigsStr(filedata3));
 
+    }
+
+    void error7() { // #8074
+        const char filedata[] = "#define A\n"
+                                "\n"
+                                "#if defined(B)\n"
+                                "#else\n"
+                                "#error \"1\"\n"
+                                "#endif\n"
+                                "\n"
+                                "#if defined(A)\n"
+                                "#else\n"
+                                "#error \"2\"\n"
+                                "#endif\n";
+        ASSERT_EQUALS("\nB\n", getConfigsStr(filedata));
     }
 
     void setPlatformInfo() {
@@ -1376,7 +1394,7 @@ private:
 
         // Compare results..
         ASSERT_EQUALS(1, static_cast<unsigned int>(actual.size()));
-        ASSERT_EQUALS("\nasm();\n\naaa\n\nasm();\n\nbbb", actual[""]);
+        ASSERT_EQUALS("asm ( )\n;\n\naaa\nasm ( ) ;\n\n\nbbb", actual[""]);
     }
 
     void pragma_asm_2() {
@@ -1391,7 +1409,7 @@ private:
 
         // Compare results..
         ASSERT_EQUALS(1, static_cast<unsigned int>(actual.size()));
-        ASSERT_EQUALS("\nasm();\n\nbbb", actual[""]);
+        ASSERT_EQUALS("asm ( )\n;\n\nbbb", actual[""]);
     }
 
     void endifsemicolon() {

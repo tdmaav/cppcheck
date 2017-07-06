@@ -19,19 +19,19 @@
 //---------------------------------------------------------------------------
 #include "symboldatabase.h"
 
-#include "tokenize.h"
-#include "token.h"
-#include "settings.h"
 #include "errorlogger.h"
+#include "platform.h"
+#include "settings.h"
+#include "token.h"
+#include "tokenize.h"
+#include "tokenlist.h"
 #include "utils.h"
+#include "valueflow.h"
 
-#include <string>
-#include <ostream>
+#include <algorithm>
 #include <climits>
-#include <iostream>
 #include <iomanip>
-#include <cctype>
-
+#include <iostream>
 //---------------------------------------------------------------------------
 
 SymbolDatabase::SymbolDatabase(const Tokenizer *tokenizer, const Settings *settings, ErrorLogger *errorLogger)
@@ -786,7 +786,7 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
                 const Token* tok1 = tok->next();
                 if (tok->str() == "else")
                     scopeList.push_back(Scope(this, tok, scope, Scope::eElse, tok1));
-                if (tok->str() == "do")
+                else if (tok->str() == "do")
                     scopeList.push_back(Scope(this, tok, scope, Scope::eDo, tok1));
                 else //if (tok->str() == "try")
                     scopeList.push_back(Scope(this, tok, scope, Scope::eTry, tok1));
@@ -1341,6 +1341,8 @@ void SymbolDatabase::createSymbolDatabaseEnums()
 
             // look for initialization tokens that can be converted to enumerators and convert them
             if (enumerator.start) {
+                if (!enumerator.end)
+                    _tokenizer->syntaxError(enumerator.start);
                 for (const Token * tok3 = enumerator.start; tok3 && tok3 != enumerator.end->next(); tok3 = tok3->next()) {
                     if (tok3->tokType() == Token::eName) {
                         const Enumerator * e = findEnumerator(tok3);
@@ -1350,19 +1352,17 @@ void SymbolDatabase::createSymbolDatabaseEnums()
                 }
 
                 // look for possible constant folding expressions
-                if (enumerator.start) {
-                    // rhs of operator:
-                    const Token *rhs = enumerator.start->previous()->astOperand2();
+                // rhs of operator:
+                const Token *rhs = enumerator.start->previous()->astOperand2();
 
-                    // constant folding of expression:
-                    ValueFlow::valueFlowConstantFoldAST(rhs, _settings);
+                // constant folding of expression:
+                ValueFlow::valueFlowConstantFoldAST(rhs, _settings);
 
-                    // get constant folded value:
-                    if (rhs && rhs->values().size() == 1U && rhs->values().front().isKnown()) {
-                        enumerator.value = rhs->values().front().intvalue;
-                        enumerator.value_known = true;
-                        value = enumerator.value + 1;
-                    }
+                // get constant folded value:
+                if (rhs && rhs->values().size() == 1U && rhs->values().front().isKnown()) {
+                    enumerator.value = rhs->values().front().intvalue;
+                    enumerator.value_known = true;
+                    value = enumerator.value + 1;
                 }
             }
 
@@ -1725,7 +1725,10 @@ void Variable::evaluate(const Library* lib)
     const Token* tok = _start;
     while (tok && tok->previous() && tok->previous()->isName())
         tok = tok->previous();
-    for (const Token* const end = _name?_name:_end; tok != end;) {
+    const Token* end = _end;
+    if (end)
+        end = end->next();
+    while (tok != end) {
         if (tok->str() == "static")
             setFlag(fIsStatic, true);
         else if (tok->str() == "extern")
@@ -2513,6 +2516,29 @@ static std::ostream & operator << (std::ostream & s, Scope::ScopeType type)
     return s;
 }
 
+static std::string accessControlToString(const AccessControl& access)
+{
+    switch (access) {
+    case Public:
+        return "Public";
+    case Protected:
+        return "Protected";
+    case Private:
+        return "Private";
+    case Global:
+        return "Global";
+    case Namespace:
+        return "Namespace";
+    case Argument:
+        return "Argument";
+    case Local:
+        return "Local";
+    case Throw:
+        return "Throw";
+    }
+    return "Unknown";
+}
+
 static std::string tokenToString(const Token* tok, const Tokenizer* tokenizer)
 {
     std::ostringstream oss;
@@ -2698,7 +2724,7 @@ void SymbolDatabase::printOut(const char *title) const
                 std::cout << "        retDef: " << tokenToString(func->retDef, _tokenizer) << std::endl;
             if (func->retDef) {
                 std::cout << "           ";
-                for (const Token * tok = func->retDef; tok != func->tokenDef; tok = tok->next())
+                for (const Token * tok = func->retDef; tok && tok != func->tokenDef && !Token::Match(tok, "{|;"); tok = tok->next())
                     std::cout << " " << tokenType(tok);
                 std::cout << std::endl;
             }
@@ -2939,6 +2965,7 @@ void SymbolDatabase::printXml(std::ostream &out) const
         out << " isPointer=\""      << var->isPointer() << '\"';
         out << " isReference=\""    << var->isReference() << '\"';
         out << " isStatic=\""       << var->isStatic() << '\"';
+        out << " access=\""         << accessControlToString(var->_access) << '\"';
         out << "/>" << std::endl;
     }
     out << "  </variables>" << std::endl;
@@ -4719,10 +4746,13 @@ void SymbolDatabase::setValueType(Token *tok, const ValueType &valuetype)
             if (isconst)
                 varvt.constness |= 1;
             setValueType(parent->previous(), varvt);
-            const_cast<Variable *>(parent->previous()->variable())->setFlags(varvt);
-            if (vt2->typeScope && vt2->typeScope->definedType) {
-                const_cast<Variable *>(parent->previous()->variable())->type(vt2->typeScope->definedType);
-                autoToken->type(vt2->typeScope->definedType);
+            Variable *var = const_cast<Variable *>(parent->previous()->variable());
+            if (var) {
+                var->setFlags(varvt);
+                if (vt2->typeScope && vt2->typeScope->definedType) {
+                    var->type(vt2->typeScope->definedType);
+                    autoToken->type(vt2->typeScope->definedType);
+                }
             }
         } else if (vt2->container) {
             // TODO: Determine exact type of RHS
@@ -4765,8 +4795,11 @@ void SymbolDatabase::setValueType(Token *tok, const ValueType &valuetype)
         return;
 
     bool ternary = parent->str() == ":" && parent->astParent() && parent->astParent()->str() == "?";
-    if (ternary)
+    if (ternary) {
+        if (vt1->pointer == vt2->pointer && vt1->type == vt2->type && vt1->sign == vt2->sign)
+            setValueType(parent, *vt2);
         parent = const_cast<Token*>(parent->astParent());
+    }
 
     if (ternary || parent->isArithmeticalOp() || parent->tokType() == Token::eIncDecOp) {
         if (vt1->pointer != 0U && vt2 && vt2->pointer == 0U) {

@@ -17,21 +17,21 @@
  */
 
 #include "token.h"
+
 #include "errorlogger.h"
+#include "library.h"
 #include "settings.h"
 #include "symboldatabase.h"
 #include "utils.h"
-#include <cassert>
-#include <cstdlib>
-#include <cstring>
-#include <string>
-#include <iostream>
-#include <cctype>
-#include <sstream>
-#include <map>
-#include <stack>
-#include <algorithm>
 
+#include <cassert>
+#include <cctype>
+#include <cstring>
+#include <iostream>
+#include <map>
+#include <set>
+#include <stack>
+#include <utility>
 
 Token::Token(Token **tokens) :
     tokensBack(tokens),
@@ -43,6 +43,7 @@ Token::Token(Token **tokens) :
     _varId(0),
     _fileIndex(0),
     _linenr(0),
+    _col(0),
     _progressValue(0),
     _tokType(eNone),
     _flags(0),
@@ -1200,13 +1201,17 @@ static const Token* goToRightParenthesis(const Token* start, const Token* end)
 
 static std::string stringFromTokenRange(const Token* start, const Token* end)
 {
-    std::string ret;
+    std::ostringstream ret;
     for (const Token *tok = start; tok && tok != end; tok = tok->next()) {
-        ret += tok->str();
+        if (tok->originalName() == "->")
+            ret << "->";
+        else
+            ret << tok->str();
         if (Token::Match(tok, "%name%|%num% %name%|%num%"))
-            ret += " ";
+            ret << ' ';
     }
-    return ret + end->str();
+    ret << end->str();
+    return ret.str();
 }
 
 std::string Token::expressionString() const

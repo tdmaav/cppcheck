@@ -21,20 +21,26 @@
 #define valueflowH
 //---------------------------------------------------------------------------
 
-#include <string>
 #include "config.h"
 
-class Token;
-class TokenList;
-class SymbolDatabase;
+#include <list>
+#include <string>
+#include <utility>
+
 class ErrorLogger;
 class Settings;
+class SymbolDatabase;
+class Token;
+class TokenList;
 
 namespace ValueFlow {
     class CPPCHECKLIB Value {
     public:
+        typedef std::pair<const Token *, std::string> ErrorPathItem;
+        typedef std::list<ErrorPathItem> ErrorPath;
+
         explicit Value(long long val = 0) : valueType(INT), intvalue(val), tokvalue(nullptr), floatValue(0.0), moveKind(NonMovedVariable), varvalue(val), condition(0), varId(0U), conditional(false), inconclusive(false), defaultArg(false), valueKind(ValueKind::Possible) {}
-        Value(const Token *c, long long val) : valueType(INT), intvalue(val), tokvalue(nullptr), floatValue(0.0), moveKind(NonMovedVariable), varvalue(val), condition(c), varId(0U), conditional(false), inconclusive(false), defaultArg(false), valueKind(ValueKind::Possible) {}
+        Value(const Token *c, long long val);
 
         bool operator==(const Value &rhs) const {
             if (valueType != rhs.valueType)
@@ -70,6 +76,8 @@ namespace ValueFlow {
                    valueKind == rhs.valueKind;
         }
 
+        std::string infoString() const;
+
         enum ValueType { INT, TOK, FLOAT, MOVED, UNINIT } valueType;
         bool isIntValue() const {
             return valueType == INT;
@@ -102,8 +110,10 @@ namespace ValueFlow {
         /** For calculated values - variable value that calculated value depends on */
         long long varvalue;
 
-        /** Condition that this value depends on (TODO: replace with a 'callstack') */
+        /** Condition that this value depends on */
         const Token *condition;
+
+        ErrorPath errorPath;
 
         /** For calculated values - varId that calculated value depends on */
         unsigned int varId;
@@ -156,6 +166,10 @@ namespace ValueFlow {
         void changeKnownToPossible() {
             if (isKnown())
                 valueKind = ValueKind::Possible;
+        }
+
+        bool errorSeverity() const {
+            return !condition && !defaultArg;
         }
     };
 

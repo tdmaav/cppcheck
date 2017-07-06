@@ -17,8 +17,11 @@
 */
 
 #include "platform.h"
+
 #include "tinyxml2.h"
 
+#include <cstdlib>
+#include <cstring>
 
 cppcheck::Platform::Platform()
 {
@@ -36,26 +39,7 @@ cppcheck::Platform::Platform()
 bool cppcheck::Platform::platform(cppcheck::Platform::PlatformType type)
 {
     switch (type) {
-    case Unspecified:
-        platformType = type;
-        sizeof_bool = sizeof(bool);
-        sizeof_short = sizeof(short);
-        sizeof_int = sizeof(int);
-        sizeof_long = sizeof(long);
-        sizeof_long_long = sizeof(long long);
-        sizeof_float = sizeof(float);
-        sizeof_double = sizeof(double);
-        sizeof_long_double = sizeof(long double);
-        sizeof_wchar_t = sizeof(wchar_t);
-        sizeof_size_t = sizeof(std::size_t);
-        sizeof_pointer = sizeof(void *);
-        defaultSign = '\0';
-        char_bit = 8;
-        short_bit = char_bit * sizeof_short;
-        int_bit = char_bit * sizeof_int;
-        long_bit = char_bit * sizeof_long;
-        long_long_bit = char_bit * sizeof_long_long;
-        return true;
+    case Unspecified: // unknown type sizes (sizes etc are set but are not known)
     case Native: // same as system this code was compile on
         platformType = type;
         sizeof_bool = sizeof(bool);
@@ -69,7 +53,9 @@ bool cppcheck::Platform::platform(cppcheck::Platform::PlatformType type)
         sizeof_wchar_t = sizeof(wchar_t);
         sizeof_size_t = sizeof(std::size_t);
         sizeof_pointer = sizeof(void *);
-        {
+        if (type == Unspecified) {
+            defaultSign = '\0';
+        } else {
             char x = -1;
             defaultSign = (x < 0) ? 's' : 'u';
         }
@@ -153,6 +139,26 @@ bool cppcheck::Platform::platform(cppcheck::Platform::PlatformType type)
         sizeof_wchar_t = 4;
         sizeof_size_t = 8;
         sizeof_pointer = 8;
+        defaultSign = '\0';
+        char_bit = 8;
+        short_bit = char_bit * sizeof_short;
+        int_bit = char_bit * sizeof_int;
+        long_bit = char_bit * sizeof_long;
+        long_long_bit = char_bit * sizeof_long_long;
+        return true;
+    case AVR8:
+        platformType = type;
+        sizeof_bool = 1;
+        sizeof_short = 2;
+        sizeof_int = 2;
+        sizeof_long = 4;
+        sizeof_long_long = 8;
+        sizeof_float = 4;
+        sizeof_double = 4;
+        sizeof_long_double = 4;
+        sizeof_wchar_t = 2;
+        sizeof_size_t = 2;
+        sizeof_pointer = 2;
         defaultSign = '\0';
         char_bit = 8;
         short_bit = char_bit * sizeof_short;

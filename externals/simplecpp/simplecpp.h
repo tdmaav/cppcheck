@@ -20,13 +20,13 @@
 #define simplecppH
 
 #include <cctype>
+#include <cstddef>
 #include <istream>
 #include <list>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
-
 
 #ifdef _WIN32
 #  ifdef SIMPLECPP_EXPORT
@@ -268,6 +268,7 @@ namespace simplecpp {
     };
 
     struct SIMPLECPP_LIB DUI {
+        DUI() {}
         std::list<std::string> defines;
         std::set<std::string> undefined;
         std::list<std::string> includePaths;
@@ -293,6 +294,9 @@ namespace simplecpp {
      * Deallocate data
      */
     SIMPLECPP_LIB void cleanup(std::map<std::string, TokenList*> &filedata);
+
+    /** Simplify path */
+    SIMPLECPP_LIB std::string simplifyPath(std::string path);
 }
 
 #endif
