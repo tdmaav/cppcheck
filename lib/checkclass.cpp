@@ -2403,7 +2403,7 @@ void CheckClass::copyCtorAndEqOperatorError(const Token *tok, const std::string 
 
 
 void CheckClass::checkDublicates() {
-    if (!_settings->isEnabled("style"))
+    if (!_settings->isEnabled(Settings::STYLE))
         return;
 
     const std::size_t classes = symbolDatabase->classAndStructScopes.size();
