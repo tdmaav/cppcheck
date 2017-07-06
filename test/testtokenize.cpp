@@ -64,6 +64,8 @@ private:
         TEST_CASE(tokenize32);  // #5884 (fsanitize=undefined: left shift of negative value -10000 in lib/templatesimplifier.cpp:852:46)
         TEST_CASE(tokenize33);  // #5780 Various crashes on valid template code
 
+        TEST_CASE(validate);
+
         TEST_CASE(syntax_case_default);
 
         TEST_CASE(foreach);     // #3690
@@ -455,6 +457,9 @@ private:
         // Make sure the Tokenizer::findGarbageCode() does not have false positives
         // The TestGarbage ensures that there are true positives
         TEST_CASE(findGarbageCode);
+
+        // --check-config
+        TEST_CASE(checkConfiguration);
     }
 
     std::string tokenizeAndStringify(const char code[], bool simplify = false, bool expand = true, Settings::PlatformType platform = Settings::Native, const char* filename = "test.cpp", bool cpp11 = true) {
@@ -778,6 +783,14 @@ private:
                             "    vector<int> VI;\n"
                             "}\n";
         tokenizeAndStringify(code, true);
+    }
+
+    void validate() {
+        // C++ code in C file
+        ASSERT_THROW(tokenizeAndStringify(";using namespace std;",false,false,Settings::Native,"test.c"), InternalError);
+        ASSERT_THROW(tokenizeAndStringify(";std::map<int,int> m;",false,false,Settings::Native,"test.c"), InternalError);
+        ASSERT_THROW(tokenizeAndStringify(";template<class T> class X { };",false,false,Settings::Native,"test.c"), InternalError);
+        ASSERT_THROW(tokenizeAndStringify("int X<Y>() {};",false,false,Settings::Native,"test.c"), InternalError);
     }
 
     void syntax_case_default() { // correct syntax
@@ -4569,6 +4582,19 @@ private:
             ASSERT_EQUALS(true, tok1->link() == tok2);
             ASSERT_EQUALS(true, tok2->link() == tok1);
         }
+
+        {
+            // #7975
+            const char code[] = "template <class C> X<Y&&Z, C*> copy() {};\n";
+            errout.str("");
+            Tokenizer tokenizer(&settings0, this);
+            std::istringstream istr(code);
+            tokenizer.tokenize(istr, "test.cpp");
+            const Token *tok1 = Token::findsimplematch(tokenizer.tokens(), "< Y");
+            const Token *tok2 = Token::findsimplematch(tok1, "> copy");
+            ASSERT_EQUALS(true, tok1->link() == tok2);
+            ASSERT_EQUALS(true, tok2->link() == tok1);
+        }
     }
 
     void simplifyString() {
@@ -7926,6 +7952,7 @@ private:
         ASSERT_EQUALS("forcd:(", testAst("for (a<b> c : d);"));
         ASSERT_EQUALS("forde:(", testAst("for (a::b<c> d : e);"));
         ASSERT_EQUALS("forx*0=yz;;(", testAst("for(*x=0;y;z)"));
+        ASSERT_EQUALS("forx0=y(8<z;;(", testAst("for (x=0;(int)y<8;z);"));
 
         // problems with multiple expressions
         ASSERT_EQUALS("ax( whilex(", testAst("a(x) while (x)"));
@@ -8022,16 +8049,21 @@ private:
         ASSERT_EQUALS("ab::r&c(=", testAst("a::b& r = (a::b&)c;")); // #5261
         ASSERT_EQUALS("ab10:?=", testAst("a=(b)?1:0;"));
 
+        // TODO: This AST is incomplete however it's very weird syntax (taken from clang test suite)
+        ASSERT_EQUALS("a&(", testAst("(int (**)[i]){&a}[0][1][5] = 0;"));
+        ASSERT_EQUALS("n0=", testAst("TrivialDefCtor{[2][2]}[1][1].n = 0;"));
+        ASSERT_EQUALS("aT12,3,{1[=", testAst("a = T{1, 2, 3}[1];"));
+
         // ({..})
         ASSERT_EQUALS("a{+d+ bc+", testAst("a+({b+c;})+d"));
         ASSERT_EQUALS("a{d*+ bc+", testAst("a+({b+c;})*d"));
         ASSERT_EQUALS("xa{((= bc( yd{((= ef(",
                       testAst("x=(int)(a({b(c);}));" // don't hang
                               "y=(int)(d({e(f);}));"));
-        ASSERT_EQUALS("QT_WA{{,( QT_WA{{,( x1=",
+        ASSERT_EQUALS("QT_WA{{,( x0= QT_WA{{,( x1= x2=",
                       testAst("QT_WA({},{x=0;});" // don't hang
                               "QT_WA({x=1;},{x=2;});"));
-        ASSERT_EQUALS("xMACROtypeT=value1=,{({=",
+        ASSERT_EQUALS("xMACROtype.T=value.1=,{({=",
                       testAst("x = { MACRO( { .type=T, .value=1 } ) }")); // don't hang: MACRO({..})
         ASSERT_EQUALS("fori10=i{;;( i--", testAst("for (i=10;i;({i--;}) ) {}"));
 
@@ -8040,9 +8072,17 @@ private:
 
         // struct initialization
         ASSERT_EQUALS("name_bytes[bits~unusedBits>>unusedBits<<{=", testAst("const uint8_t name_bytes[] = { (~bits >> unusedBits) << unusedBits };"));
-        ASSERT_EQUALS("abuf0{={=", testAst("a = { .buf = { 0 } };"));
+        ASSERT_EQUALS("abuf.0{={=", testAst("a = { .buf = { 0 } };"));
+        ASSERT_EQUALS("ab2[a.0=b.0=,{a.0=b.0=,{,{=", testAst("struct AB ab[2] = { { .a=0, .b=0 }, { .a=0, .b=0 } };"));
         ASSERT_EQUALS("tset{=", testAst("struct cgroup_taskset tset = {};"));
         ASSERT_EQUALS("s1a&,{2b&,{,{=", testAst("s = { {1, &a}, {2, &b} };"));
+        ASSERT_EQUALS("s0[L.2[x={=", testAst("s = { [0].L[2] = x};"));
+        ASSERT_EQUALS("ac.0={(=", testAst("a = (b){.c=0,};")); // <- useless comma
+
+        // struct initialization hang
+        ASSERT_EQUALS("sbar.1{,{(={= fcmd( forfieldfield++;;(",
+                      testAst("struct S s = {.bar = (struct foo) { 1, { } } };\n"
+                              "void f(struct cmd *) { for (; field; field++) {} }"));
 
         // template parentheses: <>
         ASSERT_EQUALS("stdfabs::m_similarity(numeric_limitsepsilon::(<=return", testAst("return std::fabs(m_similarity) <= numeric_limits<double>::epsilon();")); // #6195
@@ -8122,6 +8162,9 @@ private:
         ASSERT_EQUALS("ab-(=", testAst("a = ((int)-b)")); // Multiple subsequent unary operators (cast and -)
         ASSERT_EQUALS("xdouble123(i*(=", testAst("x = (int)(double(123)*i);"));
         ASSERT_EQUALS("ac(=", testAst("a = (::b)c;"));
+        ASSERT_EQUALS("abcd,({(=", testAst("a = (s){b(c, d)};"));
+        ASSERT_EQUALS("xatoistr({(=", testAst("x = (struct X){atoi(str)};"));
+        ASSERT_EQUALS("xa.0=b.0=,c.0=,{(=", testAst("x = (struct abc) { .a=0, .b=0, .c=0 };"));
 
         // not cast
         ASSERT_EQUALS("AB||", testAst("(A)||(B)"));
@@ -8138,8 +8181,11 @@ private:
         ASSERT_EQUALS("{([(return 0return", testAst("return []() -> int { return 0; }();"));
         ASSERT_EQUALS("{([(return 0return", testAst("return [something]() -> int { return 0; }();"));
         ASSERT_EQUALS("{([cd,(return 0return", testAst("return [](int a, int b) -> int { return 0; }(c, d);"));
+        TODO_ASSERT_EQUALS("x{([=", "stdconst::x{([=&", testAst("x = [&]()->std::string const & { 1; }"));
 
         ASSERT_EQUALS("x{([= 0return", testAst("x = [](){return 0; };"));
+
+        ASSERT_EQUALS("ab{[(= cd=", testAst("a = b([&]{c=d;});"));
     }
 
     void compileLimits() {
@@ -8225,6 +8271,24 @@ private:
 
         // after (expr)
         ASSERT_NO_THROW(tokenizeAndStringify("void f() { switch (a) int b; }"));
+    }
+
+
+    void checkConfig(const char code[]) {
+        errout.str("");
+
+        Settings s;
+        s.checkConfiguration = true;
+
+        // tokenize..
+        Tokenizer tokenizer(&s, this);
+        std::istringstream istr(code);
+        tokenizer.tokenize(istr, "test.cpp");
+    }
+
+    void checkConfiguration() {
+        checkConfig("void f() { DEBUG(x();y()); }");
+        ASSERT_EQUALS("[test.cpp:1]: (information) Ensure that 'DEBUG' is defined either using -I, --include or -D.\n", errout.str());
     }
 };
 

@@ -37,6 +37,43 @@ class Directive:
         self.file = element.get('file')
         self.linenr = element.get('linenr')
 
+class ValueType:
+    """
+    ValueType class. Contains (promoted) type information for each node in the AST.
+    """
+
+    type = None
+    sign = None
+    constness = 0
+    pointer = 0
+    typeScopeId = None
+    typeScope = None
+    originalTypeName = None
+
+    def __init__(self, element):
+        self.type = element.get('valueType-type')
+        self.sign = element.get('valueType-sign')
+        self.typeScopeId = element.get('valueType-typeScope')
+        self.originalTypeName = element.get('valueType-originalTypeName')
+        constness = element.get('valueType-constness')
+        if constness:
+            self.constness = int(constness)
+        else:
+            self.constness = 0
+        pointer = element.get('valueType-pointer')
+        if pointer:
+            self.pointer = int(pointer)
+        else:
+            self.pointer = 0
+
+    def setId(self, IdMap):
+        self.typeScope = IdMap[self.typeScopeId]
+
+    def isIntegral(self):
+        return self.type == 'bool' or self.type == 'char' or self.type == 'short' or self.type == 'int' or self.type == 'long' or self.type == 'long long'
+
+    def isFloat(self):
+        return self.type == 'float' or self.type == 'double' or self.type == 'long double'
 
 class Token:
     """
@@ -73,6 +110,7 @@ class Token:
         function           If this token points at a function call, this attribute has the Function
                            information. See the Function class.
         values             Possible values of token
+        valueType          type information
         typeScope          type scope (token->type()->classScope)
         astParent          ast parent
         astOperand1        ast operand1
@@ -121,6 +159,7 @@ class Token:
     function = None
     valuesId = None
     values = None
+    valueType = None
 
     typeScopeId = None
     typeScope = None
@@ -179,6 +218,10 @@ class Token:
         self.function = None
         self.valuesId = element.get('values')
         self.values = None
+        if element.get('valueType-type'):
+            self.valueType = ValueType(element)
+        else:
+            self.valueType = None
         self.typeScopeId = element.get('type-scope')
         self.typeScope = None
         self.astParentId = element.get('astParent')
@@ -200,6 +243,8 @@ class Token:
         self.astParent = IdMap[self.astParentId]
         self.astOperand1 = IdMap[self.astOperand1Id]
         self.astOperand2 = IdMap[self.astOperand2Id]
+        if self.valueType:
+            self.valueType.setId(IdMap)
 
     def getValue(self, v):
         """
@@ -236,6 +281,8 @@ class Scope:
     classEndId = None
     classEnd = None
     className = None
+    nestedInId = None
+    nestedIn = None
     type = None
 
     def __init__(self, element):
@@ -298,6 +345,7 @@ class Variable:
         isArgument      Is this variable a function argument?
         isArray         Is this variable an array?
         isClass         Is this variable a class or struct?
+        isExtern        Is this variable an extern variable?
         isLocal         Is this variable a local variable?
         isPointer       Is this variable a pointer
         isReference     Is this variable a reference
@@ -314,6 +362,7 @@ class Variable:
     isArgument = False
     isArray = False
     isClass = False
+    isExtern = False
     isLocal = False
     isPointer = False
     isReference = False
@@ -330,6 +379,7 @@ class Variable:
         self.isArgument = element.get('isArgument') == 'true'
         self.isArray = element.get('isArray') == 'true'
         self.isClass = element.get('isClass') == 'true'
+        self.isExtern = element.get('isExtern') == 'true'
         self.isLocal = element.get('isLocal') == 'true'
         self.isPointer = element.get('isPointer') == 'true'
         self.isReference = element.get('isReference') == 'true'
@@ -476,6 +526,38 @@ class Configuration:
             variable.setId(IdMap)
 
 
+class Platform:
+    """
+    Platform class
+    This class contains type sizes
+
+    Attributes:
+        name          Name of the platform
+        char_bit      CHAR_BIT value
+        short_bit     SHORT_BIT value
+        int_bit       INT_BIT value
+        long_bit      LONG_BIT value
+        long_long_bit LONG_LONG_BIT value
+        pointer_bit   POINTER_BIT value
+    """
+
+    name = ''
+    char_bit = 0
+    short_bit = 0
+    int_bit = 0
+    long_bit = 0
+    long_long_bit = 0
+    pointer_bit = 0
+
+    def __init__(self, platformnode):
+        self.name = platformnode.get('name')
+        self.char_bit = int(platformnode.get('char_bit'))
+        self.short_bit = int(platformnode.get('short_bit'))
+        self.int_bit = int(platformnode.get('int_bit'))
+        self.long_bit = int(platformnode.get('long_bit'))
+        self.long_long_bit = int(platformnode.get('long_long_bit'))
+        self.pointer_bit = int(platformnode.get('pointer_bit'))
+
 
 class CppcheckData:
     """
@@ -513,15 +595,41 @@ class CppcheckData:
     @endcode
     """
 
+    rawTokens = []
+    platform = None
     configurations = []
 
     def __init__(self, filename):
         self.configurations = []
 
         data = ET.parse(filename)
+
+        for platformNode in data.getroot():
+            if platformNode.tag == 'platform':
+                self.platform = Platform(platformNode)
+
+        for rawTokensNode in data.getroot():
+            if rawTokensNode.tag != 'rawtokens':
+                continue
+            files = []
+            for node in rawTokensNode:
+                if node.tag == 'file':
+                    files.append(node.get('name'))
+                elif node.tag == 'tok':
+                    tok = Token(node)
+                    tok.file = files[int(node.get('fileIndex'))]
+                    self.rawTokens.append(tok)
+            for i in range(len(self.rawTokens)):
+                if i > 0:
+                    self.rawTokens[i].previous = self.rawTokens[i-1]
+                if i + 1 < len(self.rawTokens):
+                    self.rawTokens[i].next = self.rawTokens[i+1]
+
+
         # root is 'dumps' node, each config has its own 'dump' subnode.
         for cfgnode in data.getroot():
-            self.configurations.append(Configuration(cfgnode))
+            if cfgnode.tag=='dump':
+                self.configurations.append(Configuration(cfgnode))
 
 
 

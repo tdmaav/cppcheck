@@ -73,6 +73,7 @@ private:
         TEST_CASE(Bug2190219);
 
         TEST_CASE(error1); // #error => don't extract any code
+        TEST_CASE(error2); // #error if symbol is not defined
         TEST_CASE(error3);
         TEST_CASE(error4);  // #2919 - wrong filename is reported
         TEST_CASE(error5);
@@ -319,6 +320,18 @@ private:
         ASSERT_EQUALS("\nA\n", getConfigsStr(filedata));
     }
 
+    void error2() {
+        const char filedata1[] = "#ifndef A\n"
+                                 "#error\n"
+                                 "#endif\n";
+        ASSERT_EQUALS("A\n", getConfigsStr(filedata1));
+
+        const char filedata2[] = "#if !A\n"
+                                 "#error\n"
+                                 "#endif\n";
+        ASSERT_EQUALS("A\n", getConfigsStr(filedata2));
+    }
+
     void error3() {
         errout.str("");
         Settings settings;
@@ -366,15 +379,32 @@ private:
     }
 
     void error6() {
-        const char filedata[] = "#ifdef A\n"
-                                "#else\n"
-                                "#error 1\n"
-                                "#endif\n"
-                                "#ifdef B\n"
-                                "#else\n"
-                                "#error 2\n"
-                                "#endif\n";
-        ASSERT_EQUALS("\nA\nA;B\nB\n", getConfigsStr(filedata));
+        const char filedata1[] = "#ifdef A\n"
+                                 "#else\n"
+                                 "#error 1\n"
+                                 "#endif\n"
+                                 "#ifdef B\n"
+                                 "#else\n"
+                                 "#error 2\n"
+                                 "#endif\n";
+        ASSERT_EQUALS("\nA\nA;B\nB\n", getConfigsStr(filedata1));
+
+        const char filedata2[] = "#ifndef A\n"
+                                 "#error 1\n"
+                                 "#endif\n"
+                                 "#ifndef B\n"
+                                 "#error 2\n"
+                                 "#endif\n";
+        ASSERT_EQUALS("A;B\n", getConfigsStr(filedata2));
+
+        const char filedata3[] = "#if !A\n"
+                                 "#error 1\n"
+                                 "#endif\n"
+                                 "#if !B\n"
+                                 "#error 2\n"
+                                 "#endif\n";
+        ASSERT_EQUALS("A;B\n", getConfigsStr(filedata3));
+
     }
 
     void setPlatformInfo() {
@@ -558,7 +588,7 @@ private:
                                 "#elif !defined(B)\n"
                                 "!b\n"
                                 "#endif\n";
-        TODO_ASSERT_EQUALS("\nA\nA;B", "\n", getConfigsStr(filedata));
+        ASSERT_EQUALS("\nA\nB\n", getConfigsStr(filedata));
     }
 
     void if_cond3() {
@@ -612,7 +642,7 @@ private:
             const char filedata[] = "#if! A\n"
                                     "foo();\n"
                                     "#endif\n";
-            ASSERT_EQUALS("\n", getConfigsStr(filedata));
+            ASSERT_EQUALS("\nA=0\n", getConfigsStr(filedata));
         }
     }
 
@@ -645,7 +675,7 @@ private:
         const char filedata[] = "#if !defined _A\n"
                                 "abc\n"
                                 "#endif\n";
-        ASSERT_EQUALS("\n", getConfigsStr(filedata));
+        ASSERT_EQUALS("\n_A\n", getConfigsStr(filedata));
     }
 
     void if_cond10() {
@@ -2085,14 +2115,14 @@ private:
         const char filedata1[] = "#ifndef X\n"
                                  "#error \"!X\"\n"
                                  "#endif\n";
-        ASSERT_EQUALS("\nX\n", getConfigsStr(filedata1));
+        ASSERT_EQUALS("X\n", getConfigsStr(filedata1));
 
         const char filedata2[] = "#ifdef X\n"
                                  "#ifndef Y\n"
                                  "#error \"!Y\"\n"
                                  "#endif\n"
                                  "#endif\n";
-        ASSERT_EQUALS("\nX\nX;Y\n", getConfigsStr(filedata2));
+        ASSERT_EQUALS("\nX\nY\n", getConfigsStr(filedata2));
     }
 
     void getConfigsD1() {

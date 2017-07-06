@@ -119,14 +119,14 @@ void Preprocessor::inlineSuppressions(const simplecpp::TokenList &tokens)
     }
 }
 
-void Preprocessor::setDirectives(const simplecpp::TokenList &tokens1)
+void Preprocessor::setDirectives(const simplecpp::TokenList &tokens)
 {
     // directive list..
     directives.clear();
 
     std::vector<const simplecpp::TokenList *> list;
     list.reserve(1U + tokenlists.size());
-    list.push_back(&tokens1);
+    list.push_back(&tokens);
     for (std::map<std::string, simplecpp::TokenList *>::const_iterator it = tokenlists.begin(); it != tokenlists.end(); ++it) {
         list.push_back(it->second);
     }
@@ -184,6 +184,11 @@ static std::string readcondition(const simplecpp::Token *iftok, const std::set<s
             return cond->str;
     }
 
+    if (len == 2 && cond->op == '!' && next1->name) {
+        if (defined.find(next1->str) == defined.end())
+            return next1->str + "=0";
+    }
+
     if (len == 3 && cond->op == '(' && next1->name && next2->op == ')') {
         if (defined.find(next1->str) == defined.end() && undefined.find(next1->str) == undefined.end())
             return next1->str;
@@ -196,8 +201,14 @@ static std::string readcondition(const simplecpp::Token *iftok, const std::set<s
 
     std::set<std::string> configset;
     for (; sameline(iftok,cond); cond = cond->next) {
-        if (cond->op == '!')
-            break;
+        if (cond->op == '!') {
+            if (!sameline(iftok,cond->next) || !cond->next->name)
+                break;
+            if (cond->next->str == "defined")
+                continue;
+            configset.insert(cond->next->str + "=0");
+            continue;
+        }
         if (cond->str != "defined")
             continue;
         const simplecpp::Token *dtok = cond->next;
@@ -365,9 +376,27 @@ static void getConfigs(const simplecpp::TokenList &tokens, std::set<std::string>
                 configs_ifndef.pop_back();
         } else if (cmdtok->str == "error") {
             if (!configs_ifndef.empty() && !configs_ifndef.back().empty()) {
+                if (configs_ifndef.size() == 1U)
+                    ret.erase("");
                 std::vector<std::string> configs(configs_if);
                 configs.push_back(configs_ifndef.back());
-                ret.insert(cfg(configs, userDefines));
+                ret.erase(cfg(configs, userDefines));
+                if (!elseError.empty())
+                    elseError += ';';
+                elseError += cfg(configs_ifndef, userDefines);
+            }
+            if (!configs_if.empty() && !configs_if.back().empty()) {
+                const std::string &last = configs_if.back();
+                if (last.size() > 2U && last.compare(last.size()-2U,2,"=0") == 0) {
+                    std::vector<std::string> configs(configs_if);
+                    ret.erase(cfg(configs, userDefines));
+                    configs[configs.size() - 1U] = last.substr(0,last.size()-2U);
+                    if (configs.size() == 1U)
+                        ret.erase("");
+                    if (!elseError.empty())
+                        elseError += ';';
+                    elseError += cfg(configs, userDefines);
+                }
             }
         } else if (cmdtok->str == "define" && sameline(tok, cmdtok->next) && cmdtok->next->name) {
             defined.insert(cmdtok->next->str);
@@ -775,7 +804,7 @@ bool Preprocessor::validateCfg(const std::string &cfg, const std::list<simplecpp
                 }
             }
             if (!directiveLocation) {
-                if (_settings.isEnabled("information"))
+                if (_settings.isEnabled(Settings::INFORMATION))
                     validateCfgError(mu.useLocation.file(), mu.useLocation.line, cfg, macroName);
                 ret = false;
             }

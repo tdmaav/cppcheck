@@ -71,7 +71,7 @@ void CheckUninitVar::checkScope(const Scope* scope, const std::set<std::string> 
         if (i->isThrow())
             continue;
 
-        if (i->nameToken()->strAt(1) == "(" || i->nameToken()->strAt(1) == "{"  || i->nameToken()->strAt(1) == ":")
+        if (Token::Match(i->nameToken()->next(), "[({:]"))
             continue;
 
         if (Token::Match(i->nameToken(), "%name% =")) { // Variable is initialized, but Rhs might be not
@@ -341,7 +341,7 @@ bool CheckUninitVar::checkScopeForVariable(const Token *tok, const Variable& var
         }
 
         // Unconditional inner scope or try..
-        if (tok->str() == "{" && Token::Match(tok->previous(), ";|{|}|try")) {
+        if (tok->str() == "{" && Token::Match(tok->previous(), ",|;|{|}|try")) {
             if (checkScopeForVariable(tok->next(), var, possibleInit, noreturn, alloc, membervar))
                 return true;
             tok = tok->link();
@@ -1034,6 +1034,9 @@ int CheckUninitVar::isFunctionParUsage(const Token *vartok, bool pointer, Alloc 
         start = start->previous();
     }
 
+    if (Token::simpleMatch(start->link(), ") {"))
+        return (!pointer || alloc == NO_ALLOC);
+
     // is this a function call?
     if (start && Token::Match(start->previous(), "%name% (")) {
         const bool address(vartok->previous()->str() == "&");
@@ -1193,6 +1196,27 @@ void CheckUninitVar::uninitStructMemberError(const Token *tok, const std::string
                 Severity::error,
                 "uninitStructMember",
                 "Uninitialized struct member: " + membername, CWE908, false);
+}
+
+void CheckUninitVar::valueFlowUninit()
+{
+    const SymbolDatabase *symbolDatabase = _tokenizer->getSymbolDatabase();
+    std::list<Scope>::const_iterator scope;
+
+    // check every executable scope
+    for (scope = symbolDatabase->scopeList.begin(); scope != symbolDatabase->scopeList.end(); ++scope) {
+        if (!scope->isExecutable())
+            continue;
+        for (const Token* tok = scope->classStart; tok != scope->classEnd; tok = tok->next()) {
+            if (!tok->variable())
+                continue;
+            if (tok->values().size() != 1U || tok->values().front().valueType != ValueFlow::Value::UNINIT)
+                continue;
+            if (!isVariableUsage(tok, tok->variable()->isPointer(), NO_ALLOC))
+                continue;
+            uninitvarError(tok,tok->str());
+        }
+    }
 }
 
 void CheckUninitVar::deadPointer()

@@ -63,6 +63,8 @@ public:
         checkFunctions.checkProhibitedFunctions();
         checkFunctions.invalidFunctionUsage();
         checkFunctions.checkMathFunctions();
+        checkFunctions.memsetZeroBytes();
+        checkFunctions.memsetInvalid2ndParam();
     }
 
     /** Check for functions that should not be used */
@@ -84,15 +86,24 @@ public:
     /** @brief %Check for parameters given to math function that do not make sense*/
     void checkMathFunctions();
 
+    /** @brief %Check for filling zero bytes with memset() */
+    void memsetZeroBytes();
+
+    /** @brief %Check for invalid 2nd parameter of memset() */
+    void memsetInvalid2ndParam();
+
     /** @brief --check-library: warn for unconfigured function calls */
     void checkLibraryMatchFunctions();
 
 private:
-    void invalidFunctionArgError(const Token *tok, const std::string &functionName, int argnr, const std::string &validstr);
+    void invalidFunctionArgError(const Token *tok, const std::string &functionName, int argnr, const ValueFlow::Value *invalidValue, const std::string &validstr);
     void invalidFunctionArgBoolError(const Token *tok, const std::string &functionName, int argnr);
     void ignoredReturnValueError(const Token* tok, const std::string& function);
     void mathfunctionCallWarning(const Token *tok, const unsigned int numParam = 1);
     void mathfunctionCallWarning(const Token *tok, const std::string& oldexp, const std::string& newexp);
+    void memsetZeroBytesError(const Token *tok);
+    void memsetFloatError(const Token *tok, const std::string &var_value);
+    void memsetValueOutOfRangeError(const Token *tok, const std::string &value);
 
     void getErrorMessages(ErrorLogger *errorLogger, const Settings *settings) const {
         CheckFunctions c(nullptr, settings, errorLogger);
@@ -101,11 +112,14 @@ private:
             c.reportError(nullptr, Severity::style, i->first+"Called", i->second.message);
         }
 
-        c.invalidFunctionArgError(nullptr, "func_name", 1, "1-4");
+        c.invalidFunctionArgError(nullptr, "func_name", 1, nullptr,"1:4");
         c.invalidFunctionArgBoolError(nullptr, "func_name", 1);
         c.ignoredReturnValueError(nullptr, "malloc");
         c.mathfunctionCallWarning(nullptr);
         c.mathfunctionCallWarning(nullptr, "1 - erf(x)", "erfc(x)");
+        c.memsetZeroBytesError(nullptr);
+        c.memsetFloatError(nullptr,  "varname");
+        c.memsetValueOutOfRangeError(nullptr,  "varname");
     }
 
     static std::string myName() {
@@ -116,7 +130,10 @@ private:
         return "Check function usage:\n"
                "- return value of certain functions not used\n"
                "- invalid input values for functions\n"
-               "- Warn if a function is called whose usage is discouraged\n";
+               "- Warn if a function is called whose usage is discouraged\n"
+               "- memset() third argument is zero\n"
+               "- memset() with a value out of range as the 2nd parameter\n"
+               "- memset() with a float as the 2nd parameter\n";
     }
 };
 /// @}

@@ -2947,9 +2947,9 @@ private:
               "{\n"
               "    enum E { };\n"
               "    E *e; e = new E[10];\n"
-              "    s[10] = 0;\n"
+              "    e[10] = 0;\n"
               "}");
-        TODO_ASSERT_EQUALS("[test.cpp:5]: (error) Array 's[10]' accessed at index 10, which is out of bounds.\n", "", errout.str());
+        ASSERT_EQUALS("[test.cpp:5]: (error) Array 'e[10]' accessed at index 10, which is out of bounds.\n", errout.str());
     }
 
     // data is allocated with malloc
@@ -3731,6 +3731,16 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:3]: (error) Buffer overrun possible for long command line arguments.\n"
                       "[test.cpp:4]: (error) Buffer overrun possible for long command line arguments.\n", errout.str());
+
+        // #7964
+        check("int main(int argc, char *argv[]) {\n"
+              "  char *strcpy();\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+        check("int main(int argc, char *argv[]) {\n"
+              "  char *strcat();\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void checkBufferAllocatedWithStrlen() {

@@ -1855,7 +1855,7 @@ void Tokenizer::combineOperators()
                 }
                 if (prev->isName() && prev->isUpperCaseName())
                     continue;
-                if (prev->isName() && prev->str().back() == ':')
+                if (prev->isName() && endsWith(prev->str(), ':'))
                     simplify = true;
                 break;
             }
@@ -2648,7 +2648,7 @@ void Tokenizer::setVarIdPass1()
              (tok->str() == "(" && isFunctionHead(tok,"{")) ||
              (tok->str() == "(" && !scopeStack.top().isExecutable && isFunctionHead(tok,";:")) ||
              (tok->str() == "," && !scopeStack.top().isExecutable) ||
-             (tok->isName() && tok->str().back() == ':'))) {
+             (tok->isName() && endsWith(tok->str(), ':')))) {
 
             // No variable declarations in sizeof
             if (Token::simpleMatch(tok->previous(), "sizeof (")) {
@@ -2662,7 +2662,7 @@ void Tokenizer::setVarIdPass1()
             const Token *tok2 = (tok->isName()) ? tok : tok->next();
 
             // private: protected: public: etc
-            while (tok2 && tok2->str().back() == ':') {
+            while (tok2 && endsWith(tok2->str(), ':')) {
                 tok2 = tok2->next();
             }
             if (!tok2)
@@ -3034,7 +3034,7 @@ void Tokenizer::createLinks2()
 
     std::stack<Token*> type;
     for (Token *token = list.front(); token; token = token->next()) {
-        if (Token::Match(token, "struct|class %name% [:<]"))
+        if (Token::Match(token, "%name%|> %name% [:<]"))
             isStruct = true;
         else if (Token::Match(token, "[;{}]"))
             isStruct = false;
@@ -3318,6 +3318,9 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
         }
     }
 
+    // Is there C++ code in C file?
+    validateC();
+
     // remove MACRO in variable declaration: MACRO int x;
     removeMacroInVarDecl();
 
@@ -3332,6 +3335,8 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     // Bail out if code is garbage
     if (const Token *garbage = findGarbageCode())
         syntaxError(garbage);
+
+    checkConfiguration();
 
     // if (x) MACRO() ..
     for (const Token *tok = list.front(); tok; tok = tok->next()) {
@@ -3511,7 +3516,7 @@ bool Tokenizer::simplifyTokenList1(const char FileName[])
     }
 
     // class x y {
-    if (isCPP() && _settings->isEnabled("information")) {
+    if (isCPP() && _settings->isEnabled(Settings::INFORMATION)) {
         for (const Token *tok = list.front(); tok; tok = tok->next()) {
             if (Token::Match(tok, "class %type% %type% [:{]")) {
                 unhandled_macro_class_x_y(tok);
@@ -3914,6 +3919,13 @@ void Tokenizer::dump(std::ostream &out) const
             out << " astOperand1=\"" << tok->astOperand1() << '\"';
         if (tok->astOperand2())
             out << " astOperand2=\"" << tok->astOperand2() << '\"';
+        if (!tok->originalName().empty())
+            out << " originalName=\"" << tok->originalName() << '\"';
+        if (tok->valueType()) {
+            const std::string vt = tok->valueType()->dump();
+            if (!vt.empty())
+                out << ' ' << vt;
+        }
         out << "/>" << std::endl;
     }
     out << "  </tokenlist>" << std::endl;
@@ -7312,7 +7324,7 @@ bool Tokenizer::IsScopeNoReturn(const Token *endScopeToken, bool *unknown) const
     const bool ret = _settings->library.isScopeNoReturn(endScopeToken,&unknownFunc);
     if (unknown)
         *unknown = !unknownFunc.empty();
-    if (!unknownFunc.empty() && _settings->checkLibrary && _settings->isEnabled("information")) {
+    if (!unknownFunc.empty() && _settings->checkLibrary && _settings->isEnabled(Settings::INFORMATION)) {
         // Is function global?
         bool globalFunction = true;
         if (Token::simpleMatch(endScopeToken->tokAt(-2), ") ; }")) {
@@ -7617,6 +7629,12 @@ void Tokenizer::syntaxError(const Token *tok, char c) const
                             InternalError::SYNTAX);
 }
 
+void Tokenizer::syntaxErrorC(const Token *tok, const std::string &what) const
+{
+    printDebugOutput(0);
+    throw InternalError(tok, "Code '"+what+"' is invalid C code. Use --std or --language to configure the language.", InternalError::SYNTAX);
+}
+
 void Tokenizer::unhandled_macro_class_x_y(const Token *tok) const
 {
     reportError(tok,
@@ -7627,6 +7645,14 @@ void Tokenizer::unhandled_macro_class_x_y(const Token *tok) const
                 tok->strAt(1) + " " +
                 tok->strAt(2) + " " +
                 tok->strAt(3) + "' is not handled. You can use -I or --include to add handling of this code.");
+}
+
+void Tokenizer::macroWithSemicolonError(const Token *tok, const std::string &macroName) const
+{
+    reportError(tok,
+                Severity::information,
+                "macroWithSemicolon",
+                "Ensure that '" + macroName + "' is defined either using -I, --include or -D.");
 }
 
 void Tokenizer::cppcheckError(const Token *tok) const
@@ -7995,6 +8021,51 @@ void Tokenizer::simplifyComma()
     }
 }
 
+void Tokenizer::checkConfiguration() const
+{
+    if (!_settings->checkConfiguration)
+        return;
+    for (const Token *tok = tokens(); tok; tok = tok->next()) {
+        if (!Token::Match(tok, "%name% ("))
+            continue;
+        if (Token::Match(tok, "if|for|while|switch"))
+            continue;
+        for (const Token *tok2 = tok->tokAt(2); tok2 && tok2->str() != ")"; tok2 = tok2->next()) {
+            if (tok2->str() == ";") {
+                macroWithSemicolonError(tok, tok->str());
+                break;
+            }
+            if (Token::Match(tok2, "(|{"))
+                tok2 = tok2->link();
+        }
+    }
+}
+
+void Tokenizer::validateC() const
+{
+    if (!isC())
+        return;
+    for (const Token *tok = tokens(); tok; tok = tok->next()) {
+        // Template function..
+        if (Token::Match(tok, "%name% < %name% > (")) {
+            const Token *tok2 = tok->tokAt(5);
+            while (tok2 && !Token::Match(tok2, "[()]"))
+                tok2 = tok2->next();
+            if (Token::simpleMatch(tok2, ") {"))
+                syntaxErrorC(tok, tok->str() + '<' + tok->strAt(2) + ">() {}");
+        }
+        if (tok->previous() && !Token::Match(tok->previous(), "[;{}]"))
+            continue;
+        if (Token::simpleMatch(tok, "using namespace std ;"))
+            syntaxErrorC(tok, "using namespace std");
+        if (Token::Match(tok, "template < class %name% [,>]"))
+            syntaxErrorC(tok, "template<...");
+        if (Token::Match(tok, "%name% :: %name%"))
+            syntaxErrorC(tok, tok->str() + tok->strAt(1) + tok->strAt(2));
+        if (Token::Match(tok, "class|namespace %name% [:{]"))
+            syntaxErrorC(tok, tok->str() + tok->strAt(1) + tok->strAt(2));
+    }
+}
 
 void Tokenizer::validate() const
 {

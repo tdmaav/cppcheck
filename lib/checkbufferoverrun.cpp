@@ -84,7 +84,7 @@ void CheckBufferOverrun::arrayIndexOutOfBoundsError(const Token *tok, const Arra
     }
 
     if (condition != nullptr) {
-        if (!_settings->isEnabled("warning"))
+        if (!_settings->isEnabled(Settings::WARNING))
             return;
 
         std::ostringstream errmsg;
@@ -169,7 +169,7 @@ void CheckBufferOverrun::possibleBufferOverrunError(const Token *tok, const std:
 
 void CheckBufferOverrun::strncatUsageError(const Token *tok)
 {
-    if (_settings && !_settings->isEnabled("warning"))
+    if (_settings && !_settings->isEnabled(Settings::WARNING))
         return;
 
     reportError(tok, Severity::warning, "strncatUsage",
@@ -220,7 +220,7 @@ void CheckBufferOverrun::pointerOutOfBoundsError(const Token *tok, const Token *
 
 void CheckBufferOverrun::sizeArgumentAsCharError(const Token *tok)
 {
-    if (_settings && !_settings->isEnabled("warning"))
+    if (_settings && !_settings->isEnabled(Settings::WARNING))
         return;
     reportError(tok, Severity::warning, "sizeArgumentAsChar", "The size argument is given as a char constant.", CWE682, false);
 }
@@ -474,7 +474,7 @@ void CheckBufferOverrun::checkFunctionParameter(const Token &ftok, unsigned int 
     }
 
     // Check 'float x[10]' arguments in declaration
-    if (_settings->isEnabled("warning")) {
+    if (_settings->isEnabled(Settings::WARNING)) {
         const Function* const func = ftok.function();
 
         // If argument is '%type% a[num]' then check bounds against num
@@ -575,7 +575,7 @@ void CheckBufferOverrun::checkScope(const Token *tok, const std::vector<const st
     // out of bounds then this flag will be set.
     bool pointerIsOutOfBounds = false;
 
-    const bool printPortability = _settings->isEnabled("portability");
+    const bool printPortability = _settings->isEnabled(Settings::PORTABILITY);
 
     for (const Token* const end = tok->scope()->classEnd; tok && tok != end; tok = tok->next()) {
         if (declarationId != 0 && Token::Match(tok, "%varid% = new|malloc|realloc", declarationId)) {
@@ -763,7 +763,7 @@ static std::vector<ValueFlow::Value> valueFlowGetArrayIndexes(const Token * cons
     unsigned int indexvarid = 0;
     const std::vector<ValueFlow::Value> empty;
     std::vector<ValueFlow::Value> indexes;
-    for (const Token *tok2 = tok; indexes.size() < dimensions && Token::Match(tok2, "["); tok2 = tok2->link()->next()) {
+    for (const Token *tok2 = tok; indexes.size() < dimensions && Token::simpleMatch(tok2, "["); tok2 = tok2->link()->next()) {
         if (!tok2->astOperand2())
             return empty;
 
@@ -905,8 +905,8 @@ void CheckBufferOverrun::checkScope(const Token *tok, std::map<unsigned int, Arr
 
 void CheckBufferOverrun::checkScope_inner(const Token *tok, const ArrayInfo &arrayInfo)
 {
-    const bool printPortability = _settings->isEnabled("portability");
-    const bool printWarning = _settings->isEnabled("warning");
+    const bool printPortability = _settings->isEnabled(Settings::PORTABILITY);
+    const bool printWarning = _settings->isEnabled(Settings::WARNING);
     const bool printInconclusive = _settings->inconclusive;
 
     if (tok->strAt(1) == "[") {
@@ -1756,7 +1756,11 @@ void CheckBufferOverrun::checkInsecureCmdLineArgs()
                 // Match common patterns that can result in a buffer overrun
                 // e.g. strcpy(buffer, argv[0])
                 if (Token::Match(tok, "strcpy|strcat (")) {
-                    tok = tok->tokAt(2)->nextArgument();
+                    const Token *nextArgument = tok->tokAt(2)->nextArgument();
+                    if (nextArgument)
+                        tok = nextArgument;
+                    else
+                        continue; // Ticket #7964
                     if (Token::Match(tok, "* %varid%", varid) || Token::Match(tok, "%varid% [", varid))
                         cmdLineArgsError(tok);
                 }
@@ -1788,17 +1792,17 @@ CheckBufferOverrun::ArrayInfo::ArrayInfo()
 {
 }
 
-CheckBufferOverrun::ArrayInfo::ArrayInfo(const Variable *var, const SymbolDatabase * symDb, const unsigned int forcedeclid)
+CheckBufferOverrun::ArrayInfo::ArrayInfo(const Variable *var, const SymbolDatabase * symbolDatabase, const unsigned int forcedeclid)
     : _varname(var->name()), _declarationId((forcedeclid == 0U) ? var->declarationId() : forcedeclid)
 {
     for (std::size_t i = 0; i < var->dimensions().size(); i++)
         _num.push_back(var->dimension(i));
     if (var->typeEndToken()->str() == "*")
-        _element_size = symDb->sizeOfType(var->typeEndToken());
+        _element_size = symbolDatabase->sizeOfType(var->typeEndToken());
     else if (var->typeStartToken()->strAt(-1) == "struct")
         _element_size = 100;
     else {
-        _element_size = symDb->sizeOfType(var->typeEndToken());
+        _element_size = symbolDatabase->sizeOfType(var->typeEndToken());
     }
 }
 
@@ -1853,7 +1857,7 @@ MathLib::bigint CheckBufferOverrun::ArrayInfo::totalIndex(const std::vector<Valu
 
 void CheckBufferOverrun::arrayIndexThenCheck()
 {
-    if (!_settings->isEnabled("style"))
+    if (!_settings->isEnabled(Settings::STYLE))
         return;
 
     const std::size_t functions = symbolDatabase->functionScopes.size();

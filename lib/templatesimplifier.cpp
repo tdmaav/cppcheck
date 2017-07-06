@@ -818,8 +818,12 @@ void TemplateSimplifier::expandTemplate(
 
             // replace name..
             if (Token::Match(tok3, (name + " !!<").c_str())) {
-                tokenlist.addtoken(newName, tok3->linenr(), tok3->fileIndex());
-                continue;
+                if (Token::Match(tok3->tokAt(-2), "> :: %name% ( )")) {
+                    ; // Ticket #7942: Replacing for out-of-line constructors generates invalid syntax
+                } else {
+                    tokenlist.addtoken(newName, tok3->linenr(), tok3->fileIndex());
+                    continue;
+                }
             }
 
             // copy
@@ -1299,7 +1303,7 @@ bool TemplateSimplifier::simplifyTemplateInstantiations(
                 typeForPatternMatch += tok3->str();
             }
             // add additional type information
-            if (!constconst && tok3->str() != "class") {
+            if (!constconst && !Token::Match(tok3, "class|struct|enum")) {
                 if (tok3->isUnsigned())
                     typeForNewName += "unsigned";
                 else if (tok3->isSigned())

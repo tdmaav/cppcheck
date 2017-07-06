@@ -33,8 +33,8 @@
 #include <algorithm>
 
 
-Token::Token(Token **t) :
-    tokensBack(t),
+Token::Token(Token **tokens) :
+    tokensBack(tokens),
     _next(0),
     _previous(0),
     _link(0),
@@ -74,9 +74,9 @@ void Token::update_property_info()
                 _tokType = eName;
         } else if (std::isdigit((unsigned char)_str[0]) || (_str.length() > 1 && _str[0] == '-' && std::isdigit((unsigned char)_str[1])))
             _tokType = eNumber;
-        else if (_str.length() > 1 && _str[0] == '"' && _str.back() == '"')
+        else if (_str.length() > 1 && _str[0] == '"' && endsWith(_str,'"'))
             _tokType = eString;
-        else if (_str.length() > 1 && _str[0] == '\'' && _str.back() == '\'')
+        else if (_str.length() > 1 && _str[0] == '\'' && endsWith(_str,'\''))
             _tokType = eChar;
         else if (_str == "=" || _str == "<<=" || _str == ">>=" ||
                  (_str.size() == 2U && _str[1] == '=' && std::strchr("+-*/%&^|", _str[0])))
@@ -1356,6 +1356,9 @@ void Token::printValueFlow(bool xml, std::ostream &out) const
                 case ValueFlow::Value::MOVED:
                     out << "movedvalue=\"" << ValueFlow::Value::toString(it->moveKind) << '\"';
                     break;
+                case ValueFlow::Value::UNINIT:
+                    out << "uninit=\"1\"";
+                    break;
                 }
                 if (it->condition)
                     out << " condition-line=\"" << it->condition->linenr() << '\"';
@@ -1381,6 +1384,9 @@ void Token::printValueFlow(bool xml, std::ostream &out) const
                     break;
                 case ValueFlow::Value::MOVED:
                     out << ValueFlow::Value::toString(it->moveKind);
+                    break;
+                case ValueFlow::Value::UNINIT:
+                    out << "Uninit";
                     break;
                 }
             }
@@ -1413,7 +1419,7 @@ const ValueFlow::Value * Token::getValueLE(const MathLib::bigint val, const Sett
     if (settings && ret) {
         if (ret->inconclusive && !settings->inconclusive)
             return nullptr;
-        if (ret->condition && !settings->isEnabled("warning"))
+        if (ret->condition && !settings->isEnabled(Settings::WARNING))
             return nullptr;
     }
     return ret;
@@ -1436,7 +1442,30 @@ const ValueFlow::Value * Token::getValueGE(const MathLib::bigint val, const Sett
     if (settings && ret) {
         if (ret->inconclusive && !settings->inconclusive)
             return nullptr;
-        if (ret->condition && !settings->isEnabled("warning"))
+        if (ret->condition && !settings->isEnabled(Settings::WARNING))
+            return nullptr;
+    }
+    return ret;
+}
+
+const ValueFlow::Value * Token::getInvalidValue(const Token *ftok, unsigned int argnr, const Settings *settings) const
+{
+    if (!_values)
+        return nullptr;
+    const ValueFlow::Value *ret = nullptr;
+    std::list<ValueFlow::Value>::const_iterator it;
+    for (it = _values->begin(); it != _values->end(); ++it) {
+        if (it->isIntValue() && !settings->library.isargvalid(ftok, argnr, it->intvalue)) {
+            if (!ret || ret->inconclusive || (ret->condition && !it->inconclusive))
+                ret = &(*it);
+            if (!ret->inconclusive && !ret->condition)
+                break;
+        }
+    }
+    if (settings && ret) {
+        if (ret->inconclusive && !settings->inconclusive)
+            return nullptr;
+        if (ret->condition && !settings->isEnabled(Settings::WARNING))
             return nullptr;
     }
     return ret;

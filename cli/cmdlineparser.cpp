@@ -25,6 +25,7 @@
 #include "timer.h"
 #include "check.h"
 #include "threadexecutor.h" // Threading model
+#include "utils.h"
 
 #include <algorithm>
 #include <iostream>
@@ -122,7 +123,7 @@ bool CmdLineParser::ParseFromArgs(int argc, const char* const argv[])
 
             else if (std::strncmp(argv[i], "--cppcheck-build-dir=", 21) == 0) {
                 _settings->buildDir = Path::fromNativeSeparators(argv[i] + 21);
-                if (_settings->buildDir.back() == '/')
+                if (endsWith(_settings->buildDir, '/'))
                     _settings->buildDir.erase(_settings->buildDir.size() - 1U);
             }
 
@@ -324,7 +325,7 @@ bool CmdLineParser::ParseFromArgs(int argc, const char* const argv[])
                     return false;
                 }
                 // when "style" is enabled, also enable "warning", "performance" and "portability"
-                if (_settings->isEnabled("style")) {
+                if (_settings->isEnabled(Settings::STYLE)) {
                     _settings->addEnabled("warning");
                     _settings->addEnabled("performance");
                     _settings->addEnabled("portability");
@@ -758,7 +759,7 @@ bool CmdLineParser::ParseFromArgs(int argc, const char* const argv[])
     else if ((def || _settings->preprocessOnly) && !maxconfigs)
         _settings->maxConfigs = 1U;
 
-    if (_settings->isEnabled("unusedFunction") && _settings->jobs > 1) {
+    if (_settings->isEnabled(Settings::UNUSED_FUNCTION) && _settings->jobs > 1) {
         PrintMessage("cppcheck: unusedFunction check can't be used with '-j' option. Disabling unusedFunction check.");
     }
 
@@ -912,7 +913,7 @@ void CmdLineParser::PrintHelp()
               "                         language. Valid values are: c, c++\n"
               "    --library=<cfg>      Load file <cfg> that contains information about types\n"
               "                         and functions. With such information Cppcheck\n"
-              "                         understands your your code better and therefore you\n"
+              "                         understands your code better and therefore you\n"
               "                         get better results. The std.cfg file that is\n"
               "                         distributed with Cppcheck is loaded automatically.\n"
               "                         For more information about library files, read the\n"
