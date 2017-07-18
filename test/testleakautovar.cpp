@@ -76,6 +76,9 @@ private:
         TEST_CASE(exit2);
         TEST_CASE(exit3);
 
+        // handling function calls
+        TEST_CASE(functioncall1);
+
         // goto
         TEST_CASE(goto1);
         TEST_CASE(goto2);
@@ -894,6 +897,15 @@ private:
         ASSERT_EQUALS("", errout.str());
     }
 
+    void functioncall1() {
+        check("void f(struct S *p) {\n"
+              "  p->x = malloc(10);\n"
+              "  free(p->x);\n"
+              "  p->x = 0;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+    }
+
     void goto1() {
         check("static void f() {\n"
               "    int err = -ENOMEM;\n"
@@ -1195,6 +1207,9 @@ private:
         ASSERT_EQUALS("[test.c:1]: (error) Memory leak: p\n", errout.str());
 
         check("void f() { Fred *p = new Fred; }", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() { Fred fred = malloc(10); }", true);
         ASSERT_EQUALS("", errout.str());
     }
 

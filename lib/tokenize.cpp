@@ -3071,7 +3071,7 @@ void Tokenizer::createLinks2()
             if (type.empty() || type.top()->str() != "<") // < and > don't match.
                 continue;
             if (token->next() &&
-                !Token::Match(token->next(), "%name%|>|&|*|::|,|(|)|{|}|;|[|:") &&
+                !Token::Match(token->next(), "%name%|>|&|&&|*|::|,|(|)|{|}|;|[|:") &&
                 !Token::Match(token->next(), "&& %name% ="))
                 continue;
 
@@ -6242,31 +6242,45 @@ bool Tokenizer::simplifyKnownVariables()
         }
     }
 
-    // variable id for float/double variables
+    // variable id for local, float/double, array variables
+    std::set<unsigned int> localvars;
     std::set<unsigned int> floatvars;
     std::set<unsigned int> arrays;
 
     // auto variables..
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         // Search for a block of code
-        Token *start = const_cast<Token *>(startOfExecutableScope(tok));
+        Token * const start = const_cast<Token *>(startOfExecutableScope(tok));
         if (!start)
             continue;
+
+        for (const Token *tok2 = start->previous(); tok2 && !Token::Match(tok2, "[;{}]"); tok2 = tok2->previous()) {
+            if (tok2->varId() != 0)
+                localvars.insert(tok2->varId());
+        }
 
         tok = start;
         // parse the block of code..
         int indentlevel = 0;
         Token *tok2 = tok;
         for (; tok2; tok2 = tok2->next()) {
-            if (Token::Match(tok2, "[;{}] float|double %name% ;")) {
-                floatvars.insert(tok2->tokAt(2)->varId());
-            }
-
-            if (Token::Match(tok2, "[;{}] %type% *| %name% [")) {
-                const Token *nameToken = tok2->tokAt(2);
-                if (nameToken->str() == "*")
-                    nameToken = nameToken->next();
-                arrays.insert(nameToken->varId());
+            if (Token::Match(tok2, "[;{}] %type% %name%|*")) {
+                bool isfloat = false;
+                bool ispointer = false;
+                const Token *vartok = tok2->next();
+                while (Token::Match(vartok, "%name%|* %name%|*")) {
+                    if (Token::Match(vartok, "float|double"))
+                        isfloat = true;
+                    if (vartok->str() == "*")
+                        ispointer = true;
+                    vartok = vartok->next();
+                }
+                if (Token::Match(vartok, "%var% ;|["))
+                    localvars.insert(vartok->varId());
+                if (isfloat && !ispointer && Token::Match(vartok, "%var% ;"))
+                    floatvars.insert(vartok->varId());
+                if (Token::Match(vartok, "%var% ["))
+                    arrays.insert(vartok->varId());
             }
 
             if (tok2->str() == "{")
@@ -6288,6 +6302,9 @@ bool Tokenizer::simplifyKnownVariables()
                       (Token::Match(tok2, "%name% = & %name% [ 0 ] ;") && arrays.find(tok2->tokAt(3)->varId()) != arrays.end()))) {
                 const unsigned int varid = tok2->varId();
                 if (varid == 0)
+                    continue;
+
+                if (Token::Match(tok2->previous(), "[;{}]") && localvars.find(varid) == localvars.end())
                     continue;
 
                 // initialization of static variable => the value is not *known*
@@ -8293,6 +8310,8 @@ void Tokenizer::simplifyWhile0()
         if (Token::simpleMatch(tok->next()->link(), ") {")) {
             Token *end = tok->next()->link(), *old_prev = tok->previous();
             end = end->next()->link();
+            if (Token::Match(tok, "for ( %name% ="))
+                old_prev = end->link();
             eraseDeadCode(old_prev, end->next());
             if (old_prev && old_prev->next())
                 tok = old_prev->next();

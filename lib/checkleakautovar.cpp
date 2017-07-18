@@ -291,6 +291,8 @@ void CheckLeakAutoVar::checkScope(const Token * const startToken,
                 // Possibly automatically deallocated memory
                 if (!var->typeStartToken()->isStandardType() && Token::Match(varTok, "%var% = new"))
                     continue;
+                if (!var->isPointer() && !var->typeStartToken()->isStandardType())
+                    continue;
             }
 
             // allocation?
@@ -570,6 +572,9 @@ void CheckLeakAutoVar::functionCall(const Token *tok, VarInfo *varInfo, const Va
             if (Token::simpleMatch(arg, "( std :: nothrow )"))
                 arg = arg->tokAt(5);
         }
+
+        while (Token::Match(arg, "%var% . %var%"))
+            arg = arg->tokAt(2);
 
         if (Token::Match(arg, "%var% [-,)] !!.") || Token::Match(arg, "& %var%")) {
             // goto variable

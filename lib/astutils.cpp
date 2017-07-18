@@ -418,34 +418,39 @@ bool isVariableChangedByFunctionCall(const Token *tok, const Settings *settings,
     return arg && !arg->isConst() && arg->isReference();
 }
 
-bool isVariableChanged(const Token *start, const Token *end, const unsigned int varid, const Settings *settings)
+bool isVariableChanged(const Token *start, const Token *end, const unsigned int varid, bool globalvar, const Settings *settings)
 {
     for (const Token *tok = start; tok != end; tok = tok->next()) {
-        if (tok->varId() == varid) {
-            if (Token::Match(tok, "%name% %assign%|++|--"))
+        if (tok->varId() != varid) {
+            if (globalvar && Token::Match(tok, "%name% ("))
+                // TODO: Is global variable really changed by function call?
                 return true;
+            continue;
+        }
 
-            if (Token::Match(tok->previous(), "++|-- %name%"))
-                return true;
+        if (Token::Match(tok, "%name% %assign%|++|--"))
+            return true;
 
-            const Token *ftok = tok;
-            while (ftok && !Token::Match(ftok, "[({[]"))
-                ftok = ftok->astParent();
+        if (Token::Match(tok->previous(), "++|-- %name%"))
+            return true;
 
-            if (ftok && Token::Match(ftok->link(), ") !!{")) {
-                bool inconclusive = false;
-                bool isChanged = isVariableChangedByFunctionCall(tok, settings, &inconclusive);
-                isChanged |= inconclusive;
-                if (isChanged)
-                    return true;
-            }
+        const Token *ftok = tok;
+        while (ftok && !Token::Match(ftok, "[({[]"))
+            ftok = ftok->astParent();
 
-            const Token *parent = tok->astParent();
-            while (Token::Match(parent, ".|::"))
-                parent = parent->astParent();
-            if (parent && parent->tokType() == Token::eIncDecOp)
+        if (ftok && Token::Match(ftok->link(), ") !!{")) {
+            bool inconclusive = false;
+            bool isChanged = isVariableChangedByFunctionCall(tok, settings, &inconclusive);
+            isChanged |= inconclusive;
+            if (isChanged)
                 return true;
         }
+
+        const Token *parent = tok->astParent();
+        while (Token::Match(parent, ".|::"))
+            parent = parent->astParent();
+        if (parent && parent->tokType() == Token::eIncDecOp)
+            return true;
     }
     return false;
 }

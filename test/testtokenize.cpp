@@ -203,6 +203,7 @@ private:
         TEST_CASE(simplifyKnownVariablesFloat);    // #2454 - float variable
         TEST_CASE(simplifyKnownVariablesClassMember);  // #2815 - value of class member may be changed by function call
         TEST_CASE(simplifyKnownVariablesFunctionCalls); // Function calls (don't assume pass by reference)
+        TEST_CASE(simplifyKnownVariablesGlobalVars);
         TEST_CASE(simplifyKnownVariablesReturn);   // 3500 - return
         TEST_CASE(simplifyKnownVariablesPointerAliasFunctionCall); // #7440
         TEST_CASE(simplifyExternC);
@@ -2949,6 +2950,16 @@ private:
         }
     }
 
+    void simplifyKnownVariablesGlobalVars() {
+        // #8054
+        const char code[] = "static int x;"
+                            "void f() {"
+                            "    x = 123;"
+                            "    while (!x) { dostuff(); }"
+                            "}";
+        ASSERT_EQUALS("static int x ; void f ( ) { x = 123 ; while ( ! x ) { dostuff ( ) ; } }", tokenizeAndStringify(code,true));
+    }
+
     void simplifyKnownVariablesReturn() {
         const char code[] = "int a() {"
                             "    int x = 123;"
@@ -4601,6 +4612,19 @@ private:
             std::istringstream istr(code);
             tokenizer.tokenize(istr, "test.cpp");
             const Token *tok1 = tokenizer.tokens()->next();
+            const Token *tok2 = tok1->tokAt(2);
+            ASSERT_EQUALS(true, tok1->link() == tok2);
+            ASSERT_EQUALS(true, tok2->link() == tok1);
+        }
+
+        {
+            // #8115
+            const char code[] = "void Test(C<int> && c);";
+            errout.str("");
+            Tokenizer tokenizer(&settings0, this);
+            std::istringstream istr(code);
+            tokenizer.tokenize(istr, "test.cpp");
+            const Token *tok1 = Token::findsimplematch(tokenizer.tokens(), "<");
             const Token *tok2 = tok1->tokAt(2);
             ASSERT_EQUALS(true, tok1->link() == tok2);
             ASSERT_EQUALS(true, tok2->link() == tok1);
