@@ -30,6 +30,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <stack>
 #include <utility>
 //---------------------------------------------------------------------------
 
@@ -318,7 +319,7 @@ void CheckClass::copyconstructors()
         }
 
         std::set<const Token*> copiedVars;
-        const Token* copyCtor = 0;
+        const Token* copyCtor = nullptr;
         for (std::list<Function>::const_iterator func = scope->functionList.begin(); func != scope->functionList.end(); ++func) {
             if (func->type == Function::eCopyConstructor) {
                 copyCtor = func->tokenDef;
@@ -1304,51 +1305,52 @@ void CheckClass::checkReturnPtrThis(const Scope *scope, const Function *func, co
 
     for (; tok && tok != last; tok = tok->next()) {
         // check for return of reference to this
-        if (tok->str() == "return") {
-            foundReturn = true;
-            std::string cast("( " + scope->className + " & )");
-            if (Token::simpleMatch(tok->next(), cast.c_str()))
-                tok = tok->tokAt(4);
+        if (tok->str() != "return")
+            continue;
 
-            // check if a function is called
-            if (tok->strAt(2) == "(" &&
-                tok->linkAt(2)->next()->str() == ";") {
-                std::list<Function>::const_iterator it;
+        foundReturn = true;
+        std::string cast("( " + scope->className + " & )");
+        if (Token::simpleMatch(tok->next(), cast.c_str()))
+            tok = tok->tokAt(4);
 
-                // check if it is a member function
-                for (it = scope->functionList.begin(); it != scope->functionList.end(); ++it) {
-                    // check for a regular function with the same name and a body
-                    if (it->type == Function::eFunction && it->hasBody() &&
-                        it->token->str() == tok->next()->str()) {
-                        // check for the proper return type
-                        if (it->tokenDef->previous()->str() == "&" &&
-                            it->tokenDef->strAt(-2) == scope->className) {
-                            // make sure it's not a const function
-                            if (!it->isConst()) {
-                                /** @todo make sure argument types match */
-                                // avoid endless recursions
-                                if (analyzedFunctions.find(&*it) == analyzedFunctions.end()) {
-                                    analyzedFunctions.insert(&*it);
-                                    checkReturnPtrThis(scope, &*it, it->arg->link()->next(), it->arg->link()->next()->link(),
-                                                       analyzedFunctions);
-                                }
-                                // just bail for now
-                                else
-                                    return;
+        // check if a function is called
+        if (tok->strAt(2) == "(" &&
+            tok->linkAt(2)->next()->str() == ";") {
+            std::list<Function>::const_iterator it;
+
+            // check if it is a member function
+            for (it = scope->functionList.begin(); it != scope->functionList.end(); ++it) {
+                // check for a regular function with the same name and a body
+                if (it->type == Function::eFunction && it->hasBody() &&
+                    it->token->str() == tok->next()->str()) {
+                    // check for the proper return type
+                    if (it->tokenDef->previous()->str() == "&" &&
+                        it->tokenDef->strAt(-2) == scope->className) {
+                        // make sure it's not a const function
+                        if (!it->isConst()) {
+                            /** @todo make sure argument types match */
+                            // avoid endless recursions
+                            if (analyzedFunctions.find(&*it) == analyzedFunctions.end()) {
+                                analyzedFunctions.insert(&*it);
+                                checkReturnPtrThis(scope, &*it, it->arg->link()->next(), it->arg->link()->next()->link(),
+                                                   analyzedFunctions);
                             }
+                            // just bail for now
+                            else
+                                return;
                         }
                     }
                 }
             }
-
-            // check if *this is returned
-            else if (!(Token::Match(tok->next(), "(| * this ;|=") ||
-                       Token::simpleMatch(tok->next(), "operator= (") ||
-                       Token::simpleMatch(tok->next(), "this . operator= (") ||
-                       (Token::Match(tok->next(), "%type% :: operator= (") &&
-                        tok->next()->str() == scope->className)))
-                operatorEqRetRefThisError(func->token);
         }
+
+        // check if *this is returned
+        else if (!(Token::Match(tok->next(), "(| * this ;|=") ||
+                   Token::simpleMatch(tok->next(), "operator= (") ||
+                   Token::simpleMatch(tok->next(), "this . operator= (") ||
+                   (Token::Match(tok->next(), "%type% :: operator= (") &&
+                    tok->next()->str() == scope->className)))
+            operatorEqRetRefThisError(func->token);
     }
     if (foundReturn) {
         return;
@@ -1485,21 +1487,28 @@ bool CheckClass::hasAssignSelf(const Function *func, const Token *rhs)
         return false;
     const Token *last = func->functionScope->classEnd;
     for (const Token *tok = func->functionScope->classStart; tok && tok != last; tok = tok->next()) {
-        if (Token::simpleMatch(tok, "if (")) {
-            const Token *tok1 = tok->tokAt(2);
-            const Token *tok2 = tok->next()->link();
+        if (!Token::simpleMatch(tok, "if ("))
+            continue;
 
-            if (tok1 && tok2) {
-                for (; tok1 && tok1 != tok2; tok1 = tok1->next()) {
-                    if (Token::Match(tok1, "this ==|!= & %name%")) {
-                        if (tok1->strAt(3) == rhs->str())
-                            return true;
-                    } else if (Token::Match(tok1, "& %name% ==|!= this")) {
-                        if (tok1->strAt(1) == rhs->str())
-                            return true;
-                    }
-                }
-            }
+        std::stack<const Token *> tokens;
+        tokens.push(tok->next()->astOperand2());
+        while (!tokens.empty()) {
+            const Token *tok2 = tokens.top();
+            tokens.pop();
+            if (!tok2)
+                continue;
+            tokens.push(tok2->astOperand1());
+            tokens.push(tok2->astOperand2());
+            if (!Token::Match(tok2, "==|!="))
+                continue;
+            if (Token::simpleMatch(tok2->astOperand1(), "this"))
+                tok2 = tok2->astOperand2();
+            else if (Token::simpleMatch(tok2->astOperand2(), "this"))
+                tok2 = tok2->astOperand1();
+            else
+                continue;
+            if (tok2 && tok2->str() == "&" && !tok2->astOperand2() && tok2->astOperand1() && tok2->astOperand1()->str() == rhs->str())
+                return true;
         }
     }
 
@@ -2374,7 +2383,13 @@ void CheckClass::checkCopyCtorAndEqOperator()
     for (std::size_t i = 0; i < classes; ++i) {
         const Scope * scope = symbolDatabase->classAndStructScopes[i];
 
-        if (scope->varlist.empty())
+        // count the number of non-static variables
+        int vars = 0;
+        for (std::list<Variable>::const_iterator var = scope->varlist.begin(); var != scope->varlist.end(); ++var) {
+            if (!var->isStatic())
+                vars++;
+        }
+        if (vars == 0)
             continue;
 
         int hasCopyCtor = 0;

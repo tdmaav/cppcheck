@@ -994,8 +994,8 @@ void CheckOther::checkUnreachableCode()
         const Scope * scope = symbolDatabase->functionScopes[i];
 
         for (const Token* tok = scope->classStart; tok && tok != scope->classEnd; tok = tok->next()) {
-            const Token* secondBreak = 0;
-            const Token* labelName = 0;
+            const Token* secondBreak = nullptr;
+            const Token* labelName = nullptr;
             if (tok->link() && Token::Match(tok, "(|[|<"))
                 tok = tok->link();
             else if (Token::Match(tok, "break|continue ;"))
@@ -1177,7 +1177,7 @@ bool CheckOther::checkInnerScope(const Token *tok, const Variable* var, bool& us
     const Scope* scope = tok->next()->scope();
     bool loopVariable = scope->type == Scope::eFor || scope->type == Scope::eWhile || scope->type == Scope::eDo;
     bool noContinue = true;
-    const Token* forHeadEnd = 0;
+    const Token* forHeadEnd = nullptr;
     const Token* end = tok->link();
     if (scope->type == Scope::eUnconditional && (tok->strAt(-1) == ")" || tok->previous()->isName())) // Might be an unknown macro like BOOST_FOREACH
         loopVariable = true;
@@ -1379,7 +1379,7 @@ void CheckOther::checkPassByReference()
         const Token* const tok = var->typeStartToken();
         if (var->isStlStringType()) {
             ;
-        } else if (var->isStlType() && Token::Match(tok, "std :: %type% <") && !Token::simpleMatch(tok->linkAt(3), "> ::") && !Token::Match(tok->tokAt(2), "initializer_list|weak_ptr|auto_ptr")) {
+        } else if (var->isStlType() && Token::Match(tok, "std :: %type% <") && !Token::simpleMatch(tok->linkAt(3), "> ::") && !Token::Match(tok->tokAt(2), "initializer_list|weak_ptr|auto_ptr|unique_ptr")) {
             ;
         } else if (var->type() && !var->type()->isEnumType()) { // Check if type is a struct or class.
             // Ensure that it is a large object.

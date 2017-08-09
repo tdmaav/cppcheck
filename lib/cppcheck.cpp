@@ -93,7 +93,7 @@ unsigned int CppCheck::check(const ImportProject::FileSettings &fs)
 {
     CppCheck temp(_errorLogger, _useGlobalSuppressions);
     temp._settings = _settings;
-    temp._settings.userDefines = fs.defines;
+    temp._settings.userDefines = fs.cppcheckDefines();
     temp._settings.includePaths = fs.includePaths;
     // TODO: temp._settings.userUndefs = fs.undefs;
     if (fs.platformType != Settings::Unspecified) {
@@ -179,7 +179,7 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
         // write dump file xml prolog
         std::ofstream fdump;
         if (_settings.dump) {
-            const std::string dumpfile(filename + ".dump");
+            const std::string dumpfile(_settings.dumpFile.empty() ? (filename + ".dump") : _settings.dumpFile);
             fdump.open(dumpfile.c_str());
             if (fdump.is_open()) {
                 fdump << "<?xml version=\"1.0\"?>" << std::endl;
@@ -360,7 +360,7 @@ unsigned int CppCheck::processFile(const std::string& filename, const std::strin
 
                 // dump xml if --dump
                 if (_settings.dump && fdump.is_open()) {
-                    fdump << "<dump cfg=\"" << cfg << "\">" << std::endl;
+                    fdump << "<dump cfg=\"" << ErrorLogger::toxml(cfg) << "\">" << std::endl;
                     preprocessor.dump(fdump);
                     _tokenizer.dump(fdump);
                     fdump << "</dump>" << std::endl;

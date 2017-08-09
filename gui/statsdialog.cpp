@@ -25,34 +25,81 @@
 #include <QString>
 #include <QClipboard>
 #include <QMimeData>
-#include "project.h"
 #include "projectfile.h"
 #include "statsdialog.h"
 #include "checkstatistics.h"
 
 StatsDialog::StatsDialog(QWidget *parent)
-    : QDialog(parent)
+    : QDialog(parent),
+      mStatistics(nullptr)
 {
     mUI.setupUi(this);
 
-    connect(mUI.mCopyToClipboard, SIGNAL(pressed()), this, SLOT(copyToClipboard()));
-    connect(mUI.mPDFexport, SIGNAL(pressed()), this, SLOT(PDFexport()));
-
+    connect(mUI.mCopyToClipboard, &QPushButton::pressed, this, &StatsDialog::copyToClipboard);
+    connect(mUI.mPDFexport, &QPushButton::pressed, this, &StatsDialog::pdfExport);
 }
 
-void StatsDialog::setProject(const Project& project)
+void StatsDialog::setProject(const ProjectFile* projectFile)
 {
-    ProjectFile *projectFile = project.GetProjectFile();
     if (projectFile) {
-        mUI.mProject->setText(projectFile->GetRootPath());
-        mUI.mPaths->setText(projectFile->GetCheckPaths().join(";"));
-        mUI.mIncludePaths->setText(projectFile->GetIncludeDirs().join(";"));
-        mUI.mDefines->setText(projectFile->GetDefines().join(";"));
+        mUI.mProject->setText(projectFile->getRootPath());
+        mUI.mPaths->setText(projectFile->getCheckPaths().join(";"));
+        mUI.mIncludePaths->setText(projectFile->getIncludeDirs().join(";"));
+        mUI.mDefines->setText(projectFile->getDefines().join(";"));
+#ifndef HAVE_QCHART
+        mUI.mTabHistory->setVisible(false);
+#else
+        if (!projectFile->getBuildDir().isEmpty()) {
+            const QString prjpath = QFileInfo(projectFile->getFilename()).absolutePath();
+            const QString buildDir = prjpath + '/' + projectFile->getBuildDir();
+            if (QDir(buildDir).exists()) {
+                QChart *chart = new QChart();
+                chart->addSeries(numberOfReports(buildDir + "/statistics.txt", "error"));
+                chart->addSeries(numberOfReports(buildDir + "/statistics.txt", "warning"));
+                chart->addSeries(numberOfReports(buildDir + "/statistics.txt", "style"));
+                chart->addSeries(numberOfReports(buildDir + "/statistics.txt", "performance"));
+                chart->addSeries(numberOfReports(buildDir + "/statistics.txt", "portability"));
+
+                QDateTimeAxis *axisX = new QDateTimeAxis;
+                axisX->setFormat("MMM yyyy");
+                axisX->setTitleText("Date");
+                chart->addAxis(axisX, Qt::AlignBottom);
+
+                foreach (QAbstractSeries *s, chart->series()) {
+                    s->attachAxis(axisX);
+                }
+
+                QValueAxis *axisY = new QValueAxis;
+                axisY->setLabelFormat("%i");
+                axisY->setTitleText("Count");
+                chart->addAxis(axisY, Qt::AlignLeft);
+
+                qreal maxY = 0;
+                foreach (QAbstractSeries *s, chart->series()) {
+                    s->attachAxis(axisY);
+                    if (QLineSeries *ls = dynamic_cast<QLineSeries*>(s)) {
+                        foreach (QPointF p, ls->points()) {
+                            if (p.y() > maxY)
+                                maxY = p.y();
+                        }
+                    }
+                }
+                axisY->setMax(maxY);
+
+                //chart->createDefaultAxes();
+                chart->setTitle("Number of reports");
+
+                QChartView *chartView = new QChartView(chart);
+                chartView->setRenderHint(QPainter::Antialiasing);
+                mUI.mTabHistory->layout()->addWidget(chartView);
+            }
+        }
+#endif
     } else {
-        mUI.mProject->setText("");
-        mUI.mPaths->setText("");
-        mUI.mIncludePaths->setText("");
-        mUI.mDefines->setText("");
+        mUI.mProject->setText(QString());
+        mUI.mPaths->setText(QString());
+        mUI.mIncludePaths->setText(QString());
+        mUI.mDefines->setText(QString());
     }
 }
 
@@ -94,7 +141,7 @@ void StatsDialog::setScanDuration(double seconds)
 
     mUI.mScanDuration->setText(parts.join(tr(" and ")));
 }
-void StatsDialog::PDFexport()
+void StatsDialog::pdfExport()
 {
     const QString Stat = QString(
                              "<center><h1>%1   %2</h1></center>\n"
@@ -107,17 +154,17 @@ void StatsDialog::PDFexport()
                          .arg(tr("Statistics"))
                          .arg(QDate::currentDate().toString("dd.MM.yyyy"))
                          .arg(tr("Errors"))
-                         .arg(mStatistics->GetCount(ShowTypes::ShowErrors))
+                         .arg(mStatistics->getCount(ShowTypes::ShowErrors))
                          .arg(tr("Warnings"))
-                         .arg(mStatistics->GetCount(ShowTypes::ShowWarnings))
+                         .arg(mStatistics->getCount(ShowTypes::ShowWarnings))
                          .arg(tr("Style warnings"))
-                         .arg(mStatistics->GetCount(ShowTypes::ShowStyle))
+                         .arg(mStatistics->getCount(ShowTypes::ShowStyle))
                          .arg(tr("Portability warnings"))
-                         .arg(mStatistics->GetCount(ShowTypes::ShowPortability))
+                         .arg(mStatistics->getCount(ShowTypes::ShowPortability))
                          .arg(tr("Performance warnings"))
-                         .arg(mStatistics->GetCount(ShowTypes::ShowPerformance))
+                         .arg(mStatistics->getCount(ShowTypes::ShowPerformance))
                          .arg(tr("Information messages"))
-                         .arg(mStatistics->GetCount(ShowTypes::ShowInformation));
+                         .arg(mStatistics->getCount(ShowTypes::ShowInformation));
 
     QString fileName = QFileDialog::getSaveFileName((QWidget*)0, tr("Export PDF"), QString(), "*.pdf");
     if (QFileInfo(fileName).suffix().isEmpty()) {
@@ -138,31 +185,92 @@ void StatsDialog::PDFexport()
 void StatsDialog::copyToClipboard()
 {
     QClipboard *clipboard = QApplication::clipboard();
-    if (clipboard) {
-        const QString projSettings(tr("Project Settings"));
-        const QString project(tr("Project"));
-        const QString paths(tr("Paths"));
-        const QString incPaths(tr("Include paths"));
-        const QString defines(tr("Defines"));
-        const QString prevScan(tr("Previous Scan"));
-        const QString selPath(tr("Path selected"));
-        const QString numFiles(tr("Number of files scanned"));
-        const QString duration(tr("Scan duration"));
-        const QString stats(tr("Statistics"));
-        const QString errors(tr("Errors"));
-        const QString warnings(tr("Warnings"));
-        const QString style(tr("Style warnings"));
-        const QString portability(tr("Portability warnings"));
-        const QString performance(tr("Performance warnings"));
-        const QString information(tr("Information messages"));
+    if (!clipboard)
+        return;
 
-        // Plain text summary
-        const QString settings = QString(
-                                     "%1\n"
-                                     "\t%2:\t%3\n"
-                                     "\t%4:\t%5\n"
-                                     "\t%6:\t%7\n"
-                                     "\t%8:\t%9\n"
+    const QString projSettings(tr("Project Settings"));
+    const QString project(tr("Project"));
+    const QString paths(tr("Paths"));
+    const QString incPaths(tr("Include paths"));
+    const QString defines(tr("Defines"));
+    const QString prevScan(tr("Previous Scan"));
+    const QString selPath(tr("Path selected"));
+    const QString numFiles(tr("Number of files scanned"));
+    const QString duration(tr("Scan duration"));
+    const QString stats(tr("Statistics"));
+    const QString errors(tr("Errors"));
+    const QString warnings(tr("Warnings"));
+    const QString style(tr("Style warnings"));
+    const QString portability(tr("Portability warnings"));
+    const QString performance(tr("Performance warnings"));
+    const QString information(tr("Information messages"));
+
+    // Plain text summary
+    const QString settings = QString(
+                                 "%1\n"
+                                 "\t%2:\t%3\n"
+                                 "\t%4:\t%5\n"
+                                 "\t%6:\t%7\n"
+                                 "\t%8:\t%9\n"
+                             )
+                             .arg(projSettings)
+                             .arg(project)
+                             .arg(mUI.mProject->text())
+                             .arg(paths)
+                             .arg(mUI.mPaths->text())
+                             .arg(incPaths)
+                             .arg(mUI.mIncludePaths->text())
+                             .arg(defines)
+                             .arg(mUI.mDefines->text());
+
+    const QString previous = QString(
+                                 "%1\n"
+                                 "\t%2:\t%3\n"
+                                 "\t%4:\t%5\n"
+                                 "\t%6:\t%7\n"
+                             )
+                             .arg(prevScan)
+                             .arg(selPath)
+                             .arg(mUI.mPath->text())
+                             .arg(numFiles)
+                             .arg(mUI.mNumberOfFilesScanned->text())
+                             .arg(duration)
+                             .arg(mUI.mScanDuration->text());
+
+    const QString statistics = QString(
+                                   "%1\n"
+                                   "\t%2:\t%3\n"
+                                   "\t%4:\t%5\n"
+                                   "\t%6:\t%7\n"
+                                   "\t%8:\t%9\n"
+                                   "\t%10:\t%11\n"
+                                   "\t%12:\t%13\n"
+                               )
+                               .arg(stats)
+                               .arg(errors)
+                               .arg(mStatistics->getCount(ShowTypes::ShowErrors))
+                               .arg(warnings)
+                               .arg(mStatistics->getCount(ShowTypes::ShowWarnings))
+                               .arg(style)
+                               .arg(mStatistics->getCount(ShowTypes::ShowStyle))
+                               .arg(portability)
+                               .arg(mStatistics->getCount(ShowTypes::ShowPortability))
+                               .arg(performance)
+                               .arg(mStatistics->getCount(ShowTypes::ShowPerformance))
+                               .arg(information)
+                               .arg(mStatistics->getCount(ShowTypes::ShowInformation));
+
+    const QString textSummary = settings + previous + statistics;
+
+    // HTML summary
+    const QString htmlSettings = QString(
+                                     "<h3>%1<h3>\n"
+                                     "<table>\n"
+                                     " <tr><th>%2:</th><td>%3</td></tr>\n"
+                                     " <tr><th>%4:</th><td>%5</td></tr>\n"
+                                     " <tr><th>%6:</th><td>%7</td></tr>\n"
+                                     " <tr><th>%8:</th><td>%9</td></tr>\n"
+                                     "</table>\n"
                                  )
                                  .arg(projSettings)
                                  .arg(project)
@@ -174,11 +282,13 @@ void StatsDialog::copyToClipboard()
                                  .arg(defines)
                                  .arg(mUI.mDefines->text());
 
-        const QString previous = QString(
-                                     "%1\n"
-                                     "\t%2:\t%3\n"
-                                     "\t%4:\t%5\n"
-                                     "\t%6:\t%7\n"
+    const QString htmlPrevious = QString(
+                                     "<h3>%1</h3>\n"
+                                     "<table>\n"
+                                     " <tr><th>%2:</th><td>%3</td></tr>\n"
+                                     " <tr><th>%4:</th><td>%5</td></tr>\n"
+                                     " <tr><th>%6:</th><td>%7</td></tr>\n"
+                                     "</table>\n"
                                  )
                                  .arg(prevScan)
                                  .arg(selPath)
@@ -188,107 +298,78 @@ void StatsDialog::copyToClipboard()
                                  .arg(duration)
                                  .arg(mUI.mScanDuration->text());
 
-        const QString statistics = QString(
-                                       "%1\n"
-                                       "\t%2:\t%3\n"
-                                       "\t%4:\t%5\n"
-                                       "\t%6:\t%7\n"
-                                       "\t%8:\t%9\n"
-                                       "\t%10:\t%11\n"
-                                       "\t%12:\t%13\n"
+    const QString htmlStatistics = QString(
+                                       "<h3>%1</h3>\n"
+                                       " <tr><th>%2:</th><td>%3</td></tr>\n"
+                                       " <tr><th>%4:</th><td>%5</td></tr>\n"
+                                       " <tr><th>%6:</th><td>%7</td></tr>\n"
+                                       " <tr><th>%8:</th><td>%9</td></tr>\n"
+                                       " <tr><th>%10:</th><td>%11</td></tr>\n"
+                                       " <tr><th>%12:</th><td>%13</td></tr>\n"
+                                       "</table>\n"
                                    )
                                    .arg(stats)
                                    .arg(errors)
-                                   .arg(mStatistics->GetCount(ShowTypes::ShowErrors))
+                                   .arg(mStatistics->getCount(ShowTypes::ShowErrors))
                                    .arg(warnings)
-                                   .arg(mStatistics->GetCount(ShowTypes::ShowWarnings))
+                                   .arg(mStatistics->getCount(ShowTypes::ShowWarnings))
                                    .arg(style)
-                                   .arg(mStatistics->GetCount(ShowTypes::ShowStyle))
+                                   .arg(mStatistics->getCount(ShowTypes::ShowStyle))
                                    .arg(portability)
-                                   .arg(mStatistics->GetCount(ShowTypes::ShowPortability))
+                                   .arg(mStatistics->getCount(ShowTypes::ShowPortability))
                                    .arg(performance)
-                                   .arg(mStatistics->GetCount(ShowTypes::ShowPerformance))
+                                   .arg(mStatistics->getCount(ShowTypes::ShowPerformance))
                                    .arg(information)
-                                   .arg(mStatistics->GetCount(ShowTypes::ShowInformation));
+                                   .arg(mStatistics->getCount(ShowTypes::ShowInformation));
 
-        const QString textSummary = settings + previous + statistics;
+    const QString htmlSummary = htmlSettings + htmlPrevious + htmlStatistics;
 
-        // HTML summary
-        const QString htmlSettings = QString(
-                                         "<h3>%1<h3>\n"
-                                         "<table>\n"
-                                         " <tr><th>%2:</th><td>%3</td></tr>\n"
-                                         " <tr><th>%4:</th><td>%5</td></tr>\n"
-                                         " <tr><th>%6:</th><td>%7</td></tr>\n"
-                                         " <tr><th>%8:</th><td>%9</td></tr>\n"
-                                         "</table>\n"
-                                     )
-                                     .arg(projSettings)
-                                     .arg(project)
-                                     .arg(mUI.mProject->text())
-                                     .arg(paths)
-                                     .arg(mUI.mPaths->text())
-                                     .arg(incPaths)
-                                     .arg(mUI.mIncludePaths->text())
-                                     .arg(defines)
-                                     .arg(mUI.mDefines->text());
-
-        const QString htmlPrevious = QString(
-                                         "<h3>%1</h3>\n"
-                                         "<table>\n"
-                                         " <tr><th>%2:</th><td>%3</td></tr>\n"
-                                         " <tr><th>%4:</th><td>%5</td></tr>\n"
-                                         " <tr><th>%6:</th><td>%7</td></tr>\n"
-                                         "</table>\n"
-                                     )
-                                     .arg(prevScan)
-                                     .arg(selPath)
-                                     .arg(mUI.mPath->text())
-                                     .arg(numFiles)
-                                     .arg(mUI.mNumberOfFilesScanned->text())
-                                     .arg(duration)
-                                     .arg(mUI.mScanDuration->text());
-
-        const QString htmlStatistics = QString(
-                                           "<h3>%1</h3>\n"
-                                           " <tr><th>%2:</th><td>%3</td></tr>\n"
-                                           " <tr><th>%4:</th><td>%5</td></tr>\n"
-                                           " <tr><th>%6:</th><td>%7</td></tr>\n"
-                                           " <tr><th>%8:</th><td>%9</td></tr>\n"
-                                           " <tr><th>%10:</th><td>%11</td></tr>\n"
-                                           " <tr><th>%12:</th><td>%13</td></tr>\n"
-                                           "</table>\n"
-                                       )
-                                       .arg(stats)
-                                       .arg(errors)
-                                       .arg(mStatistics->GetCount(ShowTypes::ShowErrors))
-                                       .arg(warnings)
-                                       .arg(mStatistics->GetCount(ShowTypes::ShowWarnings))
-                                       .arg(style)
-                                       .arg(mStatistics->GetCount(ShowTypes::ShowStyle))
-                                       .arg(portability)
-                                       .arg(mStatistics->GetCount(ShowTypes::ShowPortability))
-                                       .arg(performance)
-                                       .arg(mStatistics->GetCount(ShowTypes::ShowPerformance))
-                                       .arg(information)
-                                       .arg(mStatistics->GetCount(ShowTypes::ShowInformation));
-
-        const QString htmlSummary = htmlSettings + htmlPrevious + htmlStatistics;
-
-        QMimeData *mimeData = new QMimeData();
-        mimeData->setText(textSummary);
-        mimeData->setHtml(htmlSummary);
-        clipboard->setMimeData(mimeData);
-    }
+    QMimeData *mimeData = new QMimeData();
+    mimeData->setText(textSummary);
+    mimeData->setHtml(htmlSummary);
+    clipboard->setMimeData(mimeData);
 }
 
 void StatsDialog::setStatistics(const CheckStatistics *stats)
 {
-    mStatistics = const_cast<CheckStatistics*>(stats);
-    mUI.mLblErrors->setText(QString("%1").arg(stats->GetCount(ShowTypes::ShowErrors)));
-    mUI.mLblWarnings->setText(QString("%1").arg(stats->GetCount(ShowTypes::ShowWarnings)));
-    mUI.mLblStyle->setText(QString("%1").arg(stats->GetCount(ShowTypes::ShowStyle)));
-    mUI.mLblPortability->setText(QString("%1").arg(stats->GetCount(ShowTypes::ShowPortability)));
-    mUI.mLblPerformance->setText(QString("%1").arg(stats->GetCount(ShowTypes::ShowPerformance)));
-    mUI.mLblInformation->setText(QString("%1").arg(stats->GetCount(ShowTypes::ShowInformation)));
+    mStatistics = stats;
+    mUI.mLblErrors->setText(QString("%1").arg(stats->getCount(ShowTypes::ShowErrors)));
+    mUI.mLblWarnings->setText(QString("%1").arg(stats->getCount(ShowTypes::ShowWarnings)));
+    mUI.mLblStyle->setText(QString("%1").arg(stats->getCount(ShowTypes::ShowStyle)));
+    mUI.mLblPortability->setText(QString("%1").arg(stats->getCount(ShowTypes::ShowPortability)));
+    mUI.mLblPerformance->setText(QString("%1").arg(stats->getCount(ShowTypes::ShowPerformance)));
+    mUI.mLblInformation->setText(QString("%1").arg(stats->getCount(ShowTypes::ShowInformation)));
 }
+
+#ifdef HAVE_QCHART
+QLineSeries *StatsDialog::numberOfReports(const QString &fileName, const QString &severity) const
+{
+    QLineSeries *series = new QLineSeries();
+    series->setName(severity);
+    QFile f(fileName);
+    if (f.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        quint64 t = 0;
+        QTextStream in(&f);
+        while (!in.atEnd()) {
+            QString line = in.readLine();
+            QRegExp rxdate("\\[(\\d\\d)\\.(\\d\\d)\\.(\\d\\d\\d\\d)\\]");
+            if (rxdate.exactMatch(line)) {
+                int y = rxdate.cap(3).toInt();
+                int m = rxdate.cap(2).toInt();
+                int d = rxdate.cap(1).toInt();
+                QDateTime dt;
+                dt.setDate(QDate(y,m,d));
+                if (t == dt.toMSecsSinceEpoch())
+                    t += 1000;
+                else
+                    t = dt.toMSecsSinceEpoch();
+            }
+            if (line.startsWith(severity + ':')) {
+                int y = line.mid(1+severity.length()).toInt();
+                series->append(t, y);
+            }
+        }
+    }
+    return series;
+}
+#endif

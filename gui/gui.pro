@@ -22,6 +22,14 @@ MOC_DIR = temp
 OBJECTS_DIR = temp
 UI_DIR = temp
 
+isEmpty(QMAKE_CXX) {
+    isEmpty(CXX)) {
+        QMAKE_CXX = gcc
+    } else {
+        QMAKE_CXX = $$(CXX)
+    }
+}
+
 win32 {
    CONFIG += windows
    contains(LINKCORE, [yY][eE][sS]) {
@@ -91,7 +99,6 @@ HEADERS += aboutdialog.h \
            mainwindow.h \
            platforms.h \
            printablereport.h \
-           project.h \
            projectfile.h \
            projectfiledialog.h \
            report.h \
@@ -106,7 +113,6 @@ HEADERS += aboutdialog.h \
            translationhandler.h \
            txtreport.h \
            xmlreport.h \
-           xmlreportv1.h \
            xmlreportv2.h \
     librarydialog.h \
     cppchecklibrarydata.h \
@@ -129,7 +135,6 @@ SOURCES += aboutdialog.cpp \
            mainwindow.cpp\
            platforms.cpp \
            printablereport.cpp \
-           project.cpp \
            projectfile.cpp \
            projectfiledialog.cpp \
            report.cpp \
@@ -144,7 +149,6 @@ SOURCES += aboutdialog.cpp \
            translationhandler.cpp \
            txtreport.cpp \
            xmlreport.cpp \
-           xmlreportv1.cpp \
            xmlreportv2.cpp \
     librarydialog.cpp \
     cppchecklibrarydata.cpp \
@@ -167,3 +171,11 @@ contains(QMAKE_CC, gcc) {
 contains(QMAKE_CXX, clang++) {
     QMAKE_CXXFLAGS += -std=c++11
 }
+
+contains(HAVE_QCHART, [yY][eE][sS]) {
+    QT += charts
+    DEFINES += HAVE_QCHART
+} else {
+    message("Charts disabled - to enable it pass HAVE_QCHART=yes to qmake.")
+}
+

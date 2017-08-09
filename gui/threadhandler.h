@@ -50,123 +50,138 @@ public:
     * @brief Set the number of threads to use
     * @param count The number of threads to use
     */
-    void SetThreadCount(const int count);
+    void setThreadCount(const int count);
 
     /**
     * @brief Initialize the threads (connect all signals to resultsview's slots)
     *
     * @param view View to show error results
     */
-    void Initialize(ResultsView *view);
+    void initialize(ResultsView *view);
 
     /**
     * @brief Load settings
     * @param settings QSettings to load settings from
     */
-    void LoadSettings(QSettings &settings);
+    void loadSettings(QSettings &settings);
 
     /**
     * @brief Save settings
     * @param settings QSettings to save settings to
     */
-    void SaveSettings(QSettings &settings) const;
+    void saveSettings(QSettings &settings) const;
+
+    void setAddons(const QStringList &addons) {
+        mAddons = addons;
+    }
+
+    void setVsIncludePaths(const QString &s) {
+        mVsIncludePaths = s;
+    }
+
+    void setClangPath(const QString &p) {
+        mClangPath = p;
+    }
+
+    void setDataDir(const QString &dataDir) {
+        mDataDir = dataDir;
+    }
 
     /**
     * @brief Clear all files from cppcheck
     *
     */
-    void ClearFiles();
+    void clearFiles();
 
     /**
     * @brief Set files to check
     *
     * @param files files to check
     */
-    void SetFiles(const QStringList &files);
+    void setFiles(const QStringList &files);
 
     /**
     * @brief Set project to check
     *
     * @param prj project to check
     */
-    void SetProject(const ImportProject &prj);
+    void setProject(const ImportProject &prj);
 
     /**
     * @brief Start the threads to check the files
     *
     * @param settings Settings for checking
-    * @param all true if all files, false if modified files
     */
-    void Check(const Settings &settings, bool all);
+    void check(const Settings &settings);
 
     /**
     * @brief Set files to check
     *
     * @param all true if all files, false if modified files
     */
-    void SetCheckFiles(bool all);
+    void setCheckFiles(bool all);
 
     /**
     * @brief Set selected files to check
     *
     * @param files list of files to be checked
     */
-    void SetCheckFiles(QStringList files);
+    void setCheckFiles(QStringList files);
 
     /**
     * @brief Is checking running?
     *
     * @return true if check is running, false otherwise.
     */
-    bool IsChecking() const;
+    bool isChecking() const;
 
     /**
     * @brief Have we checked files already?
     *
     * @return true check has been previously run and recheck can be done
     */
-    bool HasPreviousFiles() const;
+    bool hasPreviousFiles() const;
 
     /**
     * @brief Return count of files we checked last time.
     *
     * @return count of files that were checked last time.
     */
-    int GetPreviousFilesCount() const;
+    int getPreviousFilesCount() const;
 
     /**
     * @brief Return the time elapsed while scanning the previous time.
     *
     * @return the time elapsed in milliseconds.
     */
-    int GetPreviousScanDuration() const;
+    int getPreviousScanDuration() const;
 
     /**
      * @brief Get files that should be rechecked because they have been
      * changed.
      */
-    QStringList GetReCheckFiles(bool all) const;
+    QStringList getReCheckFiles(bool all) const;
 
     /**
     * @brief Get start time of last check
     *
     * @return start time of last check
     */
-    QDateTime GetCheckStartTime() const;
+    QDateTime getCheckStartTime() const;
 
     /**
     * @brief Set start time of check
     *
     * @param checkStartTime saved start time of the last check
     */
-    void SetCheckStartTime(QDateTime checkStartTime);
+    void setCheckStartTime(QDateTime checkStartTime);
 
 signals:
     /**
     * @brief Signal that all threads are done
     *
     */
-    void Done();
+    void done();
 
 public slots:
 
@@ -174,16 +189,13 @@ public slots:
     * @brief Slot to stop all threads
     *
     */
-    void Stop();
+    void stop();
 protected slots:
-
-
-
     /**
     * @brief Slot that a single thread is done
     *
     */
-    void ThreadDone();
+    void threadDone();
 protected:
     /**
     * @brief List of files checked last time (used when rechecking)
@@ -215,7 +227,7 @@ protected:
     * @brief Function to delete all threads
     *
     */
-    void RemoveThreads();
+    void removeThreads();
 
     /**
     * @brief Thread results are stored here
@@ -236,13 +248,19 @@ protected:
     int mRunningThreadCount;
 
     bool mAnalyseWholeProgram;
+
+    QStringList mAddons;
+    QString mVsIncludePaths;
+    QString mClangPath;
+
+    QString mDataDir;
 private:
 
     /**
      * @brief Check if a file needs to be rechecked. Recursively checks
      * included headers. Used by GetReCheckFiles()
      */
-    bool NeedsReCheck(const QString &filename, std::set<QString> &modified, std::set<QString> &unmodified) const;
+    bool needsReCheck(const QString &filename, std::set<QString> &modified, std::set<QString> &unmodified) const;
 };
 /// @}
 #endif // THREADHANDLER_H

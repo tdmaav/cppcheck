@@ -44,13 +44,29 @@ public:
     *
     * @param settings settings for cppcheck
     */
-    void Check(const Settings &settings);
+    void check(const Settings &settings);
 
     /**
     * @brief Run whole program analysis
     * @param files    All files
     */
-    void AnalyseWholeProgram(const QStringList &files);
+    void analyseWholeProgram(const QStringList &files);
+
+    void setAddons(const QStringList &addons) {
+        mAddons = addons;
+    }
+
+    void setVsIncludePaths(const QString &s) {
+        mVsIncludePaths = s;
+    }
+
+    void setDataDir(const QString &dataDir) {
+        mDataDir = dataDir;
+    }
+
+    void setClangPath(const QString &p) {
+        mClangPath = p;
+    }
 
     /**
     * @brief method that is run in a thread
@@ -67,9 +83,9 @@ signals:
     * @brief cpp checking is done
     *
     */
-    void Done();
+    void done();
 
-    void FileChecked(const QString &file);
+    void fileChecked(const QString &file);
 protected:
 
     /**
@@ -94,13 +110,23 @@ protected:
     ThreadResult &mResult;
     /**
     * @brief Cppcheck itself
-    *
     */
     CppCheck mCppcheck;
 
 private:
+    QString getAddonPath() const;
+
+    void runAddons(const QString &addonPath, const ImportProject::FileSettings *fileSettings, const QString &fileName);
+
+    void parseAddonErrors(QString err, QString tool);
+    void parseClangErrors(const QString &file0, QString err);
+
     QStringList mFiles;
     bool mAnalyseWholeProgram;
+    QStringList mAddons;
+    QString mVsIncludePaths;
+    QString mDataDir;
+    QString mClangPath;
 };
 /// @}
 #endif // CHECKTHREAD_H

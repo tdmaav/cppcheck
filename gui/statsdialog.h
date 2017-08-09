@@ -20,9 +20,12 @@
 #define STATSDIALOG_H
 
 #include <QDialog>
+#ifdef HAVE_QCHART
+#include <QtCharts>
+#endif
 #include "ui_stats.h"
 
-class Project;
+class ProjectFile;
 class CheckStatistics;
 
 /// @addtogroup GUI
@@ -40,7 +43,7 @@ public:
     /**
     * @brief Sets the project to extract statistics from
     */
-    void setProject(const Project& project);
+    void setProject(const ProjectFile *projectFile);
 
     /**
     * @brief Sets the string to display beside "Path Selected:"
@@ -64,11 +67,13 @@ public:
 
 private slots:
     void copyToClipboard();
-    void PDFexport();
-
+    void pdfExport();
+#ifdef HAVE_QCHART
+    QLineSeries *numberOfReports(const QString &fileName, const QString &severity) const;
+#endif
 private:
     Ui::StatsDialog mUI;
-    CheckStatistics *mStatistics;
+    const CheckStatistics *mStatistics;
 };
 
 /// @}

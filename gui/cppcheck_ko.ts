@@ -30,15 +30,7 @@ of the GNU General Public License version 3</source>
         <translation>Cppcheck 홈페이지(%1)를 방문해보세요</translation>
     </message>
     <message utf8="true">
-        <source>Copyright © 2007-2013 Daniel Marjamäki and cppcheck team.</source>
-        <translation type="obsolete">Copyright © 2007-2012 Daniel Marjamäki and cppcheck team. {2007-2013 ?}</translation>
-    </message>
-    <message utf8="true">
-        <source>Copyright © 2007-2016 Daniel Marjamäki and cppcheck team.</source>
-        <translation type="obsolete">Copyright © 2007-2012 Daniel Marjamäki and cppcheck team. {2007-2013 ?} {2007-2016 ?}</translation>
-    </message>
-    <message utf8="true">
-        <source>Copyright © 2007-2016 Cppcheck team.</source>
+        <source>Copyright © 2007-2017 Cppcheck team.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -374,7 +366,7 @@ Kate로 파일을 열고, 해당 행으로 이동하는 예제:
     </message>
     <message>
         <source>&amp;Check</source>
-        <translation>검사(&amp;C)</translation>
+        <translation type="obsolete">검사(&amp;C)</translation>
     </message>
     <message>
         <source>&amp;Edit</source>
@@ -410,7 +402,7 @@ Kate로 파일을 열고, 해당 행으로 이동하는 예제:
     </message>
     <message>
         <source>Check files</source>
-        <translation>파일 검사</translation>
+        <translation type="obsolete">파일 검사</translation>
     </message>
     <message>
         <source>Ctrl+F</source>
@@ -422,7 +414,7 @@ Kate로 파일을 열고, 해당 행으로 이동하는 예제:
     </message>
     <message>
         <source>Check directory</source>
-        <translation>디렉토리 검사</translation>
+        <translation type="obsolete">디렉토리 검사</translation>
     </message>
     <message>
         <source>Ctrl+D</source>
@@ -442,7 +434,7 @@ Kate로 파일을 열고, 해당 행으로 이동하는 예제:
     </message>
     <message>
         <source>Stop checking</source>
-        <translation>검사 중지</translation>
+        <translation type="obsolete">검사 중지</translation>
     </message>
     <message>
         <source>Esc</source>
@@ -658,7 +650,7 @@ Cppcheck 버전간 설정 방법 차이때문인 것으로 보입니다. 편집�
     </message>
     <message>
         <source>No suitable files found to check!</source>
-        <translation>검사할 수 있는 파일이 없습니다!</translation>
+        <translation type="obsolete">검사할 수 있는 파일이 없습니다!</translation>
     </message>
     <message>
         <source>You must close the project file before selecting new files or directories!</source>
@@ -666,7 +658,7 @@ Cppcheck 버전간 설정 방법 차이때문인 것으로 보입니다. 편집�
     </message>
     <message>
         <source>Select directory to check</source>
-        <translation>검사할 디렉토리 선택</translation>
+        <translation type="obsolete">검사할 디렉토리 선택</translation>
     </message>
     <message>
         <source>Found project file: %1
@@ -680,7 +672,7 @@ Do you want to load this project file instead?</source>
         <source>Found project files from the directory.
 
 Do you want to proceed checking without using any of these project files?</source>
-        <translation>디렉토리에 프로젝트 파일 존재.
+        <translation type="obsolete">디렉토리에 프로젝트 파일 존재.
 
 이 프로젝트 파일을 사용하지 않고 검사를 계속하시겠습니까?</translation>
     </message>
@@ -696,7 +688,7 @@ Do you want to proceed checking without using any of these project files?</sourc
         <source>Checking is running.
 
 Do you want to stop the checking and exit Cppcheck?</source>
-        <translation>검사 중.
+        <translation type="obsolete">검사 중.
 
 검사를 중지하고 Cppcheck을 종료하시겠습니까?</translation>
     </message>
@@ -710,7 +702,7 @@ Do you want to stop the checking and exit Cppcheck?</source>
     </message>
     <message>
         <source>XML files version 2 (*.xml);;XML files version 1 (*.xml);;Text files (*.txt);;CSV files (*.csv)</source>
-        <translation>XML 파일 버전 2 (*.xml);;XML 파일 버전 1 (*.xml);;텍스트 파일 (*.txt);;CSV 파일 (*.csv)</translation>
+        <translation type="obsolete">XML 파일 버전 2 (*.xml);;XML 파일 버전 1 (*.xml);;텍스트 파일 (*.txt);;CSV 파일 (*.csv)</translation>
     </message>
     <message>
         <source>Save the report file</source>
@@ -718,11 +710,11 @@ Do you want to stop the checking and exit Cppcheck?</source>
     </message>
     <message>
         <source>XML files version 1 (*.xml)</source>
-        <translation>XML 파일 버전 1 (*.xml)</translation>
+        <translation type="obsolete">XML 파일 버전 1 (*.xml)</translation>
     </message>
     <message>
         <source>XML files version 2 (*.xml)</source>
-        <translation>XML 파일 버전 2 (*.xml)</translation>
+        <translation type="obsolete">XML 파일 버전 2 (*.xml)</translation>
     </message>
     <message>
         <source>Text files (*.txt)</source>
@@ -796,7 +788,7 @@ Opening a new XML file will clear current results.Do you want to proceed?</sourc
     </message>
     <message>
         <source>Select files to check</source>
-        <translation type="unfinished">검사할 파일 선택</translation>
+        <translation type="obsolete">검사할 파일 선택</translation>
     </message>
     <message>
         <source>Cppcheck GUI - Command line parameters</source>
@@ -901,14 +893,6 @@ Opening a new XML file will clear current results.Do you want to proceed?</sourc
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>&amp;Recheck modified files</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>&amp;Recheck all files</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Unknown element</source>
         <translation type="unfinished"></translation>
     </message>
@@ -922,18 +906,6 @@ Opening a new XML file will clear current results.Do you want to proceed?</sourc
     </message>
     <message>
         <source>Select configuration</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select the configuration that will be checked</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Deprecated XML format</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>XML format 1 is deprecated and will be removed in cppcheck 1.81.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -955,6 +927,66 @@ Options:
     </message>
     <message>
         <source>Failed to load %1. Your Cppcheck installation is broken. You can use --data-dir=&lt;directory&gt; at the command line to specify where this file is located. Please note that --data-dir is supposed to be used by installation scripts and therefore the GUI does not start when it is used, all that happens is that the setting is configured.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Build dir &apos;%1&apos; does not exist, create it?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Analyze</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Analyze files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Analyze directory</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Reanalyze modified files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Reanalyze all files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stop analysis</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>XML files (*.xml);;Text files (*.txt);;CSV files (*.csv)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No suitable files found to analyze!</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select files to analyze</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select directory to analyze</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select the configuration that will be analyzed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Found project files from the directory.
+
+Do you want to proceed analysis without using any of these project files?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Analyzer is running.
+
+Do you want to stop the analysis and exit Cppcheck?</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1020,7 +1052,7 @@ Options:
     </message>
     <message>
         <source>Root:</source>
-        <translation>Root:</translation>
+        <translation type="obsolete">Root:</translation>
     </message>
     <message>
         <source>Paths:</source>
@@ -1083,39 +1115,7 @@ Options:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Visual Studio</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Visual Studio
-
-Cppcheck can import visual studio solutions and projects.
-
-Files to check, include paths, configurations, defines, platform settings are imported.
-
-Library settings are not imported.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>CMake</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Compile database
-
-Cppcheck can import files to analyse, include paths, defines from the compile database.
-
-Platform settings are not provided in compile database and must be configured.
-
-Library settings are not provided in compile database, be careful about this configuration also.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Other</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1123,7 +1123,27 @@ Library settings are not provided in compile database, be careful about this con
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Cppcheck build dir (optional)</source>
+        <source>&amp;Root:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;In the build dir, cppcheck stores data about each translation unit.&lt;/p&gt;&lt;p&gt;With a build dir you get whole program analysis.&lt;/p&gt;&lt;p&gt;Unchanged files will be analyzed much faster; Cppcheck skip the analysis of these files and reuse their old data.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cppcheck build dir (whole program analysis, faster analysis for unchanged files)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Paths and Defines</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Cppcheck can import Visual studio solutions (*.sln), Visual studio projects (*.vcxproj) or compile databases.&lt;/p&gt;&lt;p&gt;Files to check, defines, include paths are imported.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import Project (Visual studio / compile database)</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1154,23 +1174,15 @@ Library settings are not provided in compile database, be careful about this con
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Compile Database</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Compile database (compile_database.json)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Visual Studio</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Visual Studio Solution/Project (*.sln *.vcxproj)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Select Cppcheck build dir</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import Project</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Visual Studio (*.sln *.vcxproj);;Compile database (compile_database.json)</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1365,6 +1377,10 @@ Please select the directory where file is located.</source>
         <source>Recheck</source>
         <translation type="unfinished"></translation>
     </message>
+    <message>
+        <source>note</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>ResultsView</name>
@@ -1424,6 +1440,10 @@ To toggle what kind of errors are shown, open view menu.</source>
     </message>
     <message>
         <source>First included by</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>XML format version 1 is no longer supported.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1741,6 +1761,14 @@ To toggle what kind of errors are shown, open view menu.</source>
     <message>
         <source>Information messages</source>
         <translation>정보 메시지</translation>
+    </message>
+    <message>
+        <source>Pdf Export</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Export PDF</source>
+        <translation type="unfinished"></translation>
     </message>
 </context>
 <context>

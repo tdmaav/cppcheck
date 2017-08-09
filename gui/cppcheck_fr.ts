@@ -26,7 +26,7 @@ General Public License version 3</translation>
         <translation>Visitez le site Cppcheck : %1</translation>
     </message>
     <message utf8="true">
-        <source>Copyright © 2007-2016 Cppcheck team.</source>
+        <source>Copyright © 2007-2017 Cppcheck team.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -344,7 +344,7 @@ Parameters: -l(line) (file)</source>
     </message>
     <message>
         <source>&amp;Check</source>
-        <translation>&amp;Vérifier</translation>
+        <translation type="obsolete">&amp;Vérifier</translation>
     </message>
     <message>
         <source>&amp;Edit</source>
@@ -448,11 +448,11 @@ Parameters: -l(line) (file)</source>
     </message>
     <message>
         <source>No suitable files found to check!</source>
-        <translation>Pas de fichiers trouvés à vérifier !</translation>
+        <translation type="obsolete">Pas de fichiers trouvés à vérifier !</translation>
     </message>
     <message>
         <source>Select directory to check</source>
-        <translation>Sélectionner le répertoire à vérifier</translation>
+        <translation type="obsolete">Sélectionner le répertoire à vérifier</translation>
     </message>
     <message>
         <source>License</source>
@@ -492,15 +492,15 @@ Parameters: -l(line) (file)</source>
     </message>
     <message>
         <source>Check files</source>
-        <translation>Vérifier les fichiers</translation>
+        <translation type="obsolete">Vérifier les fichiers</translation>
     </message>
     <message>
         <source>Check directory</source>
-        <translation>Vérifier un répertoire</translation>
+        <translation type="obsolete">Vérifier un répertoire</translation>
     </message>
     <message>
         <source>Stop checking</source>
-        <translation>Arrêter la vérification</translation>
+        <translation type="obsolete">Arrêter la vérification</translation>
     </message>
     <message>
         <source>Style warnings</source>
@@ -618,21 +618,9 @@ Parameters: -l(line) (file)</source>
         <source>Checking is running.
 
 Do you want to stop the checking and exit Cppcheck?</source>
-        <translation>Vérification en cours.
+        <translation type="obsolete">Vérification en cours.
 		
 Voulez-vous arrêter la vérification et quitter CppCheck ?</translation>
-    </message>
-    <message>
-        <source>XML files version 2 (*.xml);;XML files version 1 (*.xml);;Text files (*.txt);;CSV files (*.csv)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>XML files version 1 (*.xml)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>XML files version 2 (*.xml)</source>
-        <translation type="unfinished"></translation>
     </message>
     <message>
         <source>Project files (*.cppcheck);;All files(*.*)</source>
@@ -672,12 +660,6 @@ This is probably because the settings were changed between the Cppcheck versions
         <source>Found project file: %1
 
 Do you want to load this project file instead?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Found project files from the directory.
-
-Do you want to proceed checking without using any of these project files?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -748,7 +730,7 @@ L&apos;ouverture d&apos;un nouveau fichier XML effacera les resultats. Voulez-vo
     </message>
     <message>
         <source>Select files to check</source>
-        <translation>Sélectionner les fichiers à vérifier</translation>
+        <translation type="obsolete">Sélectionner les fichiers à vérifier</translation>
     </message>
     <message>
         <source>Cppcheck GUI - Command line parameters</source>
@@ -856,11 +838,11 @@ L&apos;ouverture d&apos;un nouveau fichier XML effacera les resultats. Voulez-vo
     </message>
     <message>
         <source>&amp;Recheck modified files</source>
-        <translation>&amp;Revérifier les fichiers modifiés</translation>
+        <translation type="obsolete">&amp;Revérifier les fichiers modifiés</translation>
     </message>
     <message>
         <source>&amp;Recheck all files</source>
-        <translation>&amp;Revérifier tous les fichiers</translation>
+        <translation type="obsolete">&amp;Revérifier tous les fichiers</translation>
     </message>
     <message>
         <source>Unknown element</source>
@@ -876,18 +858,6 @@ L&apos;ouverture d&apos;un nouveau fichier XML effacera les resultats. Voulez-vo
     </message>
     <message>
         <source>Select configuration</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Select the configuration that will be checked</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Deprecated XML format</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>XML format 1 is deprecated and will be removed in cppcheck 1.81.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -909,6 +879,66 @@ Options:
     </message>
     <message>
         <source>Failed to load %1. Your Cppcheck installation is broken. You can use --data-dir=&lt;directory&gt; at the command line to specify where this file is located. Please note that --data-dir is supposed to be used by installation scripts and therefore the GUI does not start when it is used, all that happens is that the setting is configured.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Build dir &apos;%1&apos; does not exist, create it?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Analyze</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Analyze files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Analyze directory</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Reanalyze modified files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&amp;Reanalyze all files</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Stop analysis</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>XML files (*.xml);;Text files (*.txt);;CSV files (*.csv)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>No suitable files found to analyze!</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select files to analyze</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select directory to analyze</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Select the configuration that will be analyzed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Found project files from the directory.
+
+Do you want to proceed analysis without using any of these project files?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Analyzer is running.
+
+Do you want to stop the analysis and exit Cppcheck?</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -994,7 +1024,7 @@ Options:
     </message>
     <message>
         <source>Root:</source>
-        <translation>Répertoire racine</translation>
+        <translation type="obsolete">Répertoire racine</translation>
     </message>
     <message>
         <source>Up</source>
@@ -1033,39 +1063,7 @@ Options:
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Visual Studio</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Visual Studio
-
-Cppcheck can import visual studio solutions and projects.
-
-Files to check, include paths, configurations, defines, platform settings are imported.
-
-Library settings are not imported.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>...</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>CMake</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Compile database
-
-Cppcheck can import files to analyse, include paths, defines from the compile database.
-
-Platform settings are not provided in compile database and must be configured.
-
-Library settings are not provided in compile database, be careful about this configuration also.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Other</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1073,7 +1071,27 @@ Library settings are not provided in compile database, be careful about this con
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Cppcheck build dir (optional)</source>
+        <source>&amp;Root:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;In the build dir, cppcheck stores data about each translation unit.&lt;/p&gt;&lt;p&gt;With a build dir you get whole program analysis.&lt;/p&gt;&lt;p&gt;Unchanged files will be analyzed much faster; Cppcheck skip the analysis of these files and reuse their old data.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Cppcheck build dir (whole program analysis, faster analysis for unchanged files)</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Paths and Defines</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Cppcheck can import Visual studio solutions (*.sln), Visual studio projects (*.vcxproj) or compile databases.&lt;/p&gt;&lt;p&gt;Files to check, defines, include paths are imported.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import Project (Visual studio / compile database)</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1104,23 +1122,15 @@ Library settings are not provided in compile database, be careful about this con
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <source>Compile Database</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Compile database (compile_database.json)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Visual Studio</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <source>Visual Studio Solution/Project (*.sln *.vcxproj)</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <source>Select Cppcheck build dir</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Import Project</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Visual Studio (*.sln *.vcxproj);;Compile database (compile_database.json)</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1311,6 +1321,10 @@ Please select the default editor application in preferences/Applications.</sourc
         <source>Recheck</source>
         <translation>Revérifier</translation>
     </message>
+    <message>
+        <source>note</source>
+        <translation type="unfinished"></translation>
+    </message>
 </context>
 <context>
     <name>ResultsView</name>
@@ -1370,6 +1384,10 @@ Pour configurer les erreurs affichées, ouvrez le menu d&apos;affichage.</transl
     </message>
     <message>
         <source>First included by</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>XML format version 1 is no longer supported.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1674,6 +1692,14 @@ Pour configurer les erreurs affichées, ouvrez le menu d&apos;affichage.</transl
     </message>
     <message>
         <source>Information messages</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Pdf Export</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <source>Export PDF</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

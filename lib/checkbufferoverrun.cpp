@@ -1198,30 +1198,28 @@ void CheckBufferOverrun::checkGlobalAndLocalVariable()
     for (std::list<Scope>::const_iterator scope = symbolDatabase->scopeList.cbegin(); scope != symbolDatabase->scopeList.cend(); ++scope) {
         std::map<unsigned int, ArrayInfo> arrayInfos;
         for (std::list<Variable>::const_iterator var = scope->varlist.cbegin(); var != scope->varlist.cend(); ++var) {
-            if (var->isArray() && var->dimension(0) > 0) {
-                _errorLogger->reportProgress(_tokenizer->list.getSourceFilePath(),
-                                             "Check (BufferOverrun::checkGlobalAndLocalVariable 1)",
-                                             var->nameToken()->progressValue());
+            if (!var->isArray() || var->dimension(0) <= 0)
+                continue;
+            _errorLogger->reportProgress(_tokenizer->list.getSourceFilePath(),
+                                         "Check (BufferOverrun::checkGlobalAndLocalVariable 1)",
+                                         var->nameToken()->progressValue());
 
-                if (_tokenizer->isMaxTime())
-                    return;
+            if (_tokenizer->isMaxTime())
+                return;
 
-                const Token *tok = var->nameToken();
-                do {
-                    if (tok->str() == "{") {
-                        if (Token::simpleMatch(tok->previous(), "= {"))
-                            tok = tok->link();
-                        else
-                            break;
-                    }
-                    tok = tok->next();
-                } while (tok && tok->str() != ";");
-                if (!tok)
-                    break;
-                if (tok->str() == "{")
-                    tok = tok->next();
-                arrayInfos[var->declarationId()] = ArrayInfo(&*var, symbolDatabase, var->declarationId());
-            }
+            const Token *tok = var->nameToken();
+            do {
+                if (tok->str() == "{") {
+                    if (Token::simpleMatch(tok->previous(), "= {"))
+                        tok = tok->link();
+                    else
+                        break;
+                }
+                tok = tok->next();
+            } while (tok && tok->str() != ";");
+            if (!tok)
+                break;
+            arrayInfos[var->declarationId()] = ArrayInfo(&*var, symbolDatabase, var->declarationId());
         }
         if (!arrayInfos.empty())
             checkScope(scope->classStart ? scope->classStart : _tokenizer->tokens(), arrayInfos);
@@ -1377,16 +1375,8 @@ void CheckBufferOverrun::checkStructVariable()
                         if (Token::Match(tok3->next(), "%var% ;"))
                             varname[0] = &tok3->strAt(1);
 
-                        else if (isArrayOfStruct(tok3,posOfSemicolon)) {
+                        else if (isArrayOfStruct(tok3,posOfSemicolon))
                             varname[0] = &tok3->strAt(1);
-
-                            int pos = 2;
-                            for (int k = 0 ; k < posOfSemicolon; k++) {
-                                for (int index = pos; index < (pos + 3); index++)
-                                    tok3->strAt(index);
-                                pos += 3;
-                            }
-                        }
 
                         // Declare pointer or reference: Fred *fred1
                         else if (Token::Match(tok3->next(), "*|& %var% [,);=]"))

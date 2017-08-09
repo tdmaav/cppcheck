@@ -3690,7 +3690,7 @@ const Enumerator * SymbolDatabase::findEnumerator(const Token * tok) const
             }
         }
 
-        while (scope && scope->nestedIn) {
+        while (scope->nestedIn) {
             if (scope->type == Scope::eFunction && scope->functionOf)
                 scope = scope->functionOf;
             else
@@ -3945,9 +3945,9 @@ const Function* Scope::findFunction(const Token *tok, bool requireConst) const
             const Scope * scope = tok->scope();
 
             // check if this function is a member function
-            if (scope && scope->functionOf && scope->functionOf->isClassOrStruct()) {
+            if (scope && scope->functionOf && scope->functionOf->isClassOrStruct() && scope->function) {
                 // check if isConst mismatches
-                if (!(scope->function && scope->function->isConst() == func->isConst())) {
+                if (scope->function->isConst() != func->isConst()) {
                     if (scope->function->isConst()) {
                         if (!erased)
                             ++i;
@@ -4836,7 +4836,7 @@ void SymbolDatabase::setValueType(Token *tok, const ValueType &valuetype)
 
     bool ternary = parent->str() == ":" && parent->astParent() && parent->astParent()->str() == "?";
     if (ternary) {
-        if (vt1->pointer == vt2->pointer && vt1->type == vt2->type && vt1->sign == vt2->sign)
+        if (vt2 && vt1->pointer == vt2->pointer && vt1->type == vt2->type && vt1->sign == vt2->sign)
             setValueType(parent, *vt2);
         parent = const_cast<Token*>(parent->astParent());
     }

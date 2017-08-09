@@ -1202,15 +1202,20 @@ static const Token* goToRightParenthesis(const Token* start, const Token* end)
 static std::string stringFromTokenRange(const Token* start, const Token* end)
 {
     std::ostringstream ret;
+    if (end)
+        end = end->next();
     for (const Token *tok = start; tok && tok != end; tok = tok->next()) {
-        if (tok->originalName() == "->")
-            ret << "->";
-        else
+        if (tok->isUnsigned())
+            ret << "unsigned ";
+        if (tok->isLong())
+            ret << (tok->isLiteral() ? "L" : "long ");
+        if (tok->originalName().empty() || tok->isUnsigned() || tok->isLong()) {
             ret << tok->str();
+        } else
+            ret << tok->originalName();
         if (Token::Match(tok, "%name%|%num% %name%|%num%"))
             ret << ' ';
     }
-    ret << end->str();
     return ret.str();
 }
 
@@ -1350,7 +1355,10 @@ void Token::printValueFlow(bool xml, std::ostream &out) const
                 out << "      <value ";
                 switch (it->valueType) {
                 case ValueFlow::Value::INT:
-                    out << "intvalue=\"" << it->intvalue << '\"';
+                    if (tok->valueType() && tok->valueType()->sign == ValueType::UNSIGNED)
+                        out << "intvalue=\"" << (MathLib::biguint)it->intvalue << '\"';
+                    else
+                        out << "intvalue=\"" << it->intvalue << '\"';
                     break;
                 case ValueFlow::Value::TOK:
                     out << "tokvalue=\"" << it->tokvalue << '\"';
@@ -1379,7 +1387,10 @@ void Token::printValueFlow(bool xml, std::ostream &out) const
                     out << ",";
                 switch (it->valueType) {
                 case ValueFlow::Value::INT:
-                    out << it->intvalue;
+                    if (tok->valueType() && tok->valueType()->sign == ValueType::UNSIGNED)
+                        out << (MathLib::biguint)it->intvalue;
+                    else
+                        out << it->intvalue;
                     break;
                 case ValueFlow::Value::TOK:
                     out << it->tokvalue->str();
@@ -1593,7 +1604,7 @@ bool Token::addValue(const ValueFlow::Value &value)
         }
 
         // Add value
-        if (it == values().end()) {
+        if (it == _values->end()) {
             ValueFlow::Value v(value);
             if (v.varId == 0)
                 v.varId = _varId;

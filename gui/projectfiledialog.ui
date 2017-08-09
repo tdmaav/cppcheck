@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>635</width>
-    <height>368</height>
+    <width>642</width>
+    <height>507</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,176 +19,31 @@
      <property name="currentIndex">
       <number>0</number>
      </property>
-     <widget class="QWidget" name="mTabProject">
+     <widget class="QWidget" name="mTabTools">
       <attribute name="title">
-       <string>Project</string>
+       <string>Tools</string>
       </attribute>
       <layout class="QVBoxLayout" name="verticalLayout_12">
        <item>
-        <layout class="QHBoxLayout" name="mLayoutProjectRoot">
-         <item>
-          <widget class="QLabel" name="mLabelProjectRoot">
-           <property name="text">
-            <string>Root:</string>
-           </property>
-           <property name="buddy">
-            <cstring>mEditProjectRoot</cstring>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="mEditProjectRoot"/>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="mLayoutBuildDir">
-         <item>
-          <widget class="QLabel" name="mLabelBuildDir">
-           <property name="text">
-            <string>Cppcheck build dir (optional)</string>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLineEdit" name="mEditBuildDir"/>
-         </item>
-         <item>
-          <widget class="QPushButton" name="mBtnBrowseBuildDir">
-           <property name="text">
-            <string>...</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <spacer name="verticalSpacer_10">
-         <property name="orientation">
-          <enum>Qt::Vertical</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>20</width>
-           <height>97</height>
-          </size>
-         </property>
-        </spacer>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="mLayoutLibraries">
-         <item>
-          <widget class="QLabel" name="mLabelLibraries">
-           <property name="text">
-            <string>Libraries:</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <widget class="QLabel" name="mLabelLibrariesNote">
+        <widget class="QLabel" name="label_3">
          <property name="text">
-          <string>Note: Put your own custom .cfg files in the same folder as the project file. You should see them above.</string>
-         </property>
-         <property name="wordWrap">
-          <bool>true</bool>
+          <string>It is common best practice to use several tools.</string>
          </property>
         </widget>
        </item>
        <item>
-        <spacer name="verticalSpacer_9">
-         <property name="orientation">
-          <enum>Qt::Vertical</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>20</width>
-           <height>96</height>
-          </size>
-         </property>
-        </spacer>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="mTabVisualStudio">
-      <attribute name="title">
-       <string>Visual Studio</string>
-      </attribute>
-      <layout class="QVBoxLayout" name="verticalLayout_4">
-       <item>
-        <widget class="QLabel" name="mLabelVisualStudio">
+        <widget class="QCheckBox" name="mToolClang">
          <property name="text">
-          <string>Visual Studio
-
-Cppcheck can import visual studio solutions and projects.
-
-Files to check, include paths, configurations, defines, platform settings are imported.
-
-Library settings are not imported.</string>
+          <string>Clang</string>
          </property>
         </widget>
        </item>
        <item>
-        <layout class="QHBoxLayout" name="mLayoutVisualStudio">
-         <item>
-          <widget class="QLineEdit" name="mEditVisualStudio"/>
-         </item>
-         <item>
-          <widget class="QPushButton" name="mBtnBrowseVisualStudio">
-           <property name="text">
-            <string>...</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </item>
-       <item>
-        <spacer name="verticalSpacer_5">
-         <property name="orientation">
-          <enum>Qt::Vertical</enum>
-         </property>
-         <property name="sizeHint" stdset="0">
-          <size>
-           <width>20</width>
-           <height>149</height>
-          </size>
-         </property>
-        </spacer>
-       </item>
-      </layout>
-     </widget>
-     <widget class="QWidget" name="mTabCMake">
-      <attribute name="title">
-       <string>CMake</string>
-      </attribute>
-      <layout class="QVBoxLayout" name="verticalLayout_7">
-       <item>
-        <widget class="QLabel" name="mLabelCMake">
+        <widget class="QCheckBox" name="mToolClangTidy">
          <property name="text">
-          <string>Compile database
-
-Cppcheck can import files to analyse, include paths, defines from the compile database.
-
-Platform settings are not provided in compile database and must be configured.
-
-Library settings are not provided in compile database, be careful about this configuration also.</string>
+          <string>Clang-tidy</string>
          </property>
         </widget>
-       </item>
-       <item>
-        <layout class="QHBoxLayout" name="mLayoutCMake">
-         <item>
-          <widget class="QLineEdit" name="mEditCompileDatabase"/>
-         </item>
-         <item>
-          <widget class="QPushButton" name="mBtnBrowseCompileDatabase">
-           <property name="text">
-            <string>...</string>
-           </property>
-          </widget>
-         </item>
-        </layout>
        </item>
        <item>
         <spacer name="verticalSpacer_7">
@@ -198,18 +53,72 @@ Library settings are not provided in compile database, be careful about this con
          <property name="sizeHint" stdset="0">
           <size>
            <width>20</width>
-           <height>149</height>
+           <height>310</height>
           </size>
          </property>
         </spacer>
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="mTabOther">
+     <widget class="QWidget" name="mTabPathsAndDefines">
       <attribute name="title">
-       <string>Other</string>
+       <string>Paths and Defines</string>
       </attribute>
-      <layout class="QVBoxLayout" name="verticalLayout_10">
+      <layout class="QVBoxLayout" name="verticalLayout_8">
+       <item>
+        <layout class="QVBoxLayout" name="verticalLayout_3">
+         <item>
+          <widget class="QLabel" name="mLabelImport">
+           <property name="toolTip">
+            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Cppcheck can import Visual studio solutions (*.sln), Visual studio projects (*.vcxproj) or compile databases.&lt;/p&gt;&lt;p&gt;Files to check, defines, include paths are imported.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+           </property>
+           <property name="text">
+            <string>Import Project (Visual studio / compile database)</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout">
+           <item>
+            <widget class="QLineEdit" name="mEditImportProject">
+             <property name="readOnly">
+              <bool>true</bool>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="mBtnClearImportProject">
+             <property name="enabled">
+              <bool>false</bool>
+             </property>
+             <property name="text">
+              <string/>
+             </property>
+             <property name="icon">
+              <iconset>
+               <activeon>:/images/edit-clear.png</activeon>
+              </iconset>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="mBtnBrowseImportProject">
+             <property name="text">
+              <string>...</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="Line" name="line">
+         <property name="orientation">
+          <enum>Qt::Horizontal</enum>
+         </property>
+        </widget>
+       </item>
        <item>
         <layout class="QHBoxLayout" name="mLayoutCheckPaths">
          <item>
@@ -402,6 +311,92 @@ Library settings are not provided in compile database, be careful about this con
        </item>
       </layout>
      </widget>
+     <widget class="QWidget" name="mTabProject">
+      <attribute name="title">
+       <string>Project</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_7">
+       <item>
+        <layout class="QVBoxLayout" name="verticalLayout_4">
+         <item>
+          <widget class="QLabel" name="mLabelProjectRoot">
+           <property name="text">
+            <string>&amp;Root:</string>
+           </property>
+           <property name="buddy">
+            <cstring>mEditProjectRoot</cstring>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLineEdit" name="mEditProjectRoot"/>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QVBoxLayout" name="verticalLayout_2">
+         <item>
+          <widget class="QLabel" name="mLabelBuildDir">
+           <property name="toolTip">
+            <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;In the build dir, cppcheck stores data about each translation unit.&lt;/p&gt;&lt;p&gt;With a build dir you get whole program analysis.&lt;/p&gt;&lt;p&gt;Unchanged files will be analyzed much faster; Cppcheck skip the analysis of these files and reuse their old data.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+           </property>
+           <property name="text">
+            <string>Cppcheck build dir (whole program analysis, faster analysis for unchanged files)</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <layout class="QHBoxLayout" name="horizontalLayout_2">
+           <item>
+            <widget class="QLineEdit" name="mEditBuildDir"/>
+           </item>
+           <item>
+            <widget class="QPushButton" name="mBtnBrowseBuildDir">
+             <property name="text">
+              <string>...</string>
+             </property>
+            </widget>
+           </item>
+          </layout>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="mLayoutLibraries">
+         <item>
+          <widget class="QLabel" name="mLabelLibraries">
+           <property name="text">
+            <string>Libraries:</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QLabel" name="mLabelLibrariesNote">
+         <property name="text">
+          <string>Note: Put your own custom .cfg files in the same folder as the project file. You should see them above.</string>
+         </property>
+         <property name="wordWrap">
+          <bool>true</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_9">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>96</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
      <widget class="QWidget" name="mTabExclude">
       <attribute name="title">
        <string>Exclude</string>
@@ -461,7 +456,7 @@ Library settings are not provided in compile database, be careful about this con
        </item>
       </layout>
      </widget>
-     <widget class="QWidget" name="tabSuppressions">
+     <widget class="QWidget" name="mTabSuppressions">
       <attribute name="title">
        <string>Suppressions</string>
       </attribute>
@@ -506,6 +501,61 @@ Library settings are not provided in compile database, be careful about this con
           </widget>
          </item>
         </layout>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="mTabAddons">
+      <attribute name="title">
+       <string>Addons</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="verticalLayout_10">
+       <item>
+        <widget class="QCheckBox" name="mAddonY2038">
+         <property name="text">
+          <string>Y2038</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="mAddonThreadSafety">
+         <property name="text">
+          <string>Thread safety</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QLabel" name="label">
+         <property name="text">
+          <string>Coding standards</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="mAddonCert">
+         <property name="text">
+          <string>Cert</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <widget class="QCheckBox" name="mAddonMisra">
+         <property name="text">
+          <string>Misra</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="verticalSpacer_5">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>368</height>
+          </size>
+         </property>
+        </spacer>
        </item>
       </layout>
      </widget>

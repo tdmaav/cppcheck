@@ -60,14 +60,24 @@ namespace {
         const bool isEnum;
         const unsigned int startVarid;
     };
+}
 
-    /** Return whether tok is the "{" that starts an enumerator list */
-    bool isEnumStart(const Token* tok)
-    {
-        if (!tok || tok->str() != "{")
-            return false;
-        return (tok->strAt(-1) == "enum") || (tok->strAt(-2) == "enum");
-    }
+/** Return whether tok is the "{" that starts an enumerator list */
+static bool isEnumStart(const Token* tok)
+{
+    if (!tok || tok->str() != "{")
+        return false;
+    return (tok->strAt(-1) == "enum") || (tok->strAt(-2) == "enum");
+}
+
+template<typename T>
+static void skipEnumBody(T **tok)
+{
+    T *defStart = *tok;
+    while (Token::Match(defStart, "%name%|::|:"))
+        defStart = defStart->next();
+    if (defStart && defStart->str() == "{")
+        *tok = defStart->link()->next();
 }
 
 const Token * Tokenizer::isFunctionHead(const Token *tok, const std::string &endsWith) const
@@ -413,12 +423,14 @@ Token * Tokenizer::deleteInvalidTypedef(Token *typeDef)
     return tok;
 }
 
-struct Space {
-    Space() : classEnd(nullptr), isNamespace(false) { }
-    std::string className;
-    const Token * classEnd;
-    bool isNamespace;
-};
+namespace {
+    struct Space {
+        Space() : classEnd(nullptr), isNamespace(false) { }
+        std::string className;
+        const Token * classEnd;
+        bool isNamespace;
+    };
+}
 
 static Token *splitDefinitionFromTypedef(Token *tok)
 {
@@ -1649,60 +1661,60 @@ void Tokenizer::simplifyMulAndParens()
     if (!list.front())
         return;
     for (Token *tok = list.front()->tokAt(3); tok; tok = tok->next()) {
-        if (tok->isName()) {
-            //fix ticket #2784 - improved by ticket #3184
-            unsigned int closedpars = 0;
-            Token *tokend = tok->next();
-            Token *tokbegin = tok->previous();
-            while (tokend && tokend->str() == ")") {
-                ++closedpars;
-                tokend = tokend->next();
-            }
-            if (!tokend || !(tokend->isAssignmentOp()))
-                continue;
-            while (Token::Match(tokbegin, "&|(")) {
-                if (tokbegin->str() == "&") {
-                    if (Token::Match(tokbegin->tokAt(-2), "[;{}&(] *")) {
-                        //remove '* &'
-                        tokbegin = tokbegin->tokAt(-2);
-                        tokbegin->deleteNext(2);
-                    } else if (Token::Match(tokbegin->tokAt(-3), "[;{}&(] * (")) {
-                        if (!closedpars)
-                            break;
-                        --closedpars;
-                        //remove ')'
-                        tok->deleteNext();
-                        //remove '* ( &'
-                        tokbegin = tokbegin->tokAt(-3);
-                        tokbegin->deleteNext(3);
-                    } else
-                        break;
-                } else if (tokbegin->str() == "(") {
+        if (!tok->isName())
+            continue;
+        //fix ticket #2784 - improved by ticket #3184
+        unsigned int closedpars = 0;
+        Token *tokend = tok->next();
+        Token *tokbegin = tok->previous();
+        while (tokend && tokend->str() == ")") {
+            ++closedpars;
+            tokend = tokend->next();
+        }
+        if (!tokend || !(tokend->isAssignmentOp()))
+            continue;
+        while (Token::Match(tokbegin, "&|(")) {
+            if (tokbegin->str() == "&") {
+                if (Token::Match(tokbegin->tokAt(-2), "[;{}&(] *")) {
+                    //remove '* &'
+                    tokbegin = tokbegin->tokAt(-2);
+                    tokbegin->deleteNext(2);
+                } else if (Token::Match(tokbegin->tokAt(-3), "[;{}&(] * (")) {
                     if (!closedpars)
                         break;
+                    --closedpars;
+                    //remove ')'
+                    tok->deleteNext();
+                    //remove '* ( &'
+                    tokbegin = tokbegin->tokAt(-3);
+                    tokbegin->deleteNext(3);
+                } else
+                    break;
+            } else if (tokbegin->str() == "(") {
+                if (!closedpars)
+                    break;
 
-                    //find consecutive opening parentheses
-                    unsigned int openpars = 0;
-                    while (tokbegin && tokbegin->str() == "(" && openpars <= closedpars) {
-                        ++openpars;
-                        tokbegin = tokbegin->previous();
-                    }
-                    if (!tokbegin || openpars > closedpars)
-                        break;
-
-                    if ((openpars == closedpars && Token::Match(tokbegin, "[;{}]")) ||
-                        Token::Match(tokbegin->tokAt(-2), "[;{}&(] * &") ||
-                        Token::Match(tokbegin->tokAt(-3), "[;{}&(] * ( &")) {
-                        //remove the excessive parentheses around the variable
-                        while (openpars) {
-                            tok->deleteNext();
-                            tokbegin->deleteNext();
-                            --closedpars;
-                            --openpars;
-                        }
-                    } else
-                        break;
+                //find consecutive opening parentheses
+                unsigned int openpars = 0;
+                while (tokbegin && tokbegin->str() == "(" && openpars <= closedpars) {
+                    ++openpars;
+                    tokbegin = tokbegin->previous();
                 }
+                if (!tokbegin || openpars > closedpars)
+                    break;
+
+                if ((openpars == closedpars && Token::Match(tokbegin, "[;{}]")) ||
+                    Token::Match(tokbegin->tokAt(-2), "[;{}&(] * &") ||
+                    Token::Match(tokbegin->tokAt(-3), "[;{}&(] * ( &")) {
+                    //remove the excessive parentheses around the variable
+                    while (openpars) {
+                        tok->deleteNext();
+                        tokbegin->deleteNext();
+                        --closedpars;
+                        --openpars;
+                    }
+                } else
+                    break;
             }
         }
     }
@@ -4840,7 +4852,7 @@ bool Tokenizer::simplifyConditions()
 bool Tokenizer::simplifyConstTernaryOp()
 {
     bool ret = false;
-    const Token *templateParameterEnd = 0; // The end of the current template parameter list, if any
+    const Token *templateParameterEnd = nullptr; // The end of the current template parameter list, if any
     for (Token *tok = list.front(); tok; tok = tok->next()) {
         if (tok->str() == "<" && TemplateSimplifier::templateParameters(tok))
             templateParameterEnd = tok->findClosingBracket();
@@ -7934,13 +7946,9 @@ void Tokenizer::simplifyComma()
     for (Token *tok = list.front(); tok; tok = tok->next()) {
 
         // skip enums
-        if (Token::Match(tok, "enum class| %name%| :| %name%| {")) {
-            while (tok && tok->str() != "{")
-                tok = tok->next();
-            if (tok)
-                tok = tok->link()->next();
+        if (Token::Match(tok, "enum class|struct| %name%| :|{")) {
+            skipEnumBody(&tok);
         }
-
         if (!tok)
             syntaxError(nullptr); // invalid code like in #4195
 
@@ -9112,6 +9120,9 @@ void Tokenizer::simplifyNamespaceStd()
 
     for (const Token* tok = Token::findsimplematch(list.front(), "using namespace std ;"); tok; tok = tok->next()) {
         bool insert = false;
+        if (Token::Match(tok, "enum class|struct| %name%| :|{")) { // Don't replace within enum definitions
+            skipEnumBody(&tok);
+        }
         if (!Token::Match(tok->previous(), ".|::")) {
             if (Token::Match(tok, "%name% (") && !Token::Match(tok->linkAt(1)->next(), "%name%|{") && stdFunctions.find(tok->str()) != stdFunctions.end())
                 insert = true;

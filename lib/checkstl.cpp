@@ -85,28 +85,14 @@ static const Token *skipMembers(const Token *tok)
     return tok;
 }
 
-bool CheckStl::isIterator(const Variable *var) const
+static bool isIterator(const Variable *var)
 {
     // Check that its an iterator
     if (!var || !var->isLocal() || !Token::Match(var->typeEndToken(), "iterator|const_iterator|reverse_iterator|const_reverse_iterator|auto"))
         return false;
 
-    if (var->typeEndToken()->str() == "auto") {
-        if (Token::Match(var->typeEndToken(), "auto %name% ; %name% = %var% . %name% ( )")) {
-            const Token* containertok = var->typeEndToken()->tokAt(5);
-            if (!containertok->variable())
-                return false;
-
-            const Library::Container* container = _settings->library.detectContainer(containertok->variable()->typeStartToken());
-            if (!container)
-                return false;
-
-            Library::Container::Yield yield = container->getYield(containertok->strAt(2));
-            if (yield != Library::Container::END_ITERATOR && yield != Library::Container::START_ITERATOR && yield != Library::Container::ITERATOR)
-                return false;
-        } else
-            return false;
-    }
+    if (var->typeEndToken()->str() == "auto")
+        return (var->nameToken()->valueType() && var->nameToken()->valueType()->type == ValueType::Type::ITERATOR);
 
     if (var->type()) { // If it is defined, ensure that it is defined like an iterator
         // look for operator* and operator++
@@ -131,16 +117,16 @@ void CheckStl::iterators()
 
         // the validIterator flag says if the iterator has a valid value or not
         bool validIterator = Token::Match(var->nameToken()->next(), "[(=:]");
-        const Scope* invalidationScope = 0;
+        const Scope* invalidationScope = nullptr;
 
         // The container this iterator can be used with
-        const Variable* container = 0;
-        const Scope* containerAssignScope = 0;
+        const Variable* container = nullptr;
+        const Scope* containerAssignScope = nullptr;
 
         // When "validatingToken" is reached the validIterator is set to true
-        const Token* validatingToken = 0;
+        const Token* validatingToken = nullptr;
 
-        const Token* eraseToken = 0;
+        const Token* eraseToken = nullptr;
 
         // Scan through the rest of the code and see if the iterator is
         // used against other containers.
@@ -148,15 +134,20 @@ void CheckStl::iterators()
             if (invalidationScope && tok2 == invalidationScope->classEnd)
                 validIterator = true; // Assume that the iterator becomes valid again
             if (containerAssignScope && tok2 == containerAssignScope->classEnd)
-                container = 0; // We don't know which containers might be used with the iterator
+                container = nullptr; // We don't know which containers might be used with the iterator
 
             if (tok2 == validatingToken)
                 validIterator = true;
 
             // Is iterator compared against different container?
-            if (Token::Match(tok2, "%varid% !=|== %name% . end|rend|cend|crend ( )", iteratorId) && container && tok2->tokAt(2)->varId() != container->declarationId()) {
-                iteratorsError(tok2, container->name(), tok2->strAt(2));
-                tok2 = tok2->tokAt(6);
+            if (tok2->isComparisonOp() && container && tok2->astOperand1() && tok2->astOperand2()) {
+                const Token *other = nullptr;
+                if (tok2->astOperand1()->varId() == iteratorId)
+                    other = tok2->astOperand2()->tokAt(-3);
+                else if (tok2->astOperand2()->varId() == iteratorId)
+                    other = tok2->astOperand1()->tokAt(-3);
+                if (Token::Match(other, "%name% . end|rend|cend|crend ( )") && other->varId() != container->declarationId())
+                    iteratorsError(tok2, container->name(), other->str());
             }
 
             // Is the iterator used in a insert/erase operation?
@@ -400,41 +391,40 @@ void CheckStl::stlOutOfBounds()
         tok = tok->next();
 
         // check if the for loop condition is wrong
-        if (Token::Match(tok, "%var% <= %var% . %name% ( ) ;|)|%oror%")) {
-            // Is it a vector?
-            const Variable *var = tok->tokAt(2)->variable();
-            if (!var)
-                continue;
+        if (!Token::Match(tok, "%var% <= %var% . %name% ( ) ;|)|%oror%"))
+            continue;
+        // Is it a vector?
+        const Variable *var = tok->tokAt(2)->variable();
+        if (!var)
+            continue;
 
-            const Library::Container* container = _settings->library.detectContainer(var->typeStartToken());
-            if (!container)
-                continue;
+        const Library::Container* container = _settings->library.detectContainer(var->typeStartToken());
+        if (!container)
+            continue;
 
-            if (container->getYield(tok->strAt(4)) != Library::Container::SIZE)
-                continue;
+        if (container->getYield(tok->strAt(4)) != Library::Container::SIZE)
+            continue;
 
-            // variable id for loop variable.
-            const unsigned int numId = tok->varId();
+        // variable id for loop variable.
+        const unsigned int numId = tok->varId();
 
-            // variable id for the container variable
-            const unsigned int declarationId = var->declarationId();
+        // variable id for the container variable
+        const unsigned int declarationId = var->declarationId();
 
-            for (const Token *tok3 = i->classStart; tok3 && tok3 != i->classEnd; tok3 = tok3->next()) {
-                if (tok3->varId() == declarationId) {
-                    tok3 = tok3->next();
-                    if (Token::Match(tok3, ". %name% ( )")) {
-                        if (container->getYield(tok3->strAt(1)) == Library::Container::SIZE)
-                            break;
-                    } else if (container->arrayLike_indexOp && Token::Match(tok3, "[ %varid% ]", numId))
-                        stlOutOfBoundsError(tok3, tok3->strAt(1), var->name(), false);
-                    else if (Token::Match(tok3, ". %name% ( %varid% )", numId)) {
-                        Library::Container::Yield yield = container->getYield(tok3->strAt(1));
-                        if (yield == Library::Container::AT_INDEX)
-                            stlOutOfBoundsError(tok3, tok3->strAt(3), var->name(), true);
-                    }
+        for (const Token *tok3 = i->classStart; tok3 && tok3 != i->classEnd; tok3 = tok3->next()) {
+            if (tok3->varId() == declarationId) {
+                tok3 = tok3->next();
+                if (Token::Match(tok3, ". %name% ( )")) {
+                    if (container->getYield(tok3->strAt(1)) == Library::Container::SIZE)
+                        break;
+                } else if (container->arrayLike_indexOp && Token::Match(tok3, "[ %varid% ]", numId))
+                    stlOutOfBoundsError(tok3, tok3->strAt(1), var->name(), false);
+                else if (Token::Match(tok3, ". %name% ( %varid% )", numId)) {
+                    Library::Container::Yield yield = container->getYield(tok3->strAt(1));
+                    if (yield == Library::Container::AT_INDEX)
+                        stlOutOfBoundsError(tok3, tok3->strAt(3), var->name(), true);
                 }
             }
-            continue;
         }
     }
 }
@@ -560,7 +550,7 @@ void CheckStl::pushback()
         // the variable id for the vector
         unsigned int vectorid = 0;
 
-        const Token* validatingToken = 0;
+        const Token* validatingToken = nullptr;
 
         std::string invalidIterator;
         const Token* end2 = var->scope()->classEnd;
@@ -568,7 +558,7 @@ void CheckStl::pushback()
 
             if (validatingToken == tok2) {
                 invalidIterator.clear();
-                validatingToken = 0;
+                validatingToken = nullptr;
             }
 
             // Using push_back or push_front inside a loop..
@@ -586,7 +576,7 @@ void CheckStl::pushback()
                 const Token *tok3 = tok2->tokAt(20);
                 for (const Token* const end3 = tok3->linkAt(-1); tok3 != end3; tok3 = tok3->next()) {
                     if (tok3->str() == "break" || tok3->str() == "return") {
-                        pushbackTok = 0;
+                        pushbackTok = nullptr;
                         break;
                     } else if (Token::Match(tok3, "%varid% . push_front|push_back|insert|reserve|resize|clear|erase (", varId) && !tok3->previous()->isAssignmentOp()) {
                         if (tok3->strAt(2) != "erase" || (tok3->tokAt(4)->varId() != iteratorId && tok3->tokAt(5)->varId() != iteratorId)) // This case is handled in: CheckStl::iterators()
@@ -942,9 +932,9 @@ void CheckStl::missingComparison()
                 else if (Token::Match(tok3->previous(), "++ %varid% !!.", iteratorId))
                     incrementToken = tok3;
                 else if (Token::Match(tok3, "%varid% !=|==", iteratorId))
-                    incrementToken = 0;
+                    incrementToken = nullptr;
                 else if (tok3->str() == "break" || tok3->str() == "return")
-                    incrementToken = 0;
+                    incrementToken = nullptr;
                 else if (Token::Match(tok3, "%varid% = %name% . insert ( ++| %varid% ++| ,", iteratorId)) {
                     // skip insertion..
                     tok3 = tok3->linkAt(6);
@@ -1065,8 +1055,10 @@ void CheckStl::string_c_str()
                         break;
                     if (!tok2 && j == i->second-1)
                         tok2 = tok->next()->link();
-                    else
+                    else if (tok2)
                         tok2 = tok2->previous();
+                    else
+                        break;
                     if (tok2 && Token::Match(tok2->tokAt(-4), ". c_str|data ( )")) {
                         const Variable* var = tok2->tokAt(-5)->variable();
                         if (var && var->isStlStringType()) {
@@ -1424,56 +1416,56 @@ void CheckStl::checkDereferenceInvalidIterator()
     // be an iterator that is dereferenced before being checked for validity.
     const std::list<Scope>& scopeList = _tokenizer->getSymbolDatabase()->scopeList;
     for (std::list<Scope>::const_iterator i = scopeList.begin(); i != scopeList.end(); ++i) {
-        if (i->type == Scope::eIf || i->type == Scope::eDo || i->type == Scope::eWhile || i->type == Scope::eFor) {
+        if (!(i->type == Scope::eIf || i->type == Scope::eDo || i->type == Scope::eWhile || i->type == Scope::eFor))
+            continue;
 
-            const Token* const tok = i->classDef;
-            const Token* startOfCondition = tok->next();
-            if (i->type == Scope::eDo)
-                startOfCondition = startOfCondition->link()->tokAt(2);
-            if (!startOfCondition) // ticket #6626 invalid code
+        const Token* const tok = i->classDef;
+        const Token* startOfCondition = tok->next();
+        if (i->type == Scope::eDo)
+            startOfCondition = startOfCondition->link()->tokAt(2);
+        if (!startOfCondition) // ticket #6626 invalid code
+            continue;
+        const Token* endOfCondition = startOfCondition->link();
+        if (!endOfCondition)
+            continue;
+
+        // For "for" loops, only search between the two semicolons
+        if (i->type == Scope::eFor) {
+            startOfCondition = Token::findsimplematch(tok->tokAt(2), ";", endOfCondition);
+            if (!startOfCondition)
                 continue;
-            const Token* endOfCondition = startOfCondition->link();
+            endOfCondition = Token::findsimplematch(startOfCondition->next(), ";", endOfCondition);
             if (!endOfCondition)
                 continue;
-
-            // For "for" loops, only search between the two semicolons
-            if (i->type == Scope::eFor) {
-                startOfCondition = Token::findsimplematch(tok->tokAt(2), ";", endOfCondition);
-                if (!startOfCondition)
-                    continue;
-                endOfCondition = Token::findsimplematch(startOfCondition->next(), ";", endOfCondition);
-                if (!endOfCondition)
-                    continue;
-            }
-
-            // Only consider conditions composed of all "&&" terms and
-            // conditions composed of all "||" terms
-            const bool isOrExpression =
-                Token::findsimplematch(startOfCondition, "||", endOfCondition) != 0;
-            const bool isAndExpression =
-                Token::findsimplematch(startOfCondition, "&&", endOfCondition) != 0;
-
-            // Look for a check of the validity of an iterator
-            const Token* validityCheckTok = 0;
-            if (!isOrExpression && isAndExpression) {
-                validityCheckTok =
-                    Token::findmatch(startOfCondition, "&& %var% != %name% . end|rend|cend|crend ( )", endOfCondition);
-            } else if (isOrExpression && !isAndExpression) {
-                validityCheckTok =
-                    Token::findmatch(startOfCondition, "%oror% %var% == %name% . end|rend|cend|crend ( )", endOfCondition);
-            }
-
-            if (!validityCheckTok)
-                continue;
-            const unsigned int iteratorVarId = validityCheckTok->next()->varId();
-
-            // If the iterator dereference is to the left of the check for
-            // the iterator's validity, report an error.
-            const Token* const dereferenceTok =
-                Token::findmatch(startOfCondition, "* %varid%", validityCheckTok, iteratorVarId);
-            if (dereferenceTok)
-                dereferenceInvalidIteratorError(dereferenceTok, dereferenceTok->strAt(1));
         }
+
+        // Only consider conditions composed of all "&&" terms and
+        // conditions composed of all "||" terms
+        const bool isOrExpression =
+            Token::findsimplematch(startOfCondition, "||", endOfCondition) != nullptr;
+        const bool isAndExpression =
+            Token::findsimplematch(startOfCondition, "&&", endOfCondition) != nullptr;
+
+        // Look for a check of the validity of an iterator
+        const Token* validityCheckTok = nullptr;
+        if (!isOrExpression && isAndExpression) {
+            validityCheckTok =
+                Token::findmatch(startOfCondition, "&& %var% != %name% . end|rend|cend|crend ( )", endOfCondition);
+        } else if (isOrExpression && !isAndExpression) {
+            validityCheckTok =
+                Token::findmatch(startOfCondition, "%oror% %var% == %name% . end|rend|cend|crend ( )", endOfCondition);
+        }
+
+        if (!validityCheckTok)
+            continue;
+        const unsigned int iteratorVarId = validityCheckTok->next()->varId();
+
+        // If the iterator dereference is to the left of the check for
+        // the iterator's validity, report an error.
+        const Token* const dereferenceTok =
+            Token::findmatch(startOfCondition, "* %varid%", validityCheckTok, iteratorVarId);
+        if (dereferenceTok)
+            dereferenceInvalidIteratorError(dereferenceTok, dereferenceTok->strAt(1));
     }
 }
 

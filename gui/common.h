@@ -80,11 +80,13 @@
 #define SETTINGS_APPLICATION_DEFAULT    "Default Application"
 #define SETTINGS_LANGUAGE               "Application language"
 #define SETTINGS_GLOBAL_INCLUDE_PATHS   "Global include paths"
+#define SETTINGS_VS_INCLUDE_PATHS       "Visual studio include paths"
 #define SETTINGS_INLINE_SUPPRESSIONS    "Inline suppressions"
 #define SETTINGS_INCONCLUSIVE_ERRORS    "Inconclusive errors"
 #define SETTINGS_MRU_PROJECTS           "MRU Projects"
 #define SETTINGS_SHOW_ERROR_ID          "Show error Id"
 #define SETTINGS_SHOW_STATISTICS        "Show statistics"
+#define SETTINGS_OPEN_PROJECT           "Open Project"
 
 // The maximum value for the progress bar
 #define PROGRESS_MAX                    1024.0
@@ -106,7 +108,7 @@
  * @param type Type of path to obtain
  * @return Best path fo provided type
  */
-QString GetPath(const QString &type);
+QString getPath(const QString &type);
 
 /**
  * @brief Stores last used path of specified type
@@ -114,7 +116,7 @@ QString GetPath(const QString &type);
  * @param type Type of the path to store
  * @param value Path to store
  */
-void SetPath(const QString &type, const QString &value);
+void setPath(const QString &type, const QString &value);
 
 /// @}
 #endif

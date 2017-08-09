@@ -26,13 +26,13 @@ ScratchPad::ScratchPad(MainWindow& mainWindow)
 {
     mUI.setupUi(this);
 
-    connect(mUI.mCheckButton, SIGNAL(clicked()), this, SLOT(CheckButtonClicked()));
+    connect(mUI.mCheckButton, SIGNAL(clicked()), this, SLOT(checkButtonClicked()));
 }
 
-void ScratchPad::CheckButtonClicked()
+void ScratchPad::checkButtonClicked()
 {
     QString filename = mUI.lineEdit->text();
     if (filename.isEmpty())
         filename = "test.cpp";
-    mMainWindow.CheckCode(mUI.plainTextEdit->toPlainText(), filename);
+    mMainWindow.analyzeCode(mUI.plainTextEdit->toPlainText(), filename);
 }

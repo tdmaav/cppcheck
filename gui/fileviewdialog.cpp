@@ -32,10 +32,10 @@ FileViewDialog::FileViewDialog(const QString &file,
 
     setWindowTitle(title);
     connect(mUI.mButtons, SIGNAL(accepted()), this, SLOT(accept()));
-    LoadTextFile(file, mUI.mText);
+    loadTextFile(file, mUI.mText);
 }
 
-void FileViewDialog::LoadTextFile(const QString &filename, QTextEdit *edit)
+void FileViewDialog::loadTextFile(const QString &filename, QTextEdit *edit)
 {
     QFile file(filename);
     if (!file.exists()) {
@@ -67,6 +67,5 @@ void FileViewDialog::LoadTextFile(const QString &filename, QTextEdit *edit)
     QByteArray filedata = file.readAll();
     file.close();
 
-    QString filestringdata(filedata);
-    edit->setPlainText(filestringdata);
+    edit->setPlainText(filedata);
 }

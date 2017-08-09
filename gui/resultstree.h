@@ -50,30 +50,30 @@ class ResultsTree : public QTreeView {
 public:
     explicit ResultsTree(QWidget * parent = 0);
     virtual ~ResultsTree();
-    void Initialize(QSettings *settings, ApplicationList *list, ThreadHandler *checkThreadHandler);
+    void initialize(QSettings *settings, ApplicationList *list, ThreadHandler *checkThreadHandler);
 
     /**
     * @brief Add a new item to the tree
     *
     * @param item Error item data
     */
-    bool AddErrorItem(const ErrorItem &item);
+    bool addErrorItem(const ErrorItem &item);
 
     /**
     * @brief Clear all errors from the tree
     *
     */
-    void Clear();
+    void clear();
 
     /**
      * @brief Clear errors for a specific file from the tree
      */
-    void Clear(const QString &filename);
+    void clear(const QString &filename);
 
     /**
      * @brief Clear errors of a file selected for recheck
      */
-    void ClearRecheckFile(const QString &filename);
+    void clearRecheckFile(const QString &filename);
 
     /**
     * @brief Function to show/hide certain type of errors
@@ -82,7 +82,7 @@ public:
     * @param type Type of error to show/hide
     * @param show Should specified errors be shown (true) or hidden (false)
     */
-    void ShowResults(ShowTypes::ShowType type, bool show);
+    void showResults(ShowTypes::ShowType type, bool show);
 
     /**
     * @brief Function to filter the displayed list of errors.
@@ -90,18 +90,23 @@ public:
     *
     * @param filter String that must be found in the summary, description, file or id
     */
-    void FilterResults(const QString& filter);
+    void filterResults(const QString& filter);
 
     /**
     * @brief Function to show results that were previous hidden with HideResult()
     */
-    void ShowHiddenResults();
+    void showHiddenResults();
 
     /**
     * @brief Save results to a text stream
     *
     */
-    void SaveResults(Report *report) const;
+    void saveResults(Report *report) const;
+
+    /**
+     * @brief Update items from old report (tag, sinceDate)
+     */
+    void updateFromOldReport(const QString &filename);
 
     /**
     * @brief Update tree settings
@@ -112,7 +117,7 @@ public:
     * @param showErrorId Show error id
     * @param showInconclusive Show inconclusive column
     */
-    void UpdateSettings(bool showFullPath, bool saveFullPath, bool saveAllErrors, bool showErrorId, bool showInconclusive);
+    void updateSettings(bool showFullPath, bool saveFullPath, bool saveAllErrors, bool showErrorId, bool showInconclusive);
 
     /**
     * @brief Set the directory we are checking
@@ -120,7 +125,7 @@ public:
     * This is used to split error file path to relative if necessary
     * @param dir Directory we are checking
     */
-    void SetCheckDirectory(const QString &dir);
+    void setCheckDirectory(const QString &dir);
 
     /**
     * @brief Get the directory we are checking
@@ -128,46 +133,46 @@ public:
     * @return Directory containing source files
     */
 
-    QString GetCheckDirectory(void);
+    QString getCheckDirectory(void);
 
     /**
     * @brief Check if there are any visible results in view.
     * @return true if there is at least one visible warning/error.
     */
-    bool HasVisibleResults() const;
+    bool hasVisibleResults() const;
 
     /**
     * @brief Do we have results from check?
     * @return true if there is at least one warning/error, hidden or visible.
     */
-    bool HasResults() const;
+    bool hasResults() const;
 
     /**
     * @brief Save all settings
     * Column widths
     */
-    void SaveSettings() const;
+    void saveSettings() const;
 
     /**
     * @brief Change all visible texts language
     *
     */
-    void Translate();
+    void translate();
 
     /**
     * @brief Show optional column "Id"
     */
-    void ShowIdColumn(bool show);
+    void showIdColumn(bool show);
 
     /**
     * @brief Show optional column "Inconclusve"
     */
-    void ShowInconclusiveColumn(bool show);
+    void showInconclusiveColumn(bool show);
 
     /**
     * @brief Returns true if column "Id" is shown
     */
-    bool ShowIdColumn() const {
+    bool showIdColumn() const {
         return mShowErrorId;
     }
 
@@ -184,21 +189,26 @@ signals:
     *
     * @param hidden true if there are some hidden results, or false if there are not
     */
-    void ResultsHidden(bool hidden);
+    void resultsHidden(bool hidden);
 
     /**
     * @brief Signal to perform selected files recheck
     *
     * @param selectedItems list of selected files
     */
-    void CheckSelected(QStringList selectedItems);
+    void checkSelected(QStringList selectedItems);
 
     /**
     * @brief Signal for selection change in result tree.
     *
     * @param current Model index to specify new selected item.
     */
-    void SelectionChanged(const QModelIndex &current);
+    void selectionChanged(const QModelIndex &current);
+
+    /**
+     * Selected item(s) has been tagged
+     */
+    void tagged();
 
 protected slots:
     /**
@@ -206,61 +216,61 @@ protected slots:
     *
     * @param index Model index to specify which error item to open
     */
-    void QuickStartApplication(const QModelIndex &index);
+    void quickStartApplication(const QModelIndex &index);
 
     /**
     * @brief Slot for context menu item to open an error with specified application
     *
     * @param application Index of the application to open the error
     */
-    void Context(int application);
+    void context(int application);
 
     /**
     * @brief Slot for context menu item to copy filename to clipboard
     *
     */
-    void CopyFilename();
+    void copyFilename();
 
     /**
     * @brief Slot for context menu item to copy full path to clipboard
     *
     */
-    void CopyFullPath();
+    void copyFullPath();
 
     /**
     * @brief Slot for context menu item to the current error message to clipboard
     *
     */
-    void CopyMessage();
+    void copyMessage();
 
     /**
     * @brief Slot for context menu item to the current error message Id to clipboard
     *
     */
-    void CopyMessageId();
+    void copyMessageId();
 
     /**
     * @brief Slot for context menu item to hide the current error message
     *
     */
-    void HideResult();
+    void hideResult();
 
     /**
     * @brief Slot for rechecking selected files
     *
     */
-    void RecheckSelectedFiles();
+    void recheckSelectedFiles();
 
     /**
     * @brief Slot for context menu item to hide all messages with the current message Id
     *
     */
-    void HideAllIdResult();
+    void hideAllIdResult();
 
     /**
     * @brief Slot for context menu item to open the folder containing the current file.
     */
-    void OpenContainingFolder();
+    void openContainingFolder();
 
     /**
     * @brief Slot for selection change in the results tree.
@@ -270,19 +280,23 @@ protected slots:
     */
     virtual void currentChanged(const QModelIndex &current, const QModelIndex &previous);
 
+    void tagFP(bool);
+    void tagIgnore(bool);
+    void tagBug(bool);
+
 protected:
 
     /**
     * @brief Hides/shows full file path on all error file items according to mShowFullPath
     *
     */
-    void RefreshFilePaths();
+    void refreshFilePaths();
 
     /**
     * @brief Hides/shows full file path on all error file items according to mShowFullPath
     * @param item Parent item whose childrens paths to change
     */
-    void RefreshFilePaths(QStandardItem *item);
+    void refreshFilePaths(QStandardItem *item);
 
 
     /**
@@ -292,22 +306,22 @@ protected:
     * @param saving are we saving? Check mSaveFullPath instead
     * @return Path that has checking directory removed
     */
-    QString StripPath(const QString &path, bool saving) const;
+    QString stripPath(const QString &path, bool saving) const;
 
 
     /**
     * @brief Save all errors under specified item
     * @param report Report that errors are saved to
-    * @param item Item whose errors to save
+    * @param fileItem Item whose errors to save
     */
-    void SaveErrors(Report *report, QStandardItem *item) const;
+    void saveErrors(Report *report, QStandardItem *fileItem) const;
 
     /**
     * @brief Convert a severity string to a icon filename
     *
     * @param severity Severity
     */
-    QString SeverityToIcon(Severity::SeverityType severity) const;
+    QString severityToIcon(Severity::SeverityType severity) const;
 
     /**
     * @brief Helper function to open an error within target with application*
@@ -316,7 +330,7 @@ protected:
     * @param application Index of the application to open with. Giving -1
     *  (default value) will open the default application.
     */
-    void StartApplication(QStandardItem *target, int application = -1);
+    void startApplication(QStandardItem *target, int application = -1);
 
     /**
     * @brief Helper function to copy filename/full path to the clipboard
@@ -324,7 +338,7 @@ protected:
     * @param target Error tree item to open
     * @param fullPath Are we copying full path or only filename?
     */
-    void CopyPathToClipboard(QStandardItem *target, bool fullPath);
+    void copyPathToClipboard(QStandardItem *target, bool fullPath);
 
     /**
     * @brief Helper function returning the filename/full path of the error tree item \a target.
@@ -332,7 +346,7 @@ protected:
     * @param target The error tree item containing the filename/full path
     * @param fullPath Whether or not to retrieve the full path or only the filename.
     */
-    QString GetFilePath(QStandardItem *target, bool fullPath);
+    QString getFilePath(QStandardItem *target, bool fullPath);
 
     /**
     * @brief Context menu event (user right clicked on the tree)
@@ -351,7 +365,7 @@ protected:
     * @param childOfMessage Is this a child element of a message?
     * @return newly created QStandardItem *
     */
-    QStandardItem *AddBacktraceFiles(QStandardItem *parent,
+    QStandardItem *addBacktraceFiles(QStandardItem *parent,
                                      const ErrorLine &item,
                                      const bool hide,
                                      const QString &icon,
@@ -363,27 +377,27 @@ protected:
     * and which should be hidden
     *
     */
-    void RefreshTree();
+    void refreshTree();
 
     /**
     * @brief Convert Severity to translated string for GUI.
     * @param severity Severity to convert
     * @return Severity as translated string
     */
-    static QString SeverityToTranslatedString(Severity::SeverityType severity);
+    static QString severityToTranslatedString(Severity::SeverityType severity);
 
     /**
     * @brief Load all settings
     * Column widths
     */
-    void LoadSettings();
+    void loadSettings();
 
     /**
     * @brief Ask directory where file is located.
     * @param file File name.
     * @return Directory user chose.
     */
-    QString AskFileDir(const QString &file);
+    QString askFileDir(const QString &file);
 
     /**
     * @brief Create new normal item.
@@ -392,7 +406,7 @@ protected:
     * @param name name for the item
     * @return new QStandardItem
     */
-    static QStandardItem *CreateNormalItem(const QString &name);
+    static QStandardItem *createNormalItem(const QString &name);
 
     /**
     * @brief Create new normal item.
@@ -401,7 +415,7 @@ protected:
     * @param checked checked
     * @return new QStandardItem
     */
-    static QStandardItem *CreateCheckboxItem(bool checked);
+    static QStandardItem *createCheckboxItem(bool checked);
 
     /**
     * @brief Create new line number item.
@@ -410,7 +424,7 @@ protected:
     * @param linenumber name for the item
     * @return new QStandardItem
     */
-    static QStandardItem *CreateLineNumberItem(const QString &linenumber);
+    static QStandardItem *createLineNumberItem(const QString &linenumber);
 
     /**
     * @brief Finds a file item
@@ -418,7 +432,7 @@ protected:
     * @param name name of the file item to find
     * @return pointer to file item or null if none found
     */
-    QStandardItem *FindFileItem(const QString &name) const;
+    QStandardItem *findFileItem(const QString &name) const;
 
 
     /**
@@ -429,7 +443,7 @@ protected:
     * @param hide is the error (we want this file item for) hidden?
     * @return QStandardItem to be used as a parent for all errors for specified file
     */
-    QStandardItem *EnsureFileItem(const QString &fullpath, const QString &file0, bool hide);
+    QStandardItem *ensureFileItem(const QString &fullpath, const QString &file0, bool hide);
 
     /**
     * @brief Item model for tree
@@ -498,6 +512,12 @@ protected:
     bool mVisibleErrors;
 
 private:
+    /** tag selected items */
+    void tagSelectedItems(int tagNumber, const QString &tag);
+
+    /** @brief Convert GUI error item into data error item */
+    void readErrorItem(const QStandardItem *error, ErrorItem *item) const;
+
     QItemSelectionModel *mSelectionModel;
     ThreadHandler *mThread;
 };

@@ -23,13 +23,13 @@
 #include <QDir>
 
 
-QString GetPath(const QString &type)
+QString getPath(const QString &type)
 {
     QSettings settings;
-    QString path = settings.value(type, "").toString();
+    QString path = settings.value(type, QString()).toString();
     if (path.isEmpty()) {
         // if not set, fallback to last check path hoping that it will be close enough
-        path = settings.value(SETTINGS_LAST_CHECK_PATH, "").toString();
+        path = settings.value(SETTINGS_LAST_CHECK_PATH, QString()).toString();
         if (path.isEmpty())
             // if not set, return user's home directory as the best we can do for now
             return QDir::homePath();
@@ -37,7 +37,7 @@ QString GetPath(const QString &type)
     return path;
 }
 
-void SetPath(const QString &type, const QString &value)
+void setPath(const QString &type, const QString &value)
 {
     QSettings settings;
     settings.setValue(type, value);

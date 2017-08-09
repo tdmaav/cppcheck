@@ -227,6 +227,18 @@ void ImportProject::importCompileCommands(std::istream &istr)
                         fs.undefs.insert(fval);
                     else if (F=='I')
                         fs.includePaths.push_back(fval);
+                    else if (F=='s' && fval.compare(0,3,"td=") == 0)
+                        fs.standard = fval.substr(3);
+                    else if (F == 'i' && fval == "system") {
+                        ++pos;
+                        std::string isystem;
+                        while (pos < command.size() && command[pos] != ' ') {
+                            if (command[pos] != '\\')
+                                isystem += command[pos];
+                            pos++;
+                        }
+                        fs.systemIncludePaths.push_back(isystem);
+                    }
                 }
                 std::map<std::string, std::string> variables;
                 fs.setIncludePaths(directory, fs.includePaths, variables);
@@ -251,7 +263,7 @@ void ImportProject::importSln(std::istream &istr, const std::string &path)
         if (pos == std::string::npos)
             continue;
         const std::string::size_type pos1 = line.rfind('\"',pos);
-        if (pos == std::string::npos)
+        if (pos1 == std::string::npos)
             continue;
         std::string vcxproj(line.substr(pos1+1, pos-pos1+7));
         if (!Path::isAbsolute(vcxproj))
@@ -262,23 +274,23 @@ void ImportProject::importSln(std::istream &istr, const std::string &path)
 
 namespace {
     struct ProjectConfiguration {
-        explicit ProjectConfiguration(const tinyxml2::XMLElement *cfg) {
+        explicit ProjectConfiguration(const tinyxml2::XMLElement *cfg) : platform(Unknown) {
             const char *a = cfg->Attribute("Include");
             if (a)
                 name = a;
             for (const tinyxml2::XMLElement *e = cfg->FirstChildElement(); e; e = e->NextSiblingElement()) {
-                if (e->GetText()) {
-                    if (std::strcmp(e->Name(),"Configuration")==0)
-                        configuration = e->GetText();
-                    else if (std::strcmp(e->Name(),"Platform")==0) {
-                        platformStr = e->GetText();
-                        if (platformStr == "Win32")
-                            platform = Win32;
-                        else if (platformStr == "x64")
-                            platform = x64;
-                        else
-                            platform = Unknown;
-                    }
+                if (!e->GetText())
+                    continue;
+                if (std::strcmp(e->Name(),"Configuration")==0)
+                    configuration = e->GetText();
+                else if (std::strcmp(e->Name(),"Platform")==0) {
+                    platformStr = e->GetText();
+                    if (platformStr == "Win32")
+                        platform = Win32;
+                    else if (platformStr == "x64")
+                        platform = x64;
+                    else
+                        platform = Unknown;
                 }
             }
         }
@@ -454,8 +466,11 @@ void ImportProject::importVcxproj(const std::string &filename, std::map<std::str
                 }
             } else {
                 for (const tinyxml2::XMLElement *e = node->FirstChildElement(); e; e = e->NextSiblingElement()) {
-                    if (std::strcmp(e->Name(), "ClCompile") == 0)
-                        compileList.push_back(e->Attribute("Include"));
+                    if (std::strcmp(e->Name(), "ClCompile") == 0) {
+                        const char *include = e->Attribute("Include");
+                        if (include && Path::acceptFile(include))
+                            compileList.push_back(include);
+                    }
                 }
             }
         } else if (std::strcmp(node->Name(), "ItemDefinitionGroup") == 0) {
@@ -478,17 +493,17 @@ void ImportProject::importVcxproj(const std::string &filename, std::map<std::str
     for (std::list<std::string>::const_iterator c = compileList.begin(); c != compileList.end(); ++c) {
         for (std::list<ProjectConfiguration>::const_iterator p = projectConfigurationList.begin(); p != projectConfigurationList.end(); ++p) {
             FileSettings fs;
-            fs.filename = Path::simplifyPath(Path::getPathFromFilename(filename) + *c);
+            fs.filename = Path::simplifyPath(Path::isAbsolute(*c) ? *c : Path::getPathFromFilename(filename) + *c);
             fs.cfg = p->name;
-            fs.defines = "_MSC_VER=1900;_WIN32=1";
+            fs.msc = true;
+            fs.useMfc = useOfMfc;
+            fs.defines = "_WIN32=1";
             if (p->platform == ProjectConfiguration::Win32)
                 fs.platformType = cppcheck::Platform::Win32W;
             else if (p->platform == ProjectConfiguration::x64) {
                 fs.platformType = cppcheck::Platform::Win64;
                 fs.defines += ";_WIN64=1";
             }
-            if (useOfMfc)
-                fs.defines += ";__AFXWIN_H__";
             std::string additionalIncludePaths;
             for (std::list<ItemDefinitionGroup>::const_iterator i = itemDefinitionGroupList.begin(); i != itemDefinitionGroupList.end(); ++i) {
                 if (!i->conditionIsTrue(*p))
