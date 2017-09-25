@@ -118,7 +118,7 @@ void CheckThread::runAddons(const QString &addonPath, const ImportProject::FileS
             if (!fileSettings)
                 continue;
 
-            if (!fileSettings->cfg.empty() && fileSettings->cfg.find("Debug") != std::string::npos)
+            if (!fileSettings->cfg.empty() && fileSettings->cfg.compare(0,5,"Debug") != 0)
                 continue;
 
             QStringList args;
@@ -145,10 +145,10 @@ void CheckThread::runAddons(const QString &addonPath, const ImportProject::FileS
             // To create compile_commands.json in windows see:
             // https://bitsmaker.gitlab.io/post/clang-tidy-from-vs2015/
 
-            foreach (QString s, mVsIncludePaths.split(";")) {
-                if (!s.isEmpty()) {
-                    s.replace("\\", "/");
-                    args << "-isystem" << s;
+            foreach (QString includePath, mClangIncludePaths) {
+                if (!includePath.isEmpty()) {
+                    includePath.replace("\\", "/");
+                    args << "-isystem" << includePath.trimmed();
                 }
             }
 
@@ -157,8 +157,6 @@ void CheckThread::runAddons(const QString &addonPath, const ImportProject::FileS
 
             if (!fileSettings->standard.empty())
                 args << ("-std=" + QString::fromStdString(fileSettings->standard));
-            else if (!mVsIncludePaths.isEmpty() && fileName.endsWith(".cpp"))
-                args << "-std=c++14";
 
             QString analyzerInfoFile;
 
@@ -184,7 +182,7 @@ void CheckThread::runAddons(const QString &addonPath, const ImportProject::FileS
                         QFile f2(analyzerInfoFile + '.' + addon + "-results");
                         if (f2.open(QIODevice::ReadOnly | QIODevice::Text)) {
                             QTextStream in2(&f2);
-                            parseClangErrors(fileName, in2.readAll());
+                            parseClangErrors(addon, fileName, in2.readAll());
                             continue;
                         }
                     }
@@ -231,7 +229,7 @@ void CheckThread::runAddons(const QString &addonPath, const ImportProject::FileS
             QProcess process;
             process.start(cmd, args);
             process.waitForFinished(600*1000);
-            const QString errout(addon == CLANG ? process.readAllStandardError() : process.readAllStandardOutput());
+            const QString errout(process.readAllStandardOutput() + "\n\n\n" + process.readAllStandardError());
             if (!analyzerInfoFile.isEmpty()) {
                 QFile f(analyzerInfoFile + '.' + addon + "-results");
                 if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
@@ -239,7 +237,8 @@ void CheckThread::runAddons(const QString &addonPath, const ImportProject::FileS
                     out << errout;
                 }
             }
-            parseClangErrors(fileName, errout);
+
+            parseClangErrors(addon, fileName, errout);
         } else {
             QString a;
             if (QFileInfo(addonPath + '/' + addon + ".py").exists())
@@ -268,12 +267,22 @@ void CheckThread::runAddons(const QString &addonPath, const ImportProject::FileS
                 mCppcheck.settings().buildDir = buildDir;
             }
 
-            QString cmd = "python " + a + ' ' + dumpFile;
-            qDebug() << cmd;
+            const QString python = mPythonPath.isEmpty() ? QString("python") : mPythonPath;
+            QStringList args;
+            args << a << dumpFile;
+            qDebug() << python << args;
+
             QProcess process;
-            process.start(cmd);
+            process.start(python, args);
             process.waitForFinished();
-            parseAddonErrors(process.readAllStandardError(), addon);
+            const QString errout(process.readAllStandardError());
+            QFile f(dumpFile + '-' + addon + "-results");
+            if (f.open(QIODevice::WriteOnly | QIODevice::Text)) {
+                QTextStream out(&f);
+                out << errout;
+                f.close();
+            }
+            parseAddonErrors(errout, addon);
         }
     }
 }
@@ -290,6 +299,8 @@ QString CheckThread::getAddonPath() const
         return mDataDir;
     else if (QDir(mDataDir + "/addons").exists())
         return mDataDir + "/addons";
+    else if (QDir(mDataDir + "/../addons").exists())
+        return mDataDir + "/../addons";
     else if (mDataDir.endsWith("/cfg")) {
         if (QDir(mDataDir.mid(0,mDataDir.size()-3) + "addons").exists())
             return mDataDir.mid(0,mDataDir.size()-3) + "addons";
@@ -299,61 +310,79 @@ QString CheckThread::getAddonPath() const
 
 void CheckThread::parseAddonErrors(QString err, QString tool)
 {
+    Q_UNUSED(tool);
     QTextStream in(&err, QIODevice::ReadOnly);
     while (!in.atEnd()) {
         QString line = in.readLine();
-        QRegExp r1("\\[([^:]+):([0-9]+)\\](.*)");
+        QRegExp r1("\\[([a-zA-Z]?:?[^:]+):([0-9]+)\\][ ][(]([a-z]+)[)]: (.+) \\[([a-zA-Z0-9_\\-\\.]+)\\]");
         if (!r1.exactMatch(line))
             continue;
         const std::string &filename = r1.cap(1).toStdString();
         const int lineNumber = r1.cap(2).toInt();
+        const std::string severity = r1.cap(3).toStdString();
+        const std::string message = r1.cap(4).toStdString();
+        const std::string id = r1.cap(5).toStdString();
 
-        std::string message, id;
-        QRegExp r2("(.*)\\[([a-zA-Z0-9\\-\\._]+)\\]");
-        if (r2.exactMatch(r1.cap(3))) {
-            message = r2.cap(1).toStdString();
-            id = tool.toStdString() + '-' + r2.cap(2).toStdString();
-        } else {
-            message = r1.cap(3).toStdString();
-            id = tool.toStdString();
-        }
         std::list<ErrorLogger::ErrorMessage::FileLocation> callstack;
         callstack.push_back(ErrorLogger::ErrorMessage::FileLocation(filename, lineNumber));
-        ErrorLogger::ErrorMessage errmsg(callstack, filename, Severity::style, message, id, false);
+        ErrorLogger::ErrorMessage errmsg(callstack, filename, Severity::fromString(severity), message, id, false);
         mResult.reportErr(errmsg);
     }
 }
 
-void CheckThread::parseClangErrors(const QString &file0, QString err)
+void CheckThread::parseClangErrors(const QString &tool, const QString &file0, QString err)
 {
     QList<ErrorItem> errorItems;
     ErrorItem errorItem;
-    QRegExp r1("(.+):([0-9]+):[0-9]+: (note|warning|error|fatal error): (.*)");
+    QRegExp r1("(.+):([0-9]+):([0-9]+): (note|warning|error|fatal error): (.*)");
     QRegExp r2("(.*)\\[([a-zA-Z0-9\\-_\\.]+)\\]");
     QTextStream in(&err, QIODevice::ReadOnly);
     while (!in.atEnd()) {
         QString line = in.readLine();
+
+        if (line.startsWith("Assertion failed:")) {
+            ErrorItem e;
+            e.errorPath.append(QErrorPathItem());
+            e.errorPath.last().file = file0;
+            e.errorPath.last().line = 1;
+            e.errorPath.last().col  = 1;
+            e.errorId = tool + "-internal-error";
+            e.file0 = file0;
+            e.message = line;
+            e.severity = Severity::information;
+            errorItems.append(e);
+            continue;
+        }
+
         if (!r1.exactMatch(line))
             continue;
-        if (r1.cap(3) != "note") {
+        if (r1.cap(4) != "note") {
             errorItems.append(errorItem);
             errorItem = ErrorItem();
+            errorItem.file0 = r1.cap(1);
         }
 
         errorItem.errorPath.append(QErrorPathItem());
         errorItem.errorPath.last().file = r1.cap(1);
         errorItem.errorPath.last().line = r1.cap(2).toInt();
-        if (r1.cap(3) == "warning")
+        errorItem.errorPath.last().col  = r1.cap(3).toInt();
+        if (r1.cap(4) == "warning")
             errorItem.severity = Severity::SeverityType::warning;
-        else if (r1.cap(3) == "error" || r1.cap(3) == "fatal error")
+        else if (r1.cap(4) == "error" || r1.cap(4) == "fatal error")
             errorItem.severity = Severity::SeverityType::error;
 
         QString message,id;
-        if (r2.exactMatch(r1.cap(4))) {
+        if (r2.exactMatch(r1.cap(5))) {
             message = r2.cap(1);
-            id = r2.cap(2);
+            id = tool + '-' + r2.cap(2);
+            if (r2.cap(2) == "performance")
+                errorItem.severity = Severity::SeverityType::performance;
+            else if (r2.cap(2) == "portability")
+                errorItem.severity = Severity::SeverityType::portability;
+            else if (r2.cap(2) == "readability")
+                errorItem.severity = Severity::SeverityType::style;
         } else {
-            message = r1.cap(4);
+            message = r1.cap(5);
             id = CLANG;
         }
 
@@ -369,11 +398,16 @@ void CheckThread::parseClangErrors(const QString &file0, QString err)
     foreach (const ErrorItem &e, errorItems) {
         if (e.errorPath.isEmpty())
             continue;
+        if (mSuppressions.contains(e.errorId))
+            continue;
         std::list<ErrorLogger::ErrorMessage::FileLocation> callstack;
         foreach (const QErrorPathItem &path, e.errorPath) {
             callstack.push_back(ErrorLogger::ErrorMessage::FileLocation(path.file.toStdString(), path.info.toStdString(), path.line));
         }
-        ErrorLogger::ErrorMessage errmsg(callstack, file0.toStdString(), errorItem.severity, errorItem.message.toStdString(), errorItem.errorId.toStdString(), false);
+        const std::string f0 = file0.toStdString();
+        const std::string msg = e.message.toStdString();
+        const std::string id = e.errorId.toStdString();
+        ErrorLogger::ErrorMessage errmsg(callstack, f0, e.severity, msg, id, false);
         mResult.reportErr(errmsg);
     }
 }

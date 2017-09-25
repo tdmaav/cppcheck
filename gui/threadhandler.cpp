@@ -47,6 +47,7 @@ void ThreadHandler::clearFiles()
     mResults.clearFiles();
     mAnalyseWholeProgram = false;
     mAddons.clear();
+    mSuppressions.clear();
 }
 
 void ThreadHandler::setFiles(const QStringList &files)
@@ -93,8 +94,10 @@ void ThreadHandler::check(const Settings &settings)
 
     for (int i = 0; i < mRunningThreadCount; i++) {
         mThreads[i]->setAddons(mAddons);
-        mThreads[i]->setVsIncludePaths(mVsIncludePaths);
+        mThreads[i]->setPythonPath(mPythonPath);
+        mThreads[i]->setSuppressions(mSuppressions);
         mThreads[i]->setClangPath(mClangPath);
+        mThreads[i]->setClangIncludePaths(mClangIncludePaths);
         mThreads[i]->setDataDir(mDataDir);
         mThreads[i]->check(settings);
     }
@@ -187,11 +190,11 @@ void ThreadHandler::initialize(ResultsView *view)
     connect(&mResults, &ThreadResult::error,
             view, &ResultsView::error);
 
-    connect(&mResults, SIGNAL(log(const QString &)),
-            parent(), SLOT(log(const QString &)));
+    connect(&mResults, &ThreadResult::log,
+            this, &ThreadHandler::log);
 
-    connect(&mResults, SIGNAL(debugError(const ErrorItem &)),
-            parent(), SLOT(debugError(const ErrorItem &)));
+    connect(&mResults, &ThreadResult::debugError,
+            this, &ThreadHandler::debugError);
 }
 
 void ThreadHandler::loadSettings(QSettings &settings)

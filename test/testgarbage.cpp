@@ -216,6 +216,8 @@ private:
         TEST_CASE(garbageCode183); // #7505
         TEST_CASE(garbageCode184); // #7699
         TEST_CASE(garbageCode185); // #6011
+        TEST_CASE(garbageCode186); // #8151
+        TEST_CASE(garbageCode187);
         TEST_CASE(garbageValueFlow);
         TEST_CASE(garbageSymbolDatabase);
         TEST_CASE(garbageAST);
@@ -225,7 +227,7 @@ private:
         TEST_CASE(enumTrailingComma);
     }
 
-    std::string checkCode(const char code[], bool cpp = true) {
+    std::string checkCode(const std::string &code, bool cpp = true) {
         // double the tests - run each example as C as well as C++
         const char* const filename = cpp ? "test.cpp" : "test.c";
         const char* const alternatefilename = cpp ? "test.c" : "test.cpp";
@@ -239,7 +241,7 @@ private:
         return checkCodeInternal(code, filename);
     }
 
-    std::string checkCodeInternal(const char code[], const char* filename) {
+    std::string checkCodeInternal(const std::string &code, const char* filename) {
         errout.str("");
 
         // tokenize..
@@ -308,7 +310,7 @@ private:
         } catch (InternalError& e) {
             ASSERT_EQUALS("Analysis failed. If the code is valid then please report this failure.", e.errorMessage);
             ASSERT_EQUALS("cppcheckError", e.id);
-            ASSERT_EQUALS(5, e.token->linenr());
+            ASSERT_EQUALS(4, e.token->linenr());
         }
     }
 
@@ -832,7 +834,7 @@ private:
     }
 
     void garbageCode108() { //  #6895 "segmentation fault (invalid code) in CheckCondition::isOppositeCond"
-        checkCode("A( ) { } bool f( ) { ( ) F; ( ) { ( == ) if ( !=< || ( !A( ) && r[2] ) ) ( !A( ) ) ( ) } }");
+        ASSERT_THROW(checkCode("A( ) { } bool f( ) { ( ) F; ( ) { ( == ) if ( !=< || ( !A( ) && r[2] ) ) ( !A( ) ) ( ) } }"), InternalError);
     }
 
     void garbageCode109() { //  #6900 "segmentation fault (invalid code) in CheckStl::runSimplifiedChecks"
@@ -1417,6 +1419,16 @@ private:
             "               return bStatus;\n"
             "       };\n"
             "}\n");
+    }
+
+    // #8151 - segfault due to incorrect template syntax
+    void garbageCode186() {
+        ASSERT_THROW(checkCode("A<B<><>C"), InternalError);
+    }
+
+    void garbageCode187() { // # 8152 - segfault in handling
+        const std::string inp("0|\0|0>;\n", 8);
+        ASSERT_THROW(checkCode(inp), InternalError);
     }
 
     void syntaxErrorFirstToken() {

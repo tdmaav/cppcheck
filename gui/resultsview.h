@@ -48,14 +48,9 @@ public:
     void initialize(QSettings *settings, ApplicationList *list, ThreadHandler *checkThreadHandler);
     virtual ~ResultsView();
 
-    /**
-    * @brief Function to show/hide certain type of errors
-    * Refreshes the tree.
-    *
-    * @param type Type of error to show/hide
-    * @param show Should specified errors be shown (true) or hidden (false)
-    */
-    void showResults(ShowTypes::ShowType type, bool show);
+    void setTags(const QStringList &tags) {
+        mUI.mTree->setTags(tags);
+    }
 
     /**
      * @brief Clear results and statistics and reset progressinfo.
@@ -218,6 +213,49 @@ signals:
      */
     void tagged();
 
+    /** Suppress Ids */
+    void suppressIds(QStringList ids);
+
+    /**
+    * @brief Show/hide certain type of errors
+    * Refreshes the tree.
+    *
+    * @param type Type of error to show/hide
+    * @param show Should specified errors be shown (true) or hidden (false)
+    */
+    void showResults(ShowTypes::ShowType type, bool show);
+
+    /**
+    * @brief Show/hide cppcheck errors.
+    * Refreshes the tree.
+    *
+    * @param show Should specified errors be shown (true) or hidden (false)
+    */
+    void showCppcheckResults(bool show);
+
+    /**
+    * @brief Show/hide clang-tidy/clang-analyzer errors.
+    * Refreshes the tree.
+    *
+    * @param show Should specified errors be shown (true) or hidden (false)
+    */
+    void showClangResults(bool show);
+
+    /**
+    * @brief Collapse all results in the result list.
+    */
+    void collapseAllResults();
+
+    /**
+    * @brief Expand all results in the result list.
+    */
+    void expandAllResults();
+
+    /**
+    * @brief Show hidden results in the result list.
+    */
+    void showHiddenResults();
+
 public slots:
 
     /**
@@ -236,24 +274,9 @@ public slots:
     void error(const ErrorItem &item);
 
     /**
-    * @brief Collapse all results in the result list.
-    */
-    void collapseAllResults();
-
-    /**
-    * @brief Expand all results in the result list.
-    */
-    void expandAllResults();
-
-    /**
     * @brief Filters the results in the result list.
     */
     void filterResults(const QString& filter);
-
-    /**
-    * @brief Show hidden results in the result list.
-    */
-    void showHiddenResults();
 
     /**
     * @brief Update detailed message when selected item is changed.
@@ -277,6 +300,16 @@ public slots:
     * @brief Slot opening a print preview dialog
     */
     void printPreview();
+
+    /**
+     * \brief Log message
+     */
+    void log(const QString &str);
+
+    /**
+     * \brief debug message
+     */
+    void debugError(const ErrorItem &item);
 
 protected:
     /**

@@ -79,6 +79,7 @@ public:
     * @return Error item as string.
     */
     QString ToString() const;
+    QString tool() const;
 
     QString file0;
     QString errorId;
@@ -91,7 +92,7 @@ public:
 
     // Special GUI properties
     QString sinceDate;
-    enum Tag { NONE, FP, IGNORE, BUG } tag;
+    QString tags;
 };
 
 Q_DECLARE_METATYPE(ErrorItem);
@@ -110,7 +111,7 @@ public:
     QString summary;
     QString message;
     QString sinceDate;
-    ErrorItem::Tag tag;
+    QString tags;
 };
 
 /// @}

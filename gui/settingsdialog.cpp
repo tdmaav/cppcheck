@@ -53,15 +53,15 @@ SettingsDialog::SettingsDialog(ApplicationList *list,
     mUI.mEnableInconclusive->setCheckState(boolToCheckState(settings.value(SETTINGS_INCONCLUSIVE_ERRORS, false).toBool()));
     mUI.mShowStatistics->setCheckState(boolToCheckState(settings.value(SETTINGS_SHOW_STATISTICS, false).toBool()));
     mUI.mShowErrorId->setCheckState(boolToCheckState(settings.value(SETTINGS_SHOW_ERROR_ID, false).toBool()));
+    mUI.mEditPythonPath->setText(settings.value(SETTINGS_PYTHON_PATH, QString()).toString());
 
 #ifdef Q_OS_WIN
-    mUI.mLabelVsInclude->setVisible(true);
-    mUI.mEditVsInclude->setVisible(true);
-    mUI.mEditVsInclude->setText(settings.value(SETTINGS_VS_INCLUDE_PATHS, QString()).toString());
+    //mUI.mTabClang->setVisible(true);
+    mUI.mEditClangPath->setText(settings.value(SETTINGS_CLANG_PATH, QString()).toString());
+    mUI.mEditVsIncludePaths->setText(settings.value(SETTINGS_VS_INCLUDE_PATHS, QString()).toString());
+    connect(mUI.mBtnBrowseClangPath, &QPushButton::released, this, &SettingsDialog::browseClangPath);
 #else
-    mUI.mLabelVsInclude->setVisible(false);
-    mUI.mEditVsInclude->setVisible(false);
-    mUI.mEditVsInclude->setText(QString());
+    mUI.mTabClang->setVisible(false);
 #endif
     connect(mUI.mButtons, &QDialogButtonBox::accepted, this, &SettingsDialog::ok);
     connect(mUI.mButtons, &QDialogButtonBox::rejected, this, &SettingsDialog::reject);
@@ -75,12 +75,8 @@ SettingsDialog::SettingsDialog(ApplicationList *list,
             this, SLOT(defaultApplication()));
     connect(mUI.mListWidget, SIGNAL(itemDoubleClicked(QListWidgetItem *)),
             this, SLOT(editApplication()));
-    connect(mUI.mBtnAddIncludePath, SIGNAL(clicked()),
-            this, SLOT(addIncludePath()));
-    connect(mUI.mBtnRemoveIncludePath, SIGNAL(clicked()),
-            this, SLOT(removeIncludePath()));
-    connect(mUI.mBtnEditIncludePath, SIGNAL(clicked()),
-            this, SLOT(editIncludePath()));
+
+    connect(mUI.mBtnBrowsePythonPath, &QPushButton::clicked, this, &SettingsDialog::browsePythonPath);
 
     mUI.mListWidget->setSortingEnabled(false);
     populateApplicationList();
@@ -93,32 +89,11 @@ SettingsDialog::SettingsDialog(ApplicationList *list,
 
     loadSettings();
     initTranslationsList();
-    initIncludepathsList();
 }
 
 SettingsDialog::~SettingsDialog()
 {
     saveSettings();
-}
-
-void SettingsDialog::addIncludePath(const QString &path)
-{
-    if (path.isNull() || path.isEmpty())
-        return;
-
-    QListWidgetItem *item = new QListWidgetItem(path);
-    item->setFlags(item->flags() | Qt::ItemIsEditable);
-    mUI.mListIncludePaths->addItem(item);
-}
-
-void SettingsDialog::initIncludepathsList()
-{
-    QSettings settings;
-    const QString allPaths = settings.value(SETTINGS_GLOBAL_INCLUDE_PATHS).toString();
-    const QStringList paths = allPaths.split(";", QString::SkipEmptyParts);
-    foreach (QString path, paths) {
-        addIncludePath(path);
-    }
 }
 
 void SettingsDialog::initTranslationsList()
@@ -185,12 +160,11 @@ void SettingsDialog::saveSettingValues() const
     saveCheckboxValue(&settings, mUI.mEnableInconclusive, SETTINGS_INCONCLUSIVE_ERRORS);
     saveCheckboxValue(&settings, mUI.mShowStatistics, SETTINGS_SHOW_STATISTICS);
     saveCheckboxValue(&settings, mUI.mShowErrorId, SETTINGS_SHOW_ERROR_ID);
+    settings.setValue(SETTINGS_PYTHON_PATH, mUI.mEditPythonPath->text());
 
 #ifdef Q_OS_WIN
-    QString vsIncludePaths = mUI.mEditVsInclude->text();
-    if (vsIncludePaths.startsWith("INCLUDE="))
-        vsIncludePaths.remove(0, 8);
-    settings.setValue(SETTINGS_VS_INCLUDE_PATHS, vsIncludePaths);
+    settings.setValue(SETTINGS_CLANG_PATH, mUI.mEditClangPath->text());
+    settings.setValue(SETTINGS_VS_INCLUDE_PATHS, mUI.mEditVsIncludePaths->text());
 #endif
 
     const QListWidgetItem *currentLang = mUI.mListLanguages->currentItem();
@@ -198,15 +172,6 @@ void SettingsDialog::saveSettingValues() const
         const QString langcode = currentLang->data(LangCodeRole).toString();
         settings.setValue(SETTINGS_LANGUAGE, langcode);
     }
-
-    const int count = mUI.mListIncludePaths->count();
-    QString includePaths;
-    for (int i = 0; i < count; i++) {
-        QListWidgetItem *item = mUI.mListIncludePaths->item(i);
-        includePaths += item->text();
-        includePaths += ";";
-    }
-    settings.setValue(SETTINGS_GLOBAL_INCLUDE_PATHS, includePaths);
 }
 
 void SettingsDialog::saveCheckboxValue(QSettings *settings, QCheckBox *box,
@@ -334,27 +299,20 @@ bool SettingsDialog::showInconclusive() const
     return checkStateToBool(mUI.mEnableInconclusive->checkState());
 }
 
-void SettingsDialog::addIncludePath()
+void SettingsDialog::browsePythonPath()
+{
+    QString fileName = QFileDialog::getOpenFileName(this, tr("Select python binary"), QDir::rootPath());
+    if (fileName.contains("python", Qt::CaseInsensitive))
+        mUI.mEditPythonPath->setText(fileName);
+}
+
+void SettingsDialog::browseClangPath()
 {
     QString selectedDir = QFileDialog::getExistingDirectory(this,
-                          tr("Select include directory"),
-                          getPath(SETTINGS_LAST_INCLUDE_PATH));
+                          tr("Select clang path"),
+                          QDir::rootPath());
 
     if (!selectedDir.isEmpty()) {
-        addIncludePath(selectedDir);
-        setPath(SETTINGS_LAST_INCLUDE_PATH, selectedDir);
+        mUI.mEditClangPath->setText(selectedDir);
     }
-}
-
-void SettingsDialog::removeIncludePath()
-{
-    const int row = mUI.mListIncludePaths->currentRow();
-    QListWidgetItem *item = mUI.mListIncludePaths->takeItem(row);
-    delete item;
-}
-
-void SettingsDialog::editIncludePath()
-{
-    QListWidgetItem *item = mUI.mListIncludePaths->currentItem();
-    mUI.mListIncludePaths->editItem(item);
 }

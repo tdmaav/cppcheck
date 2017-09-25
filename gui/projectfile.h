@@ -62,6 +62,10 @@ public:
         return mImportProject;
     }
 
+    bool getAnalyzeAllVsConfigs() const {
+        return mAnalyzeAllVsConfigs;
+    }
+
     /**
     * @brief Get list of include directories.
     * @return list of directories.
@@ -118,6 +122,18 @@ public:
         return mAddons;
     }
 
+    bool getClangAnalyzer() const {
+        return mAddons.contains("clang-analyzer");
+    }
+
+    bool getClangTidy() const {
+        return mAddons.contains("clang-tidy");
+    }
+
+    QStringList getTags() const {
+        return mTags;
+    }
+
     /**
     * @brief Get filename for the project file.
     * @return file name.
@@ -134,13 +150,16 @@ public:
         mRootPath = rootpath;
     }
 
-
     void setBuildDir(const QString &buildDir) {
         mBuildDir = buildDir;
     }
 
     void setImportProject(const QString &importProject) {
         mImportProject = importProject;
+    }
+
+    void setAnalyzeAllVsConfigs(bool b) {
+        mAnalyzeAllVsConfigs = b;
     }
 
     /**
@@ -186,6 +205,14 @@ public:
     void setAddons(const QStringList &addons);
 
     /**
+     * @brief Set tags.
+     * @param tags tag list
+     */
+    void setTags(const QStringList &tags) {
+        mTags = tags;
+    }
+
+    /**
      * @brief Write project file (to disk).
      * @param filename Filename to use.
      */
@@ -214,6 +241,8 @@ protected:
      * @param reader XML stream reader.
      */
     void readImportProject(QXmlStreamReader &reader);
+
+    void readAnalyzeAllVsConfigs(QXmlStreamReader &reader);
 
     /**
      * @brief Read list of include directories from XML.
@@ -258,6 +287,8 @@ protected:
 
 private:
 
+    void clear();
+
     /**
      * @brief Convert paths
      */
@@ -281,6 +312,13 @@ private:
 
     /** Visual studio project/solution , compile database */
     QString mImportProject;
+
+    /**
+     * Should all visual studio configurations be analyzed?
+     * If this is false then only the Debug configuration
+     * for the set platform is analyzed.
+     */
+    bool mAnalyzeAllVsConfigs;
 
     /**
      * @brief List of include directories used to search include files.
@@ -316,6 +354,11 @@ private:
      * @brief List of addons.
      */
     QStringList mAddons;
+
+    /**
+     * @brief Warning tags
+     */
+    QStringList mTags;
 };
 /// @}
 #endif  // PROJECT_FILE_H

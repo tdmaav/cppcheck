@@ -22,6 +22,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 cppcheck::Platform::Platform()
 {
@@ -56,8 +57,7 @@ bool cppcheck::Platform::platform(cppcheck::Platform::PlatformType type)
         if (type == Unspecified) {
             defaultSign = '\0';
         } else {
-            char x = -1;
-            defaultSign = (x < 0) ? 's' : 'u';
+            defaultSign = (std::numeric_limits<char>::is_signed) ? 's' : 'u';
         }
         char_bit = 8;
         short_bit = char_bit * sizeof_short;
@@ -146,6 +146,9 @@ bool cppcheck::Platform::platform(cppcheck::Platform::PlatformType type)
         long_bit = char_bit * sizeof_long;
         long_long_bit = char_bit * sizeof_long_long;
         return true;
+    case PlatformFile:
+        // sizes are not set.
+        return false;
     }
     // unsupported platform
     return false;

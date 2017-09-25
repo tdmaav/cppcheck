@@ -49,7 +49,7 @@ static void AddFilesToList(const std::string& FileList, std::vector<std::string>
     // To keep things initially simple, if the file can't be opened, just be silent and move on.
     std::istream *Files;
     std::ifstream Infile;
-    if (FileList.compare("-") == 0) { // read from stdin
+    if (FileList == "-") { // read from stdin
         Files = &std::cin;
     } else {
         Infile.open(FileList.c_str());
@@ -496,8 +496,13 @@ bool CmdLineParser::ParseFromArgs(int argc, const char* const argv[])
             // --project
             else if (std::strncmp(argv[i], "--project=", 10) == 0) {
                 _settings->project.import(argv[i]+10);
-                if (std::strstr(argv[i], ".sln") || std::strstr(argv[i], ".vcxproj"))
-                    CppCheckExecutor::tryLoadLibrary(_settings->library, argv[0], "windows");
+                if (std::strstr(argv[i], ".sln") || std::strstr(argv[i], ".vcxproj")) {
+                    if (!CppCheckExecutor::tryLoadLibrary(_settings->library, argv[0], "windows.cfg")) {
+                        // This shouldn't happen normally.
+                        PrintMessage("cppcheck: Failed to load 'windows.cfg'. Your Cppcheck installation is broken. Please re-install.");
+                        return false;
+                    }
+                }
             }
 
             // Report progress

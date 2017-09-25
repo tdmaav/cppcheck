@@ -33,13 +33,15 @@
 #include <stack>
 #include <utility>
 
+const std::list<ValueFlow::Value> Token::emptyValueList;
+
 Token::Token(Token **tokens) :
     tokensBack(tokens),
-    _next(0),
-    _previous(0),
-    _link(0),
-    _scope(0),
-    _function(0), // Initialize whole union
+    _next(nullptr),
+    _previous(nullptr),
+    _link(nullptr),
+    _scope(nullptr),
+    _function(nullptr), // Initialize whole union
     _varId(0),
     _fileIndex(0),
     _linenr(0),
@@ -188,6 +190,11 @@ void Token::deleteNext(unsigned long index)
 {
     while (_next && index) {
         Token *n = _next;
+
+        // #8154 we are about to be unknown -> destroy the link to us
+        if (n->_link && n->_link->_link == n)
+            n->_link->link(nullptr);
+
         _next = n->next();
         delete n;
         --index;
@@ -222,64 +229,40 @@ void Token::swapWithNext()
     }
 }
 
+void Token::takeData(Token *fromToken)
+{
+    _str = fromToken->_str;
+    _tokType = fromToken->_tokType;
+    _flags = fromToken->_flags;
+    _varId = fromToken->_varId;
+    _fileIndex = fromToken->_fileIndex;
+    _linenr = fromToken->_linenr;
+    _link = fromToken->_link;
+    _scope = fromToken->_scope;
+    _function = fromToken->_function;
+    if (fromToken->_originalName) {
+        delete _originalName;
+        _originalName = fromToken->_originalName;
+        fromToken->_originalName = nullptr;
+    }
+    delete _values;
+    _values = fromToken->_values;
+    fromToken->_values = nullptr;
+    delete valuetype;
+    valuetype = fromToken->valuetype;
+    fromToken->valuetype = nullptr;
+    if (_link)
+        _link->link(this);
+}
+
 void Token::deleteThis()
 {
     if (_next) { // Copy next to this and delete next
-        _str = _next->_str;
-        _tokType = _next->_tokType;
-        _flags = _next->_flags;
-        _varId = _next->_varId;
-        _fileIndex = _next->_fileIndex;
-        _linenr = _next->_linenr;
-        _link = _next->_link;
-        _scope = _next->_scope;
-        _function = _next->_function;
-        if (_next->_originalName) {
-            delete _originalName;
-            _originalName = _next->_originalName;
-            _next->_originalName = nullptr;
-        }
-        if (_next->_values) {
-            delete _values;
-            _values = _next->_values;
-            _next->_values = nullptr;
-        }
-        if (_next->valuetype) {
-            delete valuetype;
-            valuetype = _next->valuetype;
-            _next->valuetype = nullptr;
-        }
-        if (_link)
-            _link->link(this);
-
+        takeData(_next);
+        _next->link(nullptr); // mark as unlinked
         deleteNext();
     } else if (_previous && _previous->_previous) { // Copy previous to this and delete previous
-        _str = _previous->_str;
-        _tokType = _previous->_tokType;
-        _flags = _previous->_flags;
-        _varId = _previous->_varId;
-        _fileIndex = _previous->_fileIndex;
-        _linenr = _previous->_linenr;
-        _link = _previous->_link;
-        _scope = _previous->_scope;
-        _function = _previous->_function;
-        if (_previous->_originalName) {
-            delete _originalName;
-            _originalName = _previous->_originalName;
-            _previous->_originalName = nullptr;
-        }
-        if (_previous->_values) {
-            delete _values;
-            _values = _previous->_values;
-            _previous->_values = nullptr;
-        }
-        if (_previous->valuetype) {
-            delete valuetype;
-            valuetype = _previous->valuetype;
-            _previous->valuetype = nullptr;
-        }
-        if (_link)
-            _link->link(this);
+        takeData(_previous);
 
         Token* toDelete = _previous;
         _previous = _previous->_previous;
@@ -591,7 +574,7 @@ const char *Token::chrInFirstWord(const char *str, char c)
 {
     for (;;) {
         if (*str == ' ' || *str == 0)
-            return 0;
+            return nullptr;
 
         if (*str == c)
             return str;
@@ -868,7 +851,7 @@ const Token *Token::findsimplematch(const Token * const startTok, const char pat
         if (Token::simpleMatch(tok, pattern))
             return tok;
     }
-    return 0;
+    return nullptr;
 }
 
 const Token *Token::findsimplematch(const Token * const startTok, const char pattern[], const Token * const end)
@@ -962,14 +945,14 @@ void Token::printOut(const char *title) const
 {
     if (title && title[0])
         std::cout << "\n### " << title << " ###\n";
-    std::cout << stringifyList(true, true, true, true, true, 0, 0) << std::endl;
+    std::cout << stringifyList(true, true, true, true, true, nullptr, nullptr) << std::endl;
 }
 
 void Token::printOut(const char *title, const std::vector<std::string> &fileNames) const
 {
     if (title && title[0])
         std::cout << "\n### " << title << " ###\n";
-    std::cout << stringifyList(true, true, true, true, true, &fileNames, 0) << std::endl;
+    std::cout << stringifyList(true, true, true, true, true, &fileNames, nullptr) << std::endl;
 }
 
 void Token::stringify(std::ostream& os, bool varid, bool attributes, bool macro) const
@@ -1067,12 +1050,12 @@ std::string Token::stringifyList(bool varid, bool attributes, bool linenumbers, 
 
 std::string Token::stringifyList(const Token* end, bool attributes) const
 {
-    return stringifyList(false, attributes, false, false, false, 0, end);
+    return stringifyList(false, attributes, false, false, false, nullptr, end);
 }
 
 std::string Token::stringifyList(bool varid) const
 {
-    return stringifyList(varid, false, true, true, true, 0, 0);
+    return stringifyList(varid, false, true, true, true, nullptr, nullptr);
 }
 
 void Token::astOperand1(Token *tok)

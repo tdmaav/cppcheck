@@ -1343,6 +1343,17 @@ private:
                                     "}";
             ASSERT_EQUALS(result, tokenizeAndStringify(code, true));
         }
+
+        {
+            // #8148 - while inside the do-while body
+            const char code[] = "void foo() {\n"
+                                "    do { while (x) f(); } while (y);\n"
+                                "}";
+            const char result[] = "void foo ( ) {\n"
+                                  "do { while ( x ) { f ( ) ; } } while ( y ) ;\n"
+                                  "}";
+            ASSERT_EQUALS(result, tokenizeAndStringify(code, true));
+        }
     }
 
     void forAddBraces1() {
@@ -5937,7 +5948,7 @@ private:
 
     void simplifyOperatorName8() { // ticket #5706
         const char code1[] = "value_type * operator += (int) noexcept ;";
-        const char result1[] = "value_type * operator+= ( int ) noexcept ;";
+        const char result1[] = "value_type * operator+= ( int ) noexcept ( true ) ;";
         ASSERT_EQUALS(result1, tokenizeAndStringify(code1,false));
 
         const char code2[] = "value_type * operator += (int) noexcept ( true ) ;";
@@ -5959,6 +5970,11 @@ private:
         const char code6[] = "value_type * operator += (int) const throw ( ) ;";
         const char result6[] = "value_type * operator+= ( int ) const throw ( ) ;";
         ASSERT_EQUALS(result6, tokenizeAndStringify(code6,false));
+
+        const char code7[] = "value_type * operator += (int) const noexcept ( false ) ;";
+        const char result7[] = "value_type * operator+= ( int ) const noexcept ( false ) ;";
+        ASSERT_EQUALS(result7, tokenizeAndStringify(code7,false));
+
     }
 
     void simplifyOperatorName9() { // Ticket #5709
@@ -8023,6 +8039,7 @@ private:
         ASSERT_EQUALS("fint(0,(", testAst("f(int(),0);"));
         ASSERT_EQUALS("f(0,(", testAst("f(int *(),0);"));  // typedef int* X; f(X(),0);
         ASSERT_EQUALS("f((0,(", testAst("f((intp)int *(),0);"));
+        ASSERT_EQUALS("zx1(&y2(&|=", testAst("z = (x & (unsigned)1) | (y & (unsigned)2);")); // not type()
 
         // for
         ASSERT_EQUALS("for;;(", testAst("for(;;)"));

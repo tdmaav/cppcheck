@@ -75,12 +75,20 @@ public:
         mAddons = addons;
     }
 
-    void setVsIncludePaths(const QString &s) {
-        mVsIncludePaths = s;
+    void setSuppressions(const QStringList &s) {
+        mSuppressions = s;
+    }
+
+    void setPythonPath(const QString &p) {
+        mPythonPath = p;
     }
 
     void setClangPath(const QString &p) {
         mClangPath = p;
+    }
+
+    void setClangIncludePaths(const QStringList &s) {
+        mClangIncludePaths = s;
     }
 
     void setDataDir(const QString &dataDir) {
@@ -183,6 +191,10 @@ signals:
     */
     void done();
 
+    void log(const QString &msg);
+
+    void debugError(const ErrorItem &item);
+
 public slots:
 
     /**
@@ -250,8 +262,10 @@ protected:
     bool mAnalyseWholeProgram;
 
     QStringList mAddons;
-    QString mVsIncludePaths;
+    QStringList mSuppressions;
+    QString mPythonPath;
     QString mClangPath;
+    QStringList mClangIncludePaths;
 
     QString mDataDir;
 private:

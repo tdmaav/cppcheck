@@ -75,8 +75,10 @@ private:
         TEST_CASE(valueFlowBeforeConditionTernaryOp);
 
         TEST_CASE(valueFlowAfterAssign);
-
         TEST_CASE(valueFlowAfterCondition);
+        TEST_CASE(valueFlowForwardCompoundAssign);
+        TEST_CASE(valueFlowForwardCorrelatedVariables);
+        TEST_CASE(valueFlowForwardLambda);
 
         TEST_CASE(valueFlowSwitchVariable);
 
@@ -108,6 +110,25 @@ private:
                 std::list<ValueFlow::Value>::const_iterator it;
                 for (it = tok->values().begin(); it != tok->values().end(); ++it) {
                     if (it->isIntValue() && it->intvalue == value)
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    bool testValueOfX(const char code[], unsigned int linenr, float value, float diff) {
+        // Tokenize..
+        Tokenizer tokenizer(&settings, this);
+        std::istringstream istr(code);
+        tokenizer.tokenize(istr, "test.cpp");
+
+        for (const Token *tok = tokenizer.tokens(); tok; tok = tok->next()) {
+            if (tok->str() == "x" && tok->linenr() == linenr) {
+                std::list<ValueFlow::Value>::const_iterator it;
+                for (it = tok->values().begin(); it != tok->values().end(); ++it) {
+                    if (it->isFloatValue() && it->floatValue >= value - diff && it->floatValue <= value + diff)
                         return true;
                 }
             }
@@ -612,6 +633,7 @@ private:
                "  if (y == 32) {}"
                "}\n";
         ASSERT_EQUALS("5,Assuming that condition 'y==32' is not redundant\n"
+                      "4,Compound assignment '+=', before assignment value is 20\n"
                       "2,Assignment 'x=y', assigned value is 20\n",
                       getErrorPathForX(code, 3U));
 
@@ -710,6 +732,9 @@ private:
                "   if (x == 4);\n"
                "}";
         ASSERT_EQUALS(true, testValueOfX(code, 2U, 3));
+        ASSERT_EQUALS("4,Assuming that condition 'x==4' is not redundant\n"
+                      "3,x is incremented, before this increment the value is 3\n",
+                      getErrorPathForX(code, 2U));
 
         // compound assignment += , -= , ...
         code = "void f(int x) {\n"
@@ -1047,6 +1072,9 @@ private:
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 4U, 9));
         ASSERT_EQUALS(true, testValueOfX(code, 4U, 8));
+        ASSERT_EQUALS("2,Assignment 'x=9', assigned value is 9\n"
+                      "3,x is decremented', new value is 8\n",
+                      getErrorPathForX(code, 4U));
 
         code = "void x() {\n"
                "    int x = value ? 6 : 0;\n"
@@ -1715,6 +1743,77 @@ private:
                "  a = x;\n"
                "}";
         ASSERT_EQUALS(false, testValueOfX(code, 3U, 0));
+
+        // aliased variable
+        code = "void f() {\n"
+               "  int x = 1;\n"
+               "  int *data = &x;\n"
+               "  if (!x) {\n"
+               "    calc(data);\n"
+               "    a = x;\n"  // <- x might be changed by calc
+               "  }\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 6U, 0));
+    }
+
+    void valueFlowForwardCompoundAssign() {
+        const char *code;
+
+        code = "void f() {\n"
+               "    int x = 123;\n"
+               "    x += 43;\n"
+               "    return x;\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 4U, 166));
+        ASSERT_EQUALS("2,Assignment 'x=123', assigned value is 123\n"
+                      "3,Compound assignment '+=', assigned value is 166\n",
+                      getErrorPathForX(code, 4U));
+
+        code = "void f() {\n"
+               "    int x = 123;\n"
+               "    x /= 0;\n" // don't crash when evaluating x/=0
+               "    return x;\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 4U, 123));
+
+        code = "void f() {\n"
+               "    float x = 123.45;\n"
+               "    x += 67;\n"
+               "    return x;\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 4U, 123.45 + 67, 0.01));
+    }
+
+    void valueFlowForwardCorrelatedVariables() {
+        const char *code;
+
+        code = "void f(int x = 0) {\n"
+               "  bool zero(x==0);\n"
+               "  if (zero) a = x;\n"  // <- x is 0
+               "  else b = x;\n"  // <- x is not 0
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 3U, 0));
+        ASSERT_EQUALS(false, testValueOfX(code, 4U, 0));
+    }
+
+    void valueFlowForwardLambda() {
+        const char *code;
+
+        code = "void f() {\n"
+               "  int x=1;\n"
+               "  auto f = [&](){ a=x; }\n"  // x is not 1
+               "  x = 2;\n"
+               "  f();\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 3U, 1));
+        TODO_ASSERT_EQUALS(true, false, testValueOfX(code, 3U, 2));
+
+        code = "void f() {\n"
+               "  int x=3;\n"
+               "  auto f = [&](){ a=x; }\n"  // todo: x is 3
+               "  f();\n"
+               "}";
+        TODO_ASSERT_EQUALS(true, false, testValueOfX(code, 3U, 3));
     }
 
     void valueFlowBitAnd() {
@@ -2530,6 +2629,23 @@ private:
                "    x = dostuff(sizeof(*x)*y);\n"
                "}";
         ASSERT_EQUALS(0U, tokenValues(code, "x )").size());
+
+        // #8036
+        code = "void foo() {\n"
+               "    int x;\n"
+               "    f(x=3), return x+3;\n"
+               "}";
+        ASSERT_EQUALS(0U, tokenValues(code, "x +").size());
+
+        // #8195
+        code = "void foo(std::istream &is) {\n"
+               "  int x;\n"
+               "  if (is >> x) {\n"
+               "    a = x;\n"
+               "  }\n"
+               "}";
+        values = tokenValues(code, "x ; }");
+        ASSERT_EQUALS(true, values.empty());
     }
 };
 

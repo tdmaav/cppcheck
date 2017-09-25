@@ -38,8 +38,8 @@ static const unsigned int AST_MAX_DEPTH = 50U;
 
 
 TokenList::TokenList(const Settings* settings) :
-    _front(0),
-    _back(0),
+    _front(nullptr),
+    _back(nullptr),
     _settings(settings),
     _isC(false),
     _isCPP(false)
@@ -67,8 +67,8 @@ const std::string& TokenList::getSourceFilePath() const
 void TokenList::deallocateTokens()
 {
     deleteTokens(_front);
-    _front = 0;
-    _back = 0;
+    _front = nullptr;
+    _back = nullptr;
     _files.clear();
 }
 
@@ -388,14 +388,18 @@ static Token * findCppTypeInitPar(Token *tok)
 {
     if (!tok || !Token::Match(tok->previous(), "[,()] %name%"))
         return nullptr;
+    bool istype = false;
     while (Token::Match(tok, "%name%|::|<")) {
         if (tok->str() == "<") {
             tok = tok->link();
             if (!tok)
                 return nullptr;
         }
+        istype |= tok->isStandardType();
         tok = tok->next();
     }
+    if (!istype)
+        return nullptr;
     if (!Token::Match(tok, "[*&]"))
         return nullptr;
     while (Token::Match(tok, "[*&]"))
@@ -892,7 +896,7 @@ static void compileAssignTernary(Token *&tok, AST_state& state)
             //       "The expression in the middle of the conditional operator (between ? and :) is parsed as if parenthesized: its precedence relative to ?: is ignored."
             // Hence, we rely on Tokenizer::prepareTernaryOpForAST() to add such parentheses where necessary.
             if (tok->strAt(1) == ":") {
-                state.op.push(0);
+                state.op.push(nullptr);
             }
             const unsigned int assign = state.assign;
             state.assign = 0U;

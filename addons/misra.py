@@ -27,11 +27,11 @@ def reportError(location, num1, num2):
         VERIFY_ACTUAL.append(str(location.linenr) + ':' + str(num1) + '.' + str(num2))
     else:
         num = num1 * 100 + num2
+        id = 'misra-c2012-' + str(num1) + '.' + str(num2)
         if num in ruleTexts:
-            errmsg = ruleTexts[num] + ' [misra-c2012-' + str(num1) + '.' + str(num2) + ']'
+            errmsg = ruleTexts[num] + ' [' + id + ']'
         else:
-            errmsg = 'misra rule ' + str(num1) + '.' + str(num2) +\
-                ' violation (use --rule-texts=<file> to get proper output)'
+            errmsg = 'misra violation (use --rule-texts=<file> to get proper output) [' + id + ']'
         sys.stderr.write('[' + location.file + ':' + str(location.linenr) + '] ' + errmsg + '\n')
 
 
@@ -587,7 +587,7 @@ def misra_12_2(data):
             continue
         maxval = 0
         for val in token.astOperand2.values:
-            if val.intvalue > maxval:
+            if val.intvalue and val.intvalue > maxval:
                 maxval = val.intvalue
         if maxval == 0:
             continue

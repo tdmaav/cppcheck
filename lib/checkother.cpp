@@ -1209,7 +1209,7 @@ bool CheckOther::checkInnerScope(const Token *tok, const Variable* var, bool& us
         if (Token::simpleMatch(tok, "for ("))
             forHeadEnd = tok->linkAt(1);
         if (tok == forHeadEnd)
-            forHeadEnd = 0;
+            forHeadEnd = nullptr;
 
         if (loopVariable && noContinue && tok->scope() == scope && !forHeadEnd && scope->type != Scope::eSwitch && Token::Match(tok, "%varid% =", var->declarationId())) { // Assigned in outer scope.
             loopVariable = false;
@@ -1568,11 +1568,8 @@ void CheckOther::checkIncompleteStatement()
         return;
 
     for (const Token *tok = _tokenizer->tokens(); tok; tok = tok->next()) {
-        if (tok->str() == "(") {
+        if (Token::Match(tok, "(|["))
             tok = tok->link();
-            if (Token::simpleMatch(tok, ") {") && Token::simpleMatch(tok->next()->link(), "} ;"))
-                tok = tok->next()->link();
-        }
 
         else if (Token::simpleMatch(tok, "= {"))
             tok = tok->next()->link();
@@ -1671,10 +1668,11 @@ void CheckOther::zerodivError(const Token *tok, const ValueFlow::Value *value)
     const ErrorPath errorPath = getErrorPath(tok, value, "Division by zero");
 
     std::ostringstream errmsg;
-    if (value->condition)
+    if (value->condition) {
+        unsigned int line = tok ? tok->linenr() : 0;
         errmsg << ValueFlow::eitherTheConditionIsRedundant(value->condition)
-               << " or there is division by zero at line " << tok->linenr() << ".";
-    else
+               << " or there is division by zero at line " << line << ".";
+    } else
         errmsg << "Division by zero.";
 
     reportError(errorPath,

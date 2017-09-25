@@ -1227,11 +1227,6 @@ void CheckUninitVar::uninitStructMemberError(const Token *tok, const std::string
 
 void CheckUninitVar::valueFlowUninit()
 {
-    // FIXME: #8036, #8041
-    // When this is fixed, #7293 can be closed
-    if (!_settings->experimental)
-        return;
-
     const SymbolDatabase *symbolDatabase = _tokenizer->getSymbolDatabase();
     std::list<Scope>::const_iterator scope;
 
@@ -1240,6 +1235,10 @@ void CheckUninitVar::valueFlowUninit()
         if (!scope->isExecutable())
             continue;
         for (const Token* tok = scope->classStart; tok != scope->classEnd; tok = tok->next()) {
+            if (Token::simpleMatch(tok, "sizeof (")) {
+                tok = tok->linkAt(1);
+                continue;
+            }
             if (!tok->variable() || tok->values().size() != 1U)
                 continue;
             const ValueFlow::Value &v = tok->values().front();

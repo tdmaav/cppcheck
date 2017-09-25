@@ -221,9 +221,9 @@ bool isSameExpression(bool cpp, bool macro, const Token *tok1, const Token *tok2
         return true;
 
     // in c++, a+b might be different to b+a, depending on the type of a and b
-    if (cpp && tok1->str() == "+") {
+    if (cpp && tok1->str() == "+" && tok1->astOperand2()) {
         const ValueType* vt1 = tok1->astOperand1()->valueType();
-        const ValueType* vt2 = tok1->astOperand1()->valueType();
+        const ValueType* vt2 = tok1->astOperand2()->valueType();
         if (!(vt1 && (vt1->type >= ValueType::VOID || vt1->pointer) && vt2 && (vt2->type >= ValueType::VOID || vt2->pointer)))
             return false;
     }
@@ -273,6 +273,24 @@ bool isOppositeCond(bool isNot, bool cpp, const Token * const cond1, const Token
             comp2[0] = '<';
         else if (comp2[0] == '<')
             comp2[0] = '>';
+    }
+
+    if (!isNot && comp2.empty()) {
+        if (isSameExpression(cpp, true, cond1->astOperand1(), cond2->astOperand1(), library, pure) &&
+            cond1->astOperand2() && cond1->astOperand2()->hasKnownIntValue() &&
+            cond2->astOperand2() && cond2->astOperand2()->hasKnownIntValue()) {
+            const ValueFlow::Value &rhsValue1 = cond1->astOperand2()->values().front();
+            const ValueFlow::Value &rhsValue2 = cond2->astOperand2()->values().front();
+            bool secondAlwaysFalse = false;
+
+            if (comp1 == "<" || comp1 == "<=")
+                secondAlwaysFalse = Token::Match(cond2, "==|>|>=") && (rhsValue1.intvalue < rhsValue2.intvalue);
+            else if (comp1 == ">=" || comp1 == ">")
+                secondAlwaysFalse = Token::Match(cond2, "==|<|<=") && (rhsValue1.intvalue > rhsValue2.intvalue);
+
+            if (secondAlwaysFalse)
+                return true;
+        }
     }
 
     // is condition opposite?
@@ -434,6 +452,15 @@ bool isVariableChanged(const Token *start, const Token *end, const unsigned int 
         if (Token::Match(tok->previous(), "++|-- %name%"))
             return true;
 
+        if (Token::simpleMatch(tok->previous(), ">>")) {
+            const Token *shr = tok->previous();
+            if (Token::simpleMatch(shr->astParent(), ">>"))
+                return true;
+            const Token *lhs = shr->astOperand1();
+            if (!lhs->valueType() || !lhs->valueType()->isIntegral())
+                return true;
+        }
+
         const Token *ftok = tok;
         while (ftok && !Token::Match(ftok, "[({[]"))
             ftok = ftok->astParent();
@@ -486,4 +513,23 @@ std::vector<const Token *> getArguments(const Token *ftok)
     std::vector<const Token *> arguments;
     getArgumentsRecursive(ftok->next()->astOperand2(), &arguments);
     return arguments;
+}
+
+const Token *findLambdaEndToken(const Token *first)
+{
+    if (!first || first->str() != "[")
+        return nullptr;
+    const Token* tok = first->link();
+    if (Token::simpleMatch(tok, "] {"))
+        return tok->linkAt(1);
+    if (!Token::simpleMatch(tok, "] ("))
+        return nullptr;
+    tok = tok->linkAt(1)->next();
+    if (tok && tok->str() == "constexpr")
+        tok = tok->next();
+    if (tok && tok->str() == "mutable")
+        tok = tok->next();
+    if (tok && tok->str() == "{")
+        return tok->link();
+    return nullptr;
 }

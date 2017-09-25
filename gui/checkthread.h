@@ -56,8 +56,8 @@ public:
         mAddons = addons;
     }
 
-    void setVsIncludePaths(const QString &s) {
-        mVsIncludePaths = s;
+    void setPythonPath(const QString &p) {
+        mPythonPath = p;
     }
 
     void setDataDir(const QString &dataDir) {
@@ -66,6 +66,14 @@ public:
 
     void setClangPath(const QString &p) {
         mClangPath = p;
+    }
+
+    void setClangIncludePaths(const QStringList &s) {
+        mClangIncludePaths = s;
+    }
+
+    void setSuppressions(const QStringList s) {
+        mSuppressions = s;
     }
 
     /**
@@ -119,14 +127,16 @@ private:
     void runAddons(const QString &addonPath, const ImportProject::FileSettings *fileSettings, const QString &fileName);
 
     void parseAddonErrors(QString err, QString tool);
-    void parseClangErrors(const QString &file0, QString err);
+    void parseClangErrors(const QString &tool, const QString &file0, QString err);
 
     QStringList mFiles;
     bool mAnalyseWholeProgram;
     QStringList mAddons;
-    QString mVsIncludePaths;
+    QString mPythonPath;
     QString mDataDir;
     QString mClangPath;
+    QStringList mClangIncludePaths;
+    QStringList mSuppressions;
 };
 /// @}
 #endif // CHECKTHREAD_H

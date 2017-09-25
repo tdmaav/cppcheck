@@ -35,7 +35,6 @@ ErrorItem::ErrorItem()
     : severity(Severity::none)
     , inconclusive(false)
     , cwe(-1)
-    , tag(NONE)
 {
 }
 
@@ -46,7 +45,6 @@ ErrorItem::ErrorItem(const ErrorLogger::ErrorMessage &errmsg)
     , summary(QString::fromStdString(errmsg.shortMessage()))
     , message(QString::fromStdString(errmsg.verboseMessage()))
     , cwe(errmsg._cwe.id)
-    , tag(NONE)
 {
     for (std::list<ErrorLogger::ErrorMessage::FileLocation>::const_iterator loc = errmsg._callStack.begin();
          loc != errmsg._callStack.end();
@@ -55,6 +53,16 @@ ErrorItem::ErrorItem(const ErrorLogger::ErrorMessage &errmsg)
     }
 }
 
+QString ErrorItem::tool() const
+{
+    if (errorId == "clang")
+        return "clang";
+    if (errorId.startsWith("clang-tidy"))
+        return "clang-tidy";
+    if (errorId.startsWith("clang-"))
+        return "clang";
+    return "cppcheck";
+}
 
 QString ErrorItem::ToString() const
 {

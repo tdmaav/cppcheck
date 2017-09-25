@@ -98,9 +98,6 @@ Library::Error Library::load(const char exename[], const char path[])
             if (error != tinyxml2::XML_ERROR_FILE_NOT_FOUND)
                 absolute_path = Path::getAbsoluteFilePath(filename);
         }
-
-        if (error == tinyxml2::XML_ERROR_FILE_NOT_FOUND)
-            return Error(FILE_NOT_FOUND);
     } else
         absolute_path = Path::getAbsoluteFilePath(path);
 
@@ -711,7 +708,7 @@ bool Library::isargvalid(const Token *ftok, int argnr, const MathLib::bigint arg
     const ArgumentChecks *ac = getarg(ftok, argnr);
     if (!ac || ac->valid.empty())
         return true;
-    TokenList tokenList(0);
+    TokenList tokenList(nullptr);
     std::istringstream istr(ac->valid + ',');
     tokenList.createTokens(istr);
     for (Token *tok = tokenList.front(); tok; tok = tok->next()) {
@@ -743,8 +740,9 @@ std::string Library::getFunctionName(const Token *ftok, bool *error) const
         for (const Scope *scope = ftok->scope(); scope; scope = scope->nestedIn) {
             if (!scope->isClassOrStruct())
                 continue;
-            for (unsigned int i = 0; i < scope->definedType->derivedFrom.size(); ++i) {
-                const Type::BaseInfo &baseInfo = scope->definedType->derivedFrom[i];
+            const std::vector<Type::BaseInfo> &derivedFrom = scope->definedType->derivedFrom;
+            for (unsigned int i = 0; i < derivedFrom.size(); ++i) {
+                const Type::BaseInfo &baseInfo = derivedFrom[i];
                 const std::string name(baseInfo.name + "::" + ftok->str());
                 if (functions.find(name) != functions.end() && matchArguments(ftok, name))
                     return name;
@@ -827,14 +825,14 @@ bool Library::isuninitargbad(const Token *ftok, int argnr) const
 const Library::AllocFunc* Library::alloc(const Token *tok) const
 {
     const std::string funcname = getFunctionName(tok);
-    return isNotLibraryFunction(tok) && functions.find(funcname) != functions.end() ? 0 : getAllocDealloc(_alloc, funcname);
+    return isNotLibraryFunction(tok) && functions.find(funcname) != functions.end() ? nullptr : getAllocDealloc(_alloc, funcname);
 }
 
 /** get deallocation info for function */
 const Library::AllocFunc* Library::dealloc(const Token *tok) const
 {
     const std::string funcname = getFunctionName(tok);
-    return isNotLibraryFunction(tok) && functions.find(funcname) != functions.end() ? 0 : getAllocDealloc(_dealloc, funcname);
+    return isNotLibraryFunction(tok) && functions.find(funcname) != functions.end() ? nullptr : getAllocDealloc(_dealloc, funcname);
 }
 
 /** get allocation id for function */

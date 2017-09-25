@@ -33,7 +33,6 @@
 class ThreadHandler;
 class TranslationHandler;
 class ScratchPad;
-class LogView;
 class ProjectFile;
 class ErrorItem;
 class QAction;
@@ -168,9 +167,6 @@ public slots:
     /** @brief Slot to edit project file. */
     void editProjectFile();
 
-    /** @brief Slot for showing the log view. */
-    void showLogView();
-
     /** @brief Slot for showing the scan and project statistics. */
     void showStatistics();
 
@@ -206,12 +202,6 @@ protected slots:
     /** @brief Open help file contents */
     void openHelpContents();
 
-    /** @brief Add new line to log. */
-    void log(const QString &logline);
-
-    /** @brief Handle new debug error. */
-    void debugError(const ErrorItem &item);
-
     /** @brief Filters the results in the result list. */
     void filterResults();
 
@@ -224,6 +214,9 @@ protected slots:
     /** Some results were tagged */
     void tagged();
 
+    /** Suppress error ids */
+    void suppressIds(QStringList ids);
+
 private:
 
     /** Get filename for last results */
@@ -235,13 +228,12 @@ private:
     /**
      * @brief Reanalyze selected files
      * @param files list of selected files
-     * @param all true if all files of list, false if modified files of list
      */
-    void reAnalyzeSelected(QStringList files, bool all);
+    void reAnalyzeSelected(QStringList files);
 
     /**
       * @brief Analyze the project.
-      * @param project Pointer to the project to analyze.
+      * @param projectFile Pointer to the project to analyze.
       */
     void analyzeProject(const ProjectFile *projectFile);
 
@@ -411,9 +403,6 @@ private:
 
     /** @brief Current analyzed directory. */
     QString mCurrentDirectory;
-
-    /** @brief Log view. */
-    LogView *mLogView;
 
     /** @brief Scratchpad. */
     ScratchPad* mScratchPad;

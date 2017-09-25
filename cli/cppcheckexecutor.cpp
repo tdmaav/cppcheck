@@ -78,7 +78,7 @@
 /*static*/ FILE* CppCheckExecutor::exceptionOutput = stdout;
 
 CppCheckExecutor::CppCheckExecutor()
-    : _settings(0), time1(0), errorOutput(nullptr), errorlist(false)
+    : _settings(nullptr), time1(0), errorOutput(nullptr), errorlist(false)
 {
 }
 
@@ -195,6 +195,11 @@ int CppCheckExecutor::check(int argc, const char* const argv[])
     } else {
         return check_internal(cppCheck, argc, argv);
     }
+}
+
+void CppCheckExecutor::setSettings(const Settings &settings)
+{
+    _settings = &settings;
 }
 
 /**
@@ -823,7 +828,7 @@ int CppCheckExecutor::check_internal(CppCheck& cppcheck, int /*argc*/, const cha
     }
 
     if (settings.reportProgress)
-        time1 = std::time(0);
+        time1 = std::time(nullptr);
 
     if (!settings.outputFile.empty()) {
         errorOutput = new std::ofstream(settings.outputFile);
@@ -930,12 +935,36 @@ int CppCheckExecutor::check_internal(CppCheck& cppcheck, int /*argc*/, const cha
         reportErr(ErrorLogger::ErrorMessage::getXMLFooter());
     }
 
-    _settings = 0;
+    _settings = nullptr;
     if (returnValue)
         return settings.exitCode;
     else
         return 0;
 }
+
+#ifdef _WIN32
+// fix trac ticket #439 'Cppcheck reports wrong filename for filenames containing 8-bit ASCII'
+static inline const std::string ansiToOEM(const std::string &msg, bool doConvert)
+{
+    if (doConvert) {
+        const unsigned msglength = msg.length();
+        // convert ANSI strings to OEM strings in two steps
+        std::vector<WCHAR> wcContainer(msglength);
+        std::string result(msglength, '\0');
+
+        // ansi code page characters to wide characters
+        MultiByteToWideChar(CP_ACP, 0, msg.data(), msglength, wcContainer.data(), msglength);
+        // wide characters to oem codepage characters
+        WideCharToMultiByte(CP_OEMCP, 0, wcContainer.data(), msglength, const_cast<char *>(result.data()), msglength, NULL, NULL);
+
+        return result; // hope for return value optimization
+    }
+    return msg;
+}
+#else
+// no performance regression on non-windows systems
+#define ansiToOEM(msg, doConvert) (msg)
+#endif
 
 void CppCheckExecutor::reportErr(const std::string &errmsg)
 {
@@ -946,13 +975,14 @@ void CppCheckExecutor::reportErr(const std::string &errmsg)
     _errorList.insert(errmsg);
     if (errorOutput)
         *errorOutput << errmsg << std::endl;
-    else
-        std::cerr << errmsg << std::endl;
+    else {
+        std::cerr << ansiToOEM(errmsg, (_settings == nullptr) ? true : !_settings->xml) << std::endl;
+    }
 }
 
 void CppCheckExecutor::reportOut(const std::string &outmsg)
 {
-    std::cout << outmsg << std::endl;
+    std::cout << ansiToOEM(outmsg, true) << std::endl;
 }
 
 void CppCheckExecutor::reportProgress(const std::string &filename, const char stage[], const std::size_t value)
@@ -987,9 +1017,9 @@ void CppCheckExecutor::reportStatus(std::size_t fileindex, std::size_t filecount
 {
     if (filecount > 1) {
         std::ostringstream oss;
+        const long percentDone = (sizetotal > 0) ? static_cast<long>(static_cast<long double>(sizedone) / sizetotal * 100) : 0;
         oss << fileindex << '/' << filecount
-            << " files checked " <<
-            (sizetotal > 0 ? static_cast<long>(static_cast<long double>(sizedone) / sizetotal*100) : 0)
+            << " files checked " << percentDone
             << "% done";
         std::cout << oss.str() << std::endl;
     }

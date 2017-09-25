@@ -124,33 +124,12 @@ protected slots:
     */
     void defaultApplication();
 
-    /**
-    * @brief Slot for adding new include path
-    *
-    */
-    void addIncludePath();
+    /** @brief Slot for browsing for the python binary */
+    void browsePythonPath();
 
-    /**
-    * @brief Slot for removing an include path.
-    *
-    */
-    void removeIncludePath();
-
-    /**
-    * @brief Slot for editing an include path.
-    *
-    */
-    void editIncludePath();
-
+    /** @brief Slot for browsing for the clang binary */
+    void browseClangPath();
 protected:
-
-    /**
-    * @brief Add new include path to the list.
-    * @param path Path to add.
-    *
-    */
-    void addIncludePath(const QString &path);
-
     /**
     * @brief Clear all applications from the list and re insert them from mTempApplications
     *
@@ -194,11 +173,6 @@ protected:
     * @return converted value
     */
     static bool checkStateToBool(Qt::CheckState state);
-
-    /**
-    * @brief Populate the include paths-list.
-    */
-    void initIncludepathsList();
 
     /**
     * @brief Populate the translations list.

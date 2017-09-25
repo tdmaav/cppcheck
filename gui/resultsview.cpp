@@ -52,6 +52,13 @@ ResultsView::ResultsView(QWidget * parent) :
     connect(mUI.mTree, &ResultsTree::checkSelected, this, &ResultsView::checkSelected);
     connect(mUI.mTree, &ResultsTree::selectionChanged, this, &ResultsView::updateDetails);
     connect(mUI.mTree, &ResultsTree::tagged, this, &ResultsView::tagged);
+    connect(mUI.mTree, &ResultsTree::suppressIds, this, &ResultsView::suppressIds);
+    connect(this, &ResultsView::showResults, mUI.mTree, &ResultsTree::showResults);
+    connect(this, &ResultsView::showCppcheckResults, mUI.mTree, &ResultsTree::showCppcheckResults);
+    connect(this, &ResultsView::showClangResults, mUI.mTree, &ResultsTree::showClangResults);
+    connect(this, &ResultsView::collapseAllResults, mUI.mTree, &ResultsTree::collapseAll);
+    connect(this, &ResultsView::expandAllResults, mUI.mTree, &ResultsTree::expandAll);
+    connect(this, &ResultsView::showHiddenResults, mUI.mTree, &ResultsTree::showHiddenResults);
 }
 
 void ResultsView::initialize(QSettings *settings, ApplicationList *list, ThreadHandler *checkThreadHandler)
@@ -107,28 +114,8 @@ void ResultsView::error(const ErrorItem &item)
 {
     if (mUI.mTree->addErrorItem(item)) {
         emit gotResults();
-        mStatistics->addItem(ShowTypes::SeverityToShowType(item.severity));
+        mStatistics->addItem(item.tool(), ShowTypes::SeverityToShowType(item.severity));
     }
-}
-
-void ResultsView::showResults(ShowTypes::ShowType type, bool show)
-{
-    mUI.mTree->showResults(type, show);
-}
-
-void ResultsView::collapseAllResults()
-{
-    mUI.mTree->collapseAll();
-}
-
-void ResultsView::expandAllResults()
-{
-    mUI.mTree->expandAll();
-}
-
-void ResultsView::showHiddenResults()
-{
-    mUI.mTree->showHiddenResults();
 }
 
 void ResultsView::filterResults(const QString& filter)
@@ -142,12 +129,15 @@ void ResultsView::saveStatistics(const QString &filename) const
     if (!f.open(QIODevice::Text | QIODevice::Append))
         return;
     QTextStream ts(&f);
-    ts << '[' << QDate::currentDate().toString("dd.MM.yyyy") << "]\n";
-    ts << "error:" << mStatistics->getCount(ShowTypes::ShowErrors) << '\n';
-    ts << "warning:" << mStatistics->getCount(ShowTypes::ShowWarnings) << '\n';
-    ts << "style:" << mStatistics->getCount(ShowTypes::ShowStyle) << '\n';
-    ts << "performance:" << mStatistics->getCount(ShowTypes::ShowPerformance) << '\n';
-    ts << "portability:" << mStatistics->getCount(ShowTypes::ShowPortability) << '\n';
+    ts <<  '[' << QDate::currentDate().toString("dd.MM.yyyy") << "]\n";
+    ts << QDateTime::currentMSecsSinceEpoch() << '\n';
+    foreach (QString tool, mStatistics->getTools()) {
+        ts << tool << "-error:" << mStatistics->getCount(tool, ShowTypes::ShowErrors) << '\n';
+        ts << tool << "-warning:" << mStatistics->getCount(tool, ShowTypes::ShowWarnings) << '\n';
+        ts << tool << "-style:" << mStatistics->getCount(tool, ShowTypes::ShowStyle) << '\n';
+        ts << tool << "-performance:" << mStatistics->getCount(tool, ShowTypes::ShowPerformance) << '\n';
+        ts << tool << "-portability:" << mStatistics->getCount(tool, ShowTypes::ShowPortability) << '\n';
+    }
 }
 
 void ResultsView::updateFromOldReport(const QString &filename) const
@@ -401,4 +391,14 @@ void ResultsView::updateDetails(const QModelIndex &index)
     if (mUI.mTree->showIdColumn())
         formattedMsg.prepend(tr("Id") + ": " + data["id"].toString() + "\n");
     mUI.mDetails->setText(formattedMsg);
+}
+
+void ResultsView::log(const QString &str)
+{
+    mUI.mListLog->addItem(str);
+}
+
+void ResultsView::debugError(const ErrorItem &item)
+{
+    mUI.mListLog->addItem(item.ToString());
 }

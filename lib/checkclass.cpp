@@ -402,11 +402,15 @@ bool CheckClass::canNotCopy(const Scope *scope)
     for (func = scope->functionList.begin(); func != scope->functionList.end(); ++func) {
         if (func->isConstructor())
             constructor = true;
-        if ((func->type == Function::eCopyConstructor) &&
-            func->access == Public)
+        if (func->access != Public)
+            continue;
+        if (func->type == Function::eCopyConstructor) {
             publicCopy = true;
-        else if (func->type == Function::eOperatorEqual && func->access == Public)
+            break;
+        } else if (func->type == Function::eOperatorEqual) {
             publicAssign = true;
+            break;
+        }
     }
 
     return constructor && !(publicAssign || publicCopy);
@@ -423,14 +427,18 @@ bool CheckClass::canNotMove(const Scope *scope)
     for (func = scope->functionList.begin(); func != scope->functionList.end(); ++func) {
         if (func->isConstructor())
             constructor = true;
-        if ((func->type == Function::eCopyConstructor) &&
-            func->access == Public)
+        if (func->access != Public)
+            continue;
+        if (func->type == Function::eCopyConstructor) {
             publicCopy = true;
-        else if ((func->type == Function::eMoveConstructor) &&
-                 func->access == Public)
+            break;
+        } else if (func->type == Function::eMoveConstructor) {
             publicMove = true;
-        else if (func->type == Function::eOperatorEqual && func->access == Public)
+            break;
+        } else if (func->type == Function::eOperatorEqual) {
             publicAssign = true;
+            break;
+        }
     }
 
     return constructor && !(publicAssign || publicCopy || publicMove);
@@ -504,7 +512,7 @@ bool CheckClass::isBaseClassFunc(const Token *tok, const Scope *scope)
 void CheckClass::initializeVarList(const Function &func, std::list<const Function *> &callstack, const Scope *scope, std::vector<Usage> &usage)
 {
     if (!func.functionScope)
-        throw InternalError(0, "Internal Error: Invalid syntax"); // #5702
+        throw InternalError(nullptr, "Internal Error: Invalid syntax"); // #5702
     bool initList = func.isConstructor();
     const Token *ftok = func.arg->link()->next();
     int level = 0;
@@ -1022,7 +1030,7 @@ static const Scope* findFunctionOf(const Scope* scope)
             return scope->functionOf;
         scope = scope->nestedIn;
     }
-    return 0;
+    return nullptr;
 }
 
 void CheckClass::checkMemset()
@@ -1100,7 +1108,7 @@ void CheckClass::checkMemset()
                 std::set<const Scope *> parsedTypes;
                 checkMemsetType(scope, tok->tokAt(2), tok->variable()->typeScope(), true, parsedTypes);
 
-                if (tok->variable()->typeScope()->numConstructors > 0 && printWarnings)
+                if (printWarnings && tok->variable()->typeScope()->numConstructors > 0)
                     mallocOnClassWarning(tok, tok->strAt(2), tok->variable()->typeScope()->classDef);
             }
         }
@@ -1160,7 +1168,7 @@ void CheckClass::checkMemsetType(const Scope *start, const Token *tok, const Sco
                 checkMemsetType(start, tok, typeScope, allocation, parsedTypes);
 
             // check for float
-            else if (tok->str() == "memset" && var->isFloatingType() && printPortability)
+            else if (printPortability && var->isFloatingType() && tok->str() == "memset")
                 memsetErrorFloat(tok, type->classDef->str());
         }
     }
@@ -1245,11 +1253,12 @@ void CheckClass::operatorEq()
                 }
                 if (!returnSelfRef) {
                     // make sure we really have a copy assignment operator
-                    if (Token::Match(func->tokenDef->tokAt(2), "const| %name% &")) {
-                        if (func->tokenDef->strAt(2) == "const" &&
-                            func->tokenDef->strAt(3) == scope->className)
+                    const Token *paramTok = func->tokenDef->tokAt(2);
+                    if (Token::Match(paramTok, "const| %name% &")) {
+                        if (paramTok->str() == "const" &&
+                            paramTok->strAt(1) == scope->className)
                             operatorEqReturnError(func->retDef, scope->className);
-                        else if (func->tokenDef->strAt(2) == scope->className)
+                        else if (paramTok->str() == scope->className)
                             operatorEqReturnError(func->retDef, scope->className);
                     }
                 }
@@ -1364,7 +1373,7 @@ void CheckClass::checkReturnPtrThis(const Scope *scope, const Function *func, co
         }
         return;
     }
-    if (_settings->library.isScopeNoReturn(last, 0)) {
+    if (_settings->library.isScopeNoReturn(last, nullptr)) {
         // Typical wrong way to prohibit default assignment operator
         // by always throwing an exception or calling a noreturn function
         operatorEqShouldBeLeftUnimplementedError(func->token);
@@ -2049,7 +2058,7 @@ bool CheckClass::checkConstFunc(const Scope *scope, const Function *func, bool& 
 
 void CheckClass::checkConstError(const Token *tok, const std::string &classname, const std::string &funcname, bool suggestStatic)
 {
-    checkConstError2(tok, 0, classname, funcname, suggestStatic);
+    checkConstError2(tok, nullptr, classname, funcname, suggestStatic);
 }
 
 void CheckClass::checkConstError2(const Token *tok1, const Token *tok2, const std::string &classname, const std::string &funcname, bool suggestStatic)
@@ -2109,7 +2118,7 @@ void CheckClass::initializerListOrder()
 
         // iterate through all member functions looking for constructors
         for (func = scope->functionList.begin(); func != scope->functionList.end(); ++func) {
-            if ((func->isConstructor()) && func->hasBody()) {
+            if (func->isConstructor() && func->hasBody()) {
                 // check for initializer list
                 const Token *tok = func->arg->link()->next();
 
@@ -2383,13 +2392,14 @@ void CheckClass::checkCopyCtorAndEqOperator()
     for (std::size_t i = 0; i < classes; ++i) {
         const Scope * scope = symbolDatabase->classAndStructScopes[i];
 
-        // count the number of non-static variables
-        int vars = 0;
+        bool hasNonStaticVars = false;
         for (std::list<Variable>::const_iterator var = scope->varlist.begin(); var != scope->varlist.end(); ++var) {
-            if (!var->isStatic())
-                vars++;
+            if (!var->isStatic()) {
+                hasNonStaticVars = true;
+                break;
+            }
         }
-        if (vars == 0)
+        if (!hasNonStaticVars)
             continue;
 
         int hasCopyCtor = 0;

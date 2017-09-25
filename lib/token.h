@@ -556,7 +556,7 @@ public:
      * @param end Stringification ends before this token is reached. 0 to stringify until end of list.
      * @return Stringified token list as a string
      */
-    std::string stringifyList(bool varid, bool attributes, bool linenumbers, bool linebreaks, bool files, const std::vector<std::string>* fileNames = 0, const Token* end = 0) const;
+    std::string stringifyList(bool varid, bool attributes, bool linenumbers, bool linebreaks, bool files, const std::vector<std::string>* fileNames = nullptr, const Token* end = nullptr) const;
     std::string stringifyList(const Token* end, bool attributes = true) const;
     std::string stringifyList(bool varid = false) const;
 
@@ -625,7 +625,7 @@ public:
      * @return a pointer to the Function associated with this token.
      */
     const Function *function() const {
-        return _tokType == eFunction ? _function : 0;
+        return _tokType == eFunction ? _function : nullptr;
     }
 
     /**
@@ -644,7 +644,7 @@ public:
      * @return a pointer to the variable associated with this token.
      */
     const Variable *variable() const {
-        return _tokType == eVariable ? _variable : 0;
+        return _tokType == eVariable ? _variable : nullptr;
     }
 
     /**
@@ -657,14 +657,14 @@ public:
     * @return a pointer to the type associated with this token.
     */
     const ::Type *type() const {
-        return _tokType == eType ? _type : 0;
+        return _tokType == eType ? _type : nullptr;
     }
 
     /**
     * @return a pointer to the Enumerator associated with this token.
     */
     const Enumerator *enumerator() const {
-        return _tokType == eEnumerator ? _enumerator : 0;
+        return _tokType == eEnumerator ? _enumerator : nullptr;
     }
 
     /**
@@ -746,8 +746,7 @@ public:
     }
 
     const std::list<ValueFlow::Value>& values() const {
-        static const std::list<ValueFlow::Value> emptyList;
-        return _values ? *_values : emptyList;
+        return _values ? *_values : emptyValueList;
     }
 
     /**
@@ -820,6 +819,9 @@ private:
     void previous(Token *previousToken) {
         _previous = previousToken;
     }
+
+    /** used by deleteThis() to take data from token to delete */
+    void takeData(Token *fromToken);
 
     /**
      * Works almost like strcmp() except returns only true or false and
@@ -925,6 +927,7 @@ private:
 
     // ValueFlow
     std::list<ValueFlow::Value>* _values;
+    static const std::list<ValueFlow::Value> emptyValueList;
 
 public:
     void astOperand1(Token *tok);

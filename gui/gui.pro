@@ -1,3 +1,5 @@
+lessThan(QT_MAJOR_VERSION, 5): error(requires >= Qt 5 (You used: $$QT_VERSION))
+
 TEMPLATE = app
 TARGET = cppcheck-gui
 CONFIG += warn_on debug
@@ -5,10 +7,8 @@ DEPENDPATH += . \
     ../lib
 INCLUDEPATH += . \
     ../lib
-greaterThan(QT_MAJOR_VERSION, 4) {
-    QT += widgets # In Qt 5 widgets are in separate module
-    QT += printsupport # In Qt 5 QPrinter/QPrintDialog are in separate module
-}
+QT += widgets
+QT += printsupport
 
 contains(LINKCORE, [yY][eE][sS]) {
     LIBS += -l../bin/cppcheck-core
@@ -51,7 +51,6 @@ RESOURCES = gui.qrc
 FORMS = about.ui \
         application.ui \
         file.ui \
-        logview.ui \
         mainwindow.ui \
         projectfiledialog.ui \
         resultsview.ui \
@@ -95,7 +94,6 @@ HEADERS += aboutdialog.h \
            erroritem.h \
            filelist.h \
            fileviewdialog.h \
-           logview.h \
            mainwindow.h \
            platforms.h \
            printablereport.h \
@@ -130,7 +128,6 @@ SOURCES += aboutdialog.cpp \
            erroritem.cpp \
            filelist.cpp \
            fileviewdialog.cpp \
-           logview.cpp \
            main.cpp \
            mainwindow.cpp\
            platforms.cpp \

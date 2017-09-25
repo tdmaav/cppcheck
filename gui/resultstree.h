@@ -52,6 +52,10 @@ public:
     virtual ~ResultsTree();
     void initialize(QSettings *settings, ApplicationList *list, ThreadHandler *checkThreadHandler);
 
+    void setTags(const QStringList &tags) {
+        mTags = tags;
+    }
+
     /**
     * @brief Add a new item to the tree
     *
@@ -74,15 +78,6 @@ public:
      * @brief Clear errors of a file selected for recheck
      */
     void clearRecheckFile(const QString &filename);
-
-    /**
-    * @brief Function to show/hide certain type of errors
-    * Refreshes the tree.
-    *
-    * @param type Type of error to show/hide
-    * @param show Should specified errors be shown (true) or hidden (false)
-    */
-    void showResults(ShowTypes::ShowType type, bool show);
 
     /**
     * @brief Function to filter the displayed list of errors.
@@ -210,6 +205,37 @@ signals:
      */
     void tagged();
 
+    /** Suppress Ids */
+    void suppressIds(QStringList ids);
+
+public slots:
+
+    /**
+    * @brief Function to show/hide certain type of errors
+    * Refreshes the tree.
+    *
+    * @param type Type of error to show/hide
+    * @param show Should specified errors be shown (true) or hidden (false)
+    */
+    void showResults(ShowTypes::ShowType type, bool show);
+
+
+    /**
+    * @brief Show/hide cppcheck errors.
+    * Refreshes the tree.
+    *
+    * @param show Should specified errors be shown (true) or hidden (false)
+    */
+    void showCppcheckResults(bool show);
+
+    /**
+    * @brief Show/hide clang-tidy/clang-analyzer errors.
+    * Refreshes the tree.
+    *
+    * @param show Should specified errors be shown (true) or hidden (false)
+    */
+    void showClangResults(bool show);
+
 protected slots:
     /**
     * @brief Slot to quickstart an error with default application
@@ -267,6 +293,9 @@ protected slots:
     */
     void hideAllIdResult();
 
+    /** Slot for context menu item to suppress all messages with the current message id */
+    void suppressSelectedIds();
+
     /**
     * @brief Slot for context menu item to open the folder containing the current file.
     */
@@ -279,10 +308,6 @@ protected slots:
     * @param previous Model index to specify previous selected item.
     */
     virtual void currentChanged(const QModelIndex &current, const QModelIndex &previous);
-
-    void tagFP(bool);
-    void tagIgnore(bool);
-    void tagBug(bool);
 
 protected:
 
@@ -513,13 +538,18 @@ protected:
 
 private:
     /** tag selected items */
-    void tagSelectedItems(int tagNumber, const QString &tag);
+    void tagSelectedItems(const QString &tag);
 
     /** @brief Convert GUI error item into data error item */
     void readErrorItem(const QStandardItem *error, ErrorItem *item) const;
 
+    QStringList mTags;
+
     QItemSelectionModel *mSelectionModel;
     ThreadHandler *mThread;
+
+    bool mShowCppcheck;
+    bool mShowClang;
 };
 /// @}
 #endif // RESULTSTREE_H

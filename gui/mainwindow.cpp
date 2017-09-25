@@ -42,7 +42,6 @@
 #include "settingsdialog.h"
 #include "threadresult.h"
 #include "translationhandler.h"
-#include "logview.h"
 #include "filelist.h"
 #include "showtypes.h"
 #include "librarydialog.h"
@@ -54,7 +53,6 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     mSettings(settings),
     mApplications(new ApplicationList(this)),
     mTranslation(th),
-    mLogView(nullptr),
     mScratchPad(nullptr),
     mProjectFile(nullptr),
     mPlatformActions(new QActionGroup(this)),
@@ -97,12 +95,13 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     connect(mUI.mActionShowPortability, &QAction::toggled, this, &MainWindow::showPortability);
     connect(mUI.mActionShowPerformance, &QAction::toggled, this, &MainWindow::showPerformance);
     connect(mUI.mActionShowInformation, &QAction::toggled, this, &MainWindow::showInformation);
+    connect(mUI.mActionShowCppcheck, &QAction::toggled, mUI.mResults, &ResultsView::showCppcheckResults);
+    connect(mUI.mActionShowClang, &QAction::toggled, mUI.mResults, &ResultsView::showClangResults);
     connect(mUI.mActionCheckAll, &QAction::triggered, this, &MainWindow::checkAll);
     connect(mUI.mActionUncheckAll, &QAction::triggered, this, &MainWindow::uncheckAll);
     connect(mUI.mActionCollapseAll, &QAction::triggered, mUI.mResults, &ResultsView::collapseAllResults);
     connect(mUI.mActionExpandAll, &QAction::triggered, mUI.mResults, &ResultsView::expandAllResults);
     connect(mUI.mActionShowHidden, &QAction::triggered, mUI.mResults, &ResultsView::showHiddenResults);
-    connect(mUI.mActionViewLog, &QAction::triggered, this, &MainWindow::showLogView);
     connect(mUI.mActionViewStats, &QAction::triggered, this, &MainWindow::showStatistics);
     connect(mUI.mActionLibraryEditor, &QAction::triggered, this, &MainWindow::showLibraryEditor);
 
@@ -123,10 +122,13 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
 
     connect(mUI.mActionAuthors, &QAction::triggered, this, &MainWindow::showAuthors);
     connect(mThread, &ThreadHandler::done, this, &MainWindow::analysisDone);
+    connect(mThread, &ThreadHandler::log, mUI.mResults, &ResultsView::log);
+    connect(mThread, &ThreadHandler::debugError, mUI.mResults, &ResultsView::debugError);
     connect(mUI.mResults, &ResultsView::gotResults, this, &MainWindow::resultsAdded);
     connect(mUI.mResults, &ResultsView::resultsHidden, mUI.mActionShowHidden, &QAction::setEnabled);
     connect(mUI.mResults, &ResultsView::checkSelected, this, &MainWindow::performSelectedFilesCheck);
     connect(mUI.mResults, &ResultsView::tagged, this, &MainWindow::tagged);
+    connect(mUI.mResults, &ResultsView::suppressIds, this, &MainWindow::suppressIds);
     connect(mUI.mMenuView, &QMenu::aboutToShow, this, &MainWindow::aboutToShowViewMenu);
 
     // File menu
@@ -216,7 +218,6 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
 
 MainWindow::~MainWindow()
 {
-    delete mLogView;
     delete mProjectFile;
     delete mScratchPad;
 }
@@ -269,6 +270,8 @@ void MainWindow::loadSettings()
     mUI.mActionShowPortability->setChecked(types->isShown(ShowTypes::ShowPortability));
     mUI.mActionShowPerformance->setChecked(types->isShown(ShowTypes::ShowPerformance));
     mUI.mActionShowInformation->setChecked(types->isShown(ShowTypes::ShowInformation));
+    mUI.mActionShowCppcheck->setChecked(true);
+    mUI.mActionShowClang->setChecked(true);
 
     const bool stdCpp03 = mSettings->value(SETTINGS_STD_CPP03, false).toBool();
     mUI.mActionCpp03->setChecked(stdCpp03);
@@ -384,6 +387,35 @@ void MainWindow::doAnalyzeProject(ImportProject p)
             v.push_back(i.toStdString());
         }
         p.ignorePaths(v);
+
+        if (!mProjectFile->getAnalyzeAllVsConfigs()) {
+            std::set<std::string> filenames;
+            Settings::PlatformType platform = (Settings::PlatformType) mSettings->value(SETTINGS_CHECKED_PLATFORM, 0).toInt();
+            for (std::list<ImportProject::FileSettings>::iterator it = p.fileSettings.begin(); it != p.fileSettings.end();) {
+                if (it->cfg.empty()) {
+                    ++it;
+                    continue;
+                }
+                const ImportProject::FileSettings &fs = *it;
+                bool remove = false;
+                if (fs.cfg.compare(0,5,"Debug") != 0)
+                    remove = true;
+                if (platform == Settings::Win64 && fs.platformType != platform)
+                    remove = true;
+                else if ((platform == Settings::Win32A || platform == Settings::Win32W) && fs.platformType == Settings::Win64)
+                    remove = true;
+                else if (fs.platformType != Settings::Win64 && platform == Settings::Win64)
+                    remove = true;
+                else if (filenames.find(fs.filename) != filenames.end())
+                    remove = true;
+                if (remove) {
+                    it = p.fileSettings.erase(it);
+                } else {
+                    filenames.insert(fs.filename);
+                    ++it;
+                }
+            }
+        }
     } else {
         enableProjectActions(false);
     }
@@ -414,11 +446,18 @@ void MainWindow::doAnalyzeProject(ImportProject p)
     //mThread->SetanalyzeProject(true);
     if (mProjectFile) {
         mThread->setAddons(mProjectFile->getAddons());
-        mThread->setVsIncludePaths(mSettings->value(SETTINGS_VS_INCLUDE_PATHS).toString());
+        mThread->setPythonPath(mSettings->value(SETTINGS_PYTHON_PATH).toString());
+        QString clangHeaders = mSettings->value(SETTINGS_VS_INCLUDE_PATHS).toString();
+        mThread->setClangIncludePaths(clangHeaders.split(";"));
 #ifdef Q_OS_WIN
-        // Try to autodetect clang
-        if (QFileInfo("C:/Program Files/LLVM/bin/clang.exe").exists())
-            mThread->setClangPath("C:/Program Files/LLVM/bin");
+        QString clangPath = mSettings->value(SETTINGS_CLANG_PATH,QString()).toString();
+        if (clangPath.isEmpty()) {
+            // Try to autodetect clang
+            if (QFileInfo("C:/Program Files/LLVM/bin/clang.exe").exists())
+                clangPath = "C:/Program Files/LLVM/bin";
+        }
+        mThread->setClangPath(clangPath);
+        mThread->setSuppressions(mProjectFile->getSuppressions());
 #endif
     }
     mThread->setProject(p);
@@ -958,7 +997,7 @@ void MainWindow::reAnalyzeAll()
         reAnalyze(true);
 }
 
-void MainWindow::reAnalyzeSelected(QStringList files, bool all)
+void MainWindow::reAnalyzeSelected(QStringList files)
 {
     if (files.empty())
         return;
@@ -1195,7 +1234,7 @@ void MainWindow::showAuthors()
 
 void MainWindow::performSelectedFilesCheck(QStringList selectedFilesList)
 {
-    reAnalyzeSelected(selectedFilesList, true);
+    reAnalyzeSelected(selectedFilesList);
 }
 
 void MainWindow::save()
@@ -1276,8 +1315,6 @@ void MainWindow::setLanguage(const QString &code)
         //Translate everything that is visible here
         mUI.retranslateUi(this);
         mUI.mResults->translate();
-        delete mLogView;
-        mLogView = 0;
     }
 }
 
@@ -1362,6 +1399,8 @@ QString MainWindow::getLastResults() const
 
 bool MainWindow::loadLastResults()
 {
+    if (mProjectFile)
+        mUI.mResults->setTags(mProjectFile->getTags());
     const QString &lastResults = getLastResults();
     if (lastResults.isEmpty())
         return false;
@@ -1379,6 +1418,7 @@ void MainWindow::analyzeProject(const ProjectFile *projectFile)
     const QString rootpath = projectFile->getRootPath();
 
     mThread->setAddons(projectFile->getAddons());
+    mUI.mResults->setTags(projectFile->getTags());
 
     // If the root path is not given or is not "current dir", use project
     // file's location directory as root path
@@ -1408,7 +1448,17 @@ void MainWindow::analyzeProject(const ProjectFile *projectFile)
     if (!projectFile->getImportProject().isEmpty()) {
         ImportProject p;
         QString prjfile = inf.canonicalPath() + '/' + projectFile->getImportProject();
-        p.import(prjfile.toStdString());
+        try {
+            p.import(prjfile.toStdString());
+        } catch (InternalError &e) {
+            QMessageBox msg(QMessageBox::Critical,
+                            tr("Cppcheck"),
+                            tr("Failed to import '%1', analysis is stopped").arg(prjfile),
+                            QMessageBox::Ok,
+                            this);
+            msg.exec();
+            return;
+        }
         doAnalyzeProject(p);
         return;
     }
@@ -1471,6 +1521,7 @@ void MainWindow::closeProjectFile()
     delete mProjectFile;
     mProjectFile = nullptr;
     mUI.mResults->clear(true);
+    mUI.mResults->setTags(QStringList());
     enableProjectActions(false);
     enableProjectOpenActions(true);
     formatAndSetTitle();
@@ -1495,16 +1546,6 @@ void MainWindow::editProjectFile()
     }
 }
 
-void MainWindow::showLogView()
-{
-    if (mLogView == nullptr)
-        mLogView = new LogView;
-
-    mLogView->show();
-    if (!mLogView->isActiveWindow())
-        mLogView->activateWindow();
-}
-
 void MainWindow::showStatistics()
 {
     StatsDialog statsDialog(this);
@@ -1523,20 +1564,6 @@ void MainWindow::showLibraryEditor()
 {
     LibraryDialog libraryDialog(this);
     libraryDialog.exec();
-}
-
-void MainWindow::log(const QString &logline)
-{
-    if (mLogView) {
-        mLogView->appendLine(logline);
-    }
-}
-
-void MainWindow::debugError(const ErrorItem &item)
-{
-    if (mLogView) {
-        mLogView->appendLine(item.ToString());
-    }
 }
 
 void MainWindow::filterResults()
@@ -1656,4 +1683,17 @@ void MainWindow::tagged()
     const QString &lastResults = getLastResults();
     if (!lastResults.isEmpty())
         mUI.mResults->save(lastResults, Report::XMLV2);
+}
+
+void MainWindow::suppressIds(QStringList ids)
+{
+    if (mProjectFile) {
+        QStringList suppressions = mProjectFile->getSuppressions();
+        foreach (QString s, ids) {
+            if (!suppressions.contains(s))
+                suppressions << s;
+        }
+        mProjectFile->setSuppressions(suppressions);
+        mProjectFile->write();
+    }
 }
