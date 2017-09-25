@@ -34,6 +34,8 @@ private:
 
     void run() {
         TEST_CASE(isReturnScope);
+        TEST_CASE(isVariableChanged);
+        TEST_CASE(isVariableChangedByFunctionCall);
     }
 
     bool isReturnScope(const char code[], int offset) {
@@ -53,6 +55,47 @@ private:
         ASSERT_EQUALS(false, isReturnScope("void f() { if (a) { return (ab){0}; } }", -4)); // #7103
         ASSERT_EQUALS(true, isReturnScope("void f() { if (a) { {throw new string(x);}; } }", -4)); // #7144
         ASSERT_EQUALS(true, isReturnScope("void f() { if (a) { {throw new string(x);}; } }", -2)); // #7144
+    }
+
+    bool isVariableChanged(const char code[], const char startPattern[], const char endPattern[]) {
+        Settings settings;
+        Tokenizer tokenizer(&settings, this);
+        std::istringstream istr(code);
+        tokenizer.tokenize(istr, "test.cpp");
+        const Token * const tok1 = Token::findsimplematch(tokenizer.tokens(), startPattern);
+        const Token * const tok2 = Token::findsimplematch(tokenizer.tokens(), endPattern);
+        return ::isVariableChanged(tok1,tok2,1,false,&settings);
+    }
+
+    void isVariableChanged() {
+        // #8211 - no lhs for >> , do not crash
+        ASSERT_EQUALS(true,
+                      isVariableChanged("void f() {\n"
+                                        "  int b;\n"
+                                        "  if (b) { (int)((INTOF(8))result >> b); }\n"
+                                        "}", "if", "}"));
+    }
+
+    bool isVariableChangedByFunctionCall(const char code[], const char pattern[], bool *inconclusive) {
+        Settings settings;
+        Tokenizer tokenizer(&settings, this);
+        std::istringstream istr(code);
+        tokenizer.tokenize(istr, "test.cpp");
+        const Token * const argtok = Token::findmatch(tokenizer.tokens(), pattern);
+        return ::isVariableChangedByFunctionCall(argtok, &settings, inconclusive);
+    }
+
+    void isVariableChangedByFunctionCall() {
+        const char *code;
+        bool inconclusive;
+
+        // #8271 - template method
+        code = "void f(int x) {\n"
+               "  a<int>(x);\n"
+               "}";
+        inconclusive = false;
+        ASSERT_EQUALS(false, isVariableChangedByFunctionCall(code, "x ) ;", &inconclusive));
+        ASSERT_EQUALS(true, inconclusive);
     }
 };
 

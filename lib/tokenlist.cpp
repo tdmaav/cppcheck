@@ -368,11 +368,12 @@ static bool iscast(const Token *tok)
         while (tok2->link() && Token::Match(tok2, "(|[|<"))
             tok2 = tok2->link()->next();
 
-        if (tok2->str() == ")")
-            return type || tok2->strAt(-1) == "*" || Token::Match(tok2, ") &|~") ||
+        if (tok2->str() == ")") {
+            return type || tok2->strAt(-1) == "*" || Token::simpleMatch(tok2, ") ~") ||
                    (Token::Match(tok2, ") %any%") &&
                     !tok2->next()->isOp() &&
                     !Token::Match(tok2->next(), "[[]);,?:.]"));
+        }
         if (!Token::Match(tok2, "%name%|*|&|::"))
             return false;
 
@@ -1128,11 +1129,11 @@ void TokenList::validateAst() const
     for (const Token *tok = _front; tok; tok = tok->next()) {
         // Syntax error if binary operator only has 1 operand
         if ((tok->isAssignmentOp() || tok->isComparisonOp() || Token::Match(tok,"[|^/%]")) && tok->astOperand1() && !tok->astOperand2())
-            throw InternalError(tok, "Syntax Error: AST broken, binary operator has only one operand.", InternalError::SYNTAX);
+            throw InternalError(tok, "Syntax Error: AST broken, binary operator has only one operand.", InternalError::AST);
 
         // Syntax error if we encounter "?" with operand2 that is not ":"
         if (tok->astOperand2() && tok->str() == "?" && tok->astOperand2()->str() != ":")
-            throw InternalError(tok, "Syntax Error: AST broken, ternary operator lacks ':'.", InternalError::SYNTAX);
+            throw InternalError(tok, "Syntax Error: AST broken, ternary operator lacks ':'.", InternalError::AST);
 
         // Check for endless recursion
         const Token* parent=tok->astParent();
@@ -1143,7 +1144,7 @@ void TokenList::validateAst() const
                 if (safeAstTokens.find(parent) != safeAstTokens.end())
                     break;
                 if (astTokens.find(parent) != astTokens.end())
-                    throw InternalError(tok, "AST broken: endless recursion from '" + tok->str() + "'", InternalError::SYNTAX);
+                    throw InternalError(tok, "AST broken: endless recursion from '" + tok->str() + "'", InternalError::AST);
                 astTokens.insert(parent);
             } while ((parent = parent->astParent()) != nullptr);
             safeAstTokens.insert(astTokens.begin(), astTokens.end());

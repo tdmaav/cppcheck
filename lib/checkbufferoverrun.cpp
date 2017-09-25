@@ -86,7 +86,7 @@ void CheckBufferOverrun::arrayIndexOutOfBoundsError(const Token *tok, const Arra
     bool inconclusive = false;
     const Token *condition = nullptr;
     for (std::size_t i = 0; i < index.size(); ++i) {
-        inconclusive |= index[i].inconclusive;
+        inconclusive |= index[i].isInconclusive();
         if (condition == nullptr)
             condition = index[i].condition;
     }
@@ -101,7 +101,7 @@ void CheckBufferOverrun::arrayIndexOutOfBoundsError(const Token *tok, const Arra
                     continue;
                 std::string nr;
                 if (index.size() > 1U)
-                    nr = "(" + MathLib::toString(i + 1) + getOrdinalText(i+1) + " array index) ";
+                    nr = "(" + MathLib::toString(i + 1) + getOrdinalText(i + 1) + " array index) ";
                 errorPath.push_back(ErrorPathItem(it->first, nr + info));
             }
         }
@@ -1664,23 +1664,25 @@ void CheckBufferOverrun::checkBufferAllocatedWithStrlen()
         const Scope * scope = symbolDatabase->functionScopes[i];
         for (const Token *tok = scope->classStart->next(); tok && tok != scope->classEnd; tok = tok->next()) {
             unsigned int dstVarId = tok->varId();
-            unsigned int srcVarId;
-
             if (!dstVarId || tok->strAt(1) != "=")
                 continue;
 
             tok = tok->tokAt(2);
 
+            unsigned int srcVarId;
             // Look for allocation of a buffer based on the size of a string
             if (Token::Match(tok, "malloc|g_malloc|g_try_malloc|alloca ( strlen ( %var% ) )")) {
-                srcVarId = tok->tokAt(4)->varId();
-                tok      = tok->tokAt(6);
+                const Token *varTok = tok->tokAt(4);
+                srcVarId = varTok->varId();
+                tok      = varTok->tokAt(2);
             } else if (_tokenizer->isCPP() && Token::Match(tok, "new char [ strlen ( %var% ) ]")) {
-                srcVarId = tok->tokAt(5)->varId();
-                tok      = tok->tokAt(7);
+                const Token *varTok = tok->tokAt(5);
+                srcVarId = varTok->varId();
+                tok      = varTok->tokAt(2);
             } else if (Token::Match(tok, "realloc|g_realloc|g_try_realloc ( %name% , strlen ( %var% ) )")) {
-                srcVarId = tok->tokAt(6)->varId();
-                tok      = tok->tokAt(8);
+                const Token *varTok = tok->tokAt(6);
+                srcVarId = varTok->varId();
+                tok      = varTok->tokAt(2);
             } else
                 continue;
 
@@ -1803,7 +1805,7 @@ void CheckBufferOverrun::negativeIndexError(const Token *tok, const ValueFlow::V
                << ", otherwise there is negative array index " << index.intvalue << ".";
     else
         errmsg << "Array index " << index.intvalue << " is out of bounds.";
-    reportError(errorPath, index.errorSeverity() ? Severity::error : Severity::warning, "negativeIndex", errmsg.str(), CWE786, index.inconclusive);
+    reportError(errorPath, index.errorSeverity() ? Severity::error : Severity::warning, "negativeIndex", errmsg.str(), CWE786, index.isInconclusive());
 }
 
 CheckBufferOverrun::ArrayInfo::ArrayInfo()

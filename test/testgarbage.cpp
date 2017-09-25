@@ -224,6 +224,7 @@ private:
         TEST_CASE(templateSimplifierCrashes);
         TEST_CASE(syntaxErrorFirstToken); // Make sure syntax errors are detected and reported
         TEST_CASE(syntaxErrorLastToken); // Make sure syntax errors are detected and reported
+        TEST_CASE(syntaxErrorCase);
         TEST_CASE(enumTrailingComma);
     }
 
@@ -1447,7 +1448,6 @@ private:
         ASSERT_THROW(checkCode("( ) &"), InternalError);
         ASSERT_THROW(checkCode("|| #if #define <="), InternalError); // #2601
         ASSERT_THROW(checkCode("f::y:y : <x::"), InternalError); // #6613
-        ASSERT_THROW(checkCode("\xe2u."), InternalError); // #6613
         ASSERT_THROW(checkCode("a \"b\" not_eq \"c\""), InternalError); // #6720
         ASSERT_THROW(checkCode("(int arg2) { } { } typedef void (func_type) (int, int); typedef func_type&"), InternalError); // #6738
         ASSERT_THROW(checkCode("&g[0]; { (g[0] 0) } =", false), InternalError); // #6744
@@ -1481,6 +1481,12 @@ private:
         ASSERT_THROW(checkCode("{} const const\n"), InternalError); // #2637
 
         // ASSERT_THROW(  , InternalError)
+    }
+
+    void syntaxErrorCase() {
+        // case must be inside switch block
+        ASSERT_THROW(checkCode("void f() { switch (a) {}; case 1: }"), InternalError); // #8184
+        ASSERT_THROW(checkCode("struct V : { public case {} ; struct U : U  void { V *f (int x) (x) } }"), InternalError); // #5120
     }
 
     void enumTrailingComma() {

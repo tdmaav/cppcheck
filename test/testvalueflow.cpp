@@ -78,6 +78,7 @@ private:
         TEST_CASE(valueFlowAfterCondition);
         TEST_CASE(valueFlowForwardCompoundAssign);
         TEST_CASE(valueFlowForwardCorrelatedVariables);
+        TEST_CASE(valueFlowForwardFunction);
         TEST_CASE(valueFlowForwardLambda);
 
         TEST_CASE(valueFlowSwitchVariable);
@@ -93,6 +94,8 @@ private:
         TEST_CASE(valueFlowSizeofForwardDeclaredEnum);
 
         TEST_CASE(valueFlowGlobalVar);
+
+        TEST_CASE(valueFlowGlobalStaticVar);
 
         TEST_CASE(valueFlowInlineAssembly);
 
@@ -1796,6 +1799,32 @@ private:
         ASSERT_EQUALS(false, testValueOfX(code, 4U, 0));
     }
 
+    void valueFlowForwardFunction() {
+        const char *code;
+
+        code = "class C {\n"
+               "public:\n"
+               "  C(int &i);\n" // non-const argument => might be changed
+               "};\n"
+               "int f() {\n"
+               "  int x=1;\n"
+               "  C c(x);\n"
+               "  return x;\n"
+               "}";
+        ASSERT_EQUALS(false, testValueOfX(code, 8U, 1));
+
+        code = "class C {\n"
+               "public:\n"
+               "  C(const int &i);\n" // const argument => is not changed
+               "};\n"
+               "int f() {\n"
+               "  int x=1;\n"
+               "  C c(x);\n"
+               "  return x;\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 8U, 1));
+    }
+
     void valueFlowForwardLambda() {
         const char *code;
 
@@ -2472,11 +2501,11 @@ private:
 
         code = "void f() {\n"
                "  static int x = 0;\n"
-               "  return x + 1;\n" // <- possible value
+               "  return x + 1;\n" // <- known value
                "}\n";
         value = valueOfTok(code, "+");
         ASSERT_EQUALS(1, value.intvalue);
-        ASSERT(value.isPossible());
+        ASSERT(value.isKnown());
 
         code = "void f() {\n"
                "  int x = 0;\n"
@@ -2596,6 +2625,44 @@ private:
         ASSERT_EQUALS(false, testValueOfX(code, 5U, 42));
     }
 
+    void valueFlowGlobalStaticVar() {
+        const char *code;
+
+        code = "static int x = 321;\n"
+               "void f() {\n"
+               "  a = x;\n"
+               "}";
+        ASSERT_EQUALS(true, testValueOfX(code, 3U, 321));
+
+        code = "static int x = 321;\n"
+               "void f() {\n"
+               "  a = x;\n"
+               "}"
+               "void other() { x=a; }\n";
+        ASSERT_EQUALS(false, testValueOfX(code, 3U, 321));
+
+        code = "static int x = 321;\n"
+               "void f() {\n"
+               "  a = x;\n"
+               "}"
+               "void other() { p = &x; }\n";
+        ASSERT_EQUALS(false, testValueOfX(code, 3U, 321));
+
+        code = "static int x = 321;\n"
+               "void f() {\n"
+               "  a = x;\n"
+               "}"
+               "void other() { x++; }\n";
+        ASSERT_EQUALS(false, testValueOfX(code, 3U, 321));
+
+        code = "static int x = 321;\n"
+               "void f() {\n"
+               "  a = x;\n"
+               "}"
+               "void other() { foo(x); }\n";
+        ASSERT_EQUALS(false, testValueOfX(code, 3U, 321));
+    }
+
     void valueFlowInlineAssembly() {
         const char* code = "void f() {\n"
                            "    int x = 42;\n"
@@ -2646,6 +2713,14 @@ private:
                "}";
         values = tokenValues(code, "x ; }");
         ASSERT_EQUALS(true, values.empty());
+
+        // return (#8173)
+        code = "int repeat() {\n"
+               "  const char *n;\n"
+               "  return((n=42) && *n == 'A');\n"
+               "}";
+        values = tokenValues(code, "n ==");
+        ASSERT_EQUALS(true, values.size() != 1U || !values.front().isUninitValue());
     }
 };
 

@@ -29,6 +29,7 @@
 #include "valueflow.h"
 
 #include <algorithm>
+#include <cassert>
 #include <climits>
 #include <iomanip>
 #include <iostream>
@@ -149,6 +150,10 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
                 new_scope->classDef = tok;
                 new_scope->classStart = tok2;
                 new_scope->classEnd = tok2->link();
+                // make sure we have valid code
+                if (!new_scope->classEnd) {
+                    _tokenizer->syntaxError(tok);
+                }
                 scope = new_scope;
                 tok = tok2;
             } else {
@@ -526,9 +531,10 @@ void SymbolDatabase::createSymbolDatabaseFindAllScopes()
                         }
 
                         if (Token::Match(tok, "= %any% ;")) {
-                            function.isPure(tok->strAt(1) == "0");
-                            function.isDefault(tok->strAt(1) == "default");
-                            function.isDelete(tok->strAt(1) == "delete");
+                            const std::string& modifier = tok->strAt(1);
+                            function.isPure(modifier == "0");
+                            function.isDefault(modifier == "default");
+                            function.isDelete(modifier == "delete");
                             tok = tok->tokAt(2);
                         }
 
@@ -1019,9 +1025,10 @@ void SymbolDatabase::createSymbolDatabaseNeedInitialization()
                             scope->definedType->needInitialization = Type::True;
                         else if (!unknown)
                             scope->definedType->needInitialization = Type::False;
-
-                        if (scope->definedType->needInitialization == Type::Unknown)
-                            unknowns++;
+                        else {
+                            if (scope->definedType->needInitialization == Type::Unknown)
+                                unknowns++;
+                        }
                     }
                 } else if (scope->type == Scope::eUnion && scope->definedType->needInitialization == Type::Unknown)
                     scope->definedType->needInitialization = Type::True;
@@ -1120,30 +1127,28 @@ void SymbolDatabase::createSymbolDatabaseSetScopePointers()
             start = const_cast<Token*>(_tokenizer->list.front());
             end = const_cast<Token*>(_tokenizer->list.back());
         }
-        if (start && end) {
-            start->scope(&*it);
-            end->scope(&*it);
-        }
-        if (start != end && start->next() != end) {
-            for (Token* tok = start->next(); tok != end; tok = tok->next()) {
-                if (tok->str() == "{") {
-                    bool isEndOfScope = false;
-                    for (std::list<Scope*>::const_iterator innerScope = it->nestedList.begin(); innerScope != it->nestedList.end(); ++innerScope) {
-                        if (tok == (*innerScope)->classStart) { // Is begin of inner scope
-                            tok = tok->link();
-                            if (!tok || tok->next() == end || !tok->next()) {
-                                isEndOfScope = true;
-                                break;
-                            }
-                            tok = tok->next();
+        assert(start && end);
+
+        end->scope(&*it);
+
+        for (Token* tok = start; tok != end; tok = tok->next()) {
+            if (start != end && tok->str() == "{") {
+                bool isEndOfScope = false;
+                for (std::list<Scope*>::const_iterator innerScope = it->nestedList.begin(); innerScope != it->nestedList.end(); ++innerScope) {
+                    if (tok == (*innerScope)->classStart) { // Is begin of inner scope
+                        tok = tok->link();
+                        if (tok->next() == end || !tok->next()) {
+                            isEndOfScope = true;
                             break;
                         }
-                    }
-                    if (isEndOfScope)
+                        tok = tok->next();
                         break;
+                    }
                 }
-                tok->scope(&*it);
+                if (isEndOfScope)
+                    break;
             }
+            tok->scope(&*it);
         }
     }
 }
@@ -1179,10 +1184,11 @@ void SymbolDatabase::createSymbolDatabaseSetFunctionPointers(bool firstPass)
             if (func->type == Function::eConstructor && func->functionScope && func->functionScope->functionOf && func->arg) {
                 const Token * tok = func->arg->link()->next();
                 if (tok->str() == "noexcept") {
-                    if (!tok->linkAt(1) || !tok->linkAt(1)->next()) {
+                    const Token * closingParenTok = tok->linkAt(1);
+                    if (!closingParenTok || !closingParenTok->next()) {
                         continue;
                     }
-                    tok = tok->linkAt(1)->next();
+                    tok = closingParenTok->next();
                 }
                 if (tok->str() != ":") {
                     continue;
@@ -1236,9 +1242,9 @@ void SymbolDatabase::fixVarId(VarIdMap & varIds, const Token * vartok, Token * m
         if (membertok->varId() == 0) {
             varId->second.insert(std::make_pair(membervar->nameToken()->varId(), const_cast<Tokenizer *>(_tokenizer)->newVarId()));
             _variableList.push_back(membervar);
+            memberId = varId->second.find(membervar->nameToken()->varId());
         } else
             _variableList[membertok->varId()] = membervar;
-        memberId = varId->second.find(membervar->nameToken()->varId());
     }
     if (membertok->varId() == 0)
         membertok->varId(memberId->second);
@@ -1463,7 +1469,7 @@ void SymbolDatabase::createSymbolDatabaseUnknownArrayDimensions()
                         }
                     }
                     // check for qualified enumerator
-                    else if (dimension.end) {
+                    else if (dimension.start) {
                         // rhs of [
                         const Token *rhs = dimension.start->previous()->astOperand2();
 
@@ -2456,6 +2462,7 @@ bool Variable::arrayDimensions(const Library* lib)
                     dimension_.known = true;
                 }
             }
+            assert((dimension_.start == nullptr) == (dimension_.end == nullptr));
             _dimensions.push_back(dimension_);
             return true;
         }
@@ -2486,6 +2493,7 @@ bool Variable::arrayDimensions(const Library* lib)
                 dimension_.known = true;
             }
         }
+        assert((dimension_.start == nullptr) == (dimension_.end == nullptr));
         _dimensions.push_back(dimension_);
         dim = dim->link()->next();
         arr = true;
@@ -4983,9 +4991,9 @@ static const Token * parsedecl(const Token *type, ValueType * const valuetype, V
         } else if (ValueType::Type::UNKNOWN_TYPE != ValueType::typeFromString(type->str(), type->isLong()))
             valuetype->type = ValueType::typeFromString(type->str(), type->isLong());
         else if (type->str() == "auto") {
-            if (!type->valueType())
-                return nullptr;
             const ValueType *vt = type->valueType();
+            if (!vt)
+                return nullptr;
             valuetype->type = vt->type;
             valuetype->pointer = vt->pointer;
             if (vt->sign != ValueType::Sign::UNKNOWN_SIGN)
@@ -5180,6 +5188,7 @@ void SymbolDatabase::setValueTypeInTokenList()
                 std::istringstream istr(typestr+";");
                 if (tokenList.createTokens(istr)) {
                     ValueType vt;
+                    assert(tokenList.front());
                     if (parsedecl(tokenList.front(), &vt, defaultSignedness, _settings)) {
                         setValueType(tok, vt);
                     }

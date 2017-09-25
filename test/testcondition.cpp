@@ -83,7 +83,7 @@ private:
         TEST_CASE(oppositeInnerCondition2);
         TEST_CASE(oppositeInnerConditionAnd);
 
-        TEST_CASE(sameConditionAfterEarlyExit);
+        TEST_CASE(identicalConditionAfterEarlyExit);
 
         TEST_CASE(clarifyCondition1);     // if (a = b() < 0)
         TEST_CASE(clarifyCondition2);     // if (a & b == c)
@@ -97,6 +97,7 @@ private:
         TEST_CASE(alwaysTrue);
 
         TEST_CASE(checkInvalidTestForOverflow);
+        TEST_CASE(checkConditionIsAlwaysTrueOrFalseInsideIfWhile);
     }
 
     void check(const char code[], const char* filename = "test.cpp", bool inconclusive = false) {
@@ -355,7 +356,7 @@ private:
               "        g(x);\n"
               "    }\n"
               "}");
-        ASSERT_EQUALS("", errout.str());
+        ASSERT_EQUALS("[test.cpp:4]: (style) Condition 'x' is always true\n", errout.str());
 
         check("void g(int & x);\n"
               "void f() {\n"
@@ -1522,6 +1523,13 @@ private:
               "}");
         ASSERT_EQUALS("", errout.str());
 
+        check("void test(float *f) {\n" // #7405
+              "  if(*f>10) {\n"
+              "    (*f) += 0.1f;\n"
+              "    if(*f<10) {}\n"
+              "  }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void oppositeInnerConditionClass() {
@@ -1535,7 +1543,7 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:5]: (warning) Opposite inner 'if' condition leads to a dead code block.\n", errout.str());
 
-        check("class Fred { public: void dostuff() const; };\n"
+        check("class Fred { public: bool isValid() const; void dostuff() const; };\n"
               "void f() {\n"
               "  Fred fred;\n"
               "  if (fred.isValid()) {\n"
@@ -1618,6 +1626,15 @@ private:
               "      else {}\n"
               "   }\n"
               "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        // daca hyphy
+        check("bool f() {\n"
+              "  if (rec.lLength==0) {\n"
+              "    rec.Delete(i);\n"
+              "    if (rec.lLength!=0) {}\n"
+              "  }\n"
+              "}");
         ASSERT_EQUALS("", errout.str());
     }
 
@@ -1747,6 +1764,13 @@ private:
                       "[test.cpp:15] -> [test.cpp:16]: (warning) Opposite inner 'if' condition leads to a dead code block.\n"
                       "[test.cpp:19] -> [test.cpp:20]: (warning) Opposite inner 'if' condition leads to a dead code block.\n"
                       , errout.str());
+
+        check("void f(int x) {\n"
+              "  if (x < 4) {\n"
+              "    if (10 < x) {}\n"
+              "  }\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Opposite inner 'if' condition leads to a dead code block.\n", errout.str());
     }
 
     void oppositeInnerConditionAnd() {
@@ -1758,39 +1782,107 @@ private:
         ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Opposite inner 'if' condition leads to a dead code block.\n", errout.str());
     }
 
-    void sameConditionAfterEarlyExit() {
+    void identicalConditionAfterEarlyExit() {
         check("void f(int x) {\n"
               "  if (x > 100) { return; }\n"
               "  if (x > 100) {}\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Same condition 'x>100', second condition is always false\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Identical condition 'x>100', second condition is always false\n", errout.str());
 
         check("void f(int x) {\n"
               "  if (x > 100) { return; }\n"
               "  if (x > 100 || y > 100) {}\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Same condition 'x>100', second condition is always false\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Identical condition 'x>100', second condition is always false\n", errout.str());
+
+        check("void f(int x) {\n"
+              "  if (x > 100) { return; }\n"
+              "  if (x > 100 && y > 100) {}\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:3]: (warning) Identical condition 'x>100', second condition is always false\n", errout.str());
 
         check("void f(int x) {\n"
               "  if (x > 100) { return; }\n"
               "  if (abc) {}\n"
               "  if (x > 100) {}\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (warning) Same condition 'x>100', second condition is always false\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (warning) Identical condition 'x>100', second condition is always false\n", errout.str());
 
         check("void f(int x) {\n"
               "  if (x > 100) { return; }\n"
               "  while (abc) { y = x; }\n"
               "  if (x > 100) {}\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (warning) Same condition 'x>100', second condition is always false\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (warning) Identical condition 'x>100', second condition is always false\n", errout.str());
+
+        check("void f(int x) {\n"  // #8217 - crash for incomplete code
+              "  if (x > 100) { return; }\n"
+              "  X(do);\n"
+              "  if (x > 100) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
 
         check("void f(const int *i) {\n"
               "  if (!i) return;\n"
               "  if (!num1tok) { *num1 = *num2; }\n"
               "  if (!i) {}\n"
               "}");
-        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (warning) Same condition '!i', second condition is always false\n", errout.str());
+        ASSERT_EQUALS("[test.cpp:2] -> [test.cpp:4]: (warning) Identical condition '!i', second condition is always false\n", errout.str());
+
+        check("void C::f(Tree &coreTree) {\n" // daca
+              "  if(!coreTree.build())\n"
+              "    return;\n"
+              "  coreTree.dostuff();\n"
+              "  if(!coreTree.build()) {}\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
+
+        check("struct C { void f(const Tree &coreTree); };\n"
+              "void C::f(const Tree &coreTree) {\n"
+              "  if(!coreTree.build())\n"
+              "    return;\n"
+              "  coreTree.dostuff();\n"
+              "  if(!coreTree.build()) {}\n"
+              "}\n");
+        ASSERT_EQUALS("[test.cpp:3] -> [test.cpp:6]: (warning) Identical condition '!coreTree.build()', second condition is always false\n", errout.str());
+
+        check("void f(int x) {\n" // daca: labplot
+              "  switch(type) {\n"
+              "  case 1:\n"
+              "    if (x == 0) return 1;\n"
+              "    else return 2;\n"
+              "  case 2:\n"
+              "    if (x == 0) return 3;\n"
+              "    else return 4;\n"
+              "  }\n"
+              "  return 0;\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("static int failed = 0;\n"
+              "void f() {\n"
+              "  if (failed) return;\n"
+              "  checkBuffer();\n"
+              "  if (failed) {}\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        // daca icu
+        check("void f(const uint32_t *section, int32_t  start) {\n"
+              "  if(10<=section[start]) { return; }\n"
+              "  if(++start<100 && 10<=section[start]) { }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        // daca iqtree
+        check("void readNCBITree(std::istream &in) {\n"
+              "  char ch;\n"
+              "  in >> ch;\n"
+              "  if (ch != '|') return;\n"
+              "  in >> ch;\n"
+              "  if (ch != '|') {}\n"
+              "}\n");
+        ASSERT_EQUALS("", errout.str());
     }
 
     // clarify conditions with = and comparison
@@ -1892,6 +1984,7 @@ private:
               "    if (x & 3 == 2) {}\n"
               "}");
         ASSERT_EQUALS("[test.cpp:2]: (style) Suspicious condition (bitwise operator + comparison); Clarify expression with parentheses.\n"
+                      "[test.cpp:2]: (style) Condition 'x&3==2' is always false\n"
                       "[test.cpp:2]: (style) Condition '3==2' is always false\n", errout.str());
 
         check("void f() {\n"
@@ -2110,6 +2203,7 @@ private:
               "}");
         ASSERT_EQUALS("[test.cpp:2]: (style) Condition ''a'' is always true\n"
                       "[test.cpp:3]: (style) Condition 'L'b'' is always true\n"
+                      "[test.cpp:4]: (style) Condition '1&&'c'' is always true\n"
                       "[test.cpp:4]: (style) Condition ''c'' is always true\n"
                       "[test.cpp:5]: (style) Condition ''d'' is always true\n", errout.str());
     }
@@ -2144,6 +2238,33 @@ private:
               "    assert(x + 100U < x);\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+    }
+
+    void checkConditionIsAlwaysTrueOrFalseInsideIfWhile() {
+        check("void f() {\n"
+              "    enum states {A,B,C};\n"
+              "    const unsigned g_flags = B|C;\n"
+              "    if(g_flags & A) {}\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:4]: (style) Condition 'g_flags&A' is always false\n", errout.str());
+
+        check("void f() {\n"
+              "    int a = 5;"
+              "    if(a) {}\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Condition 'a' is always true\n", errout.str());
+
+        check("void f() {\n"
+              "    int a = 5;"
+              "    while(a + 1) { a--; }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
+
+        check("void f() {\n"
+              "    int a = 5;"
+              "    while(a + 1) { return; }\n"
+              "}");
+        ASSERT_EQUALS("[test.cpp:2]: (style) Condition 'a+1' is always true\n", errout.str());
     }
 };
 

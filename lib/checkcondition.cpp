@@ -178,15 +178,15 @@ bool CheckCondition::assignIfParseScope(const Token * const assignTok,
                 if (Token::Match(tok2, "[(,] &| %varid% [,)]", varid)) {
                     return true;
                 }
-                if (Token::Match(tok2,"&&|%oror%|( %varid% %any% %num% &&|%oror%|)", varid)) {
+                if (Token::Match(tok2,"&&|%oror%|( %varid% ==|!= %num% &&|%oror%|)", varid)) {
                     const Token *vartok = tok2->next();
                     const std::string& op(vartok->strAt(1));
                     const MathLib::bigint num2 = MathLib::toLongNumber(vartok->strAt(2));
-                    const std::string condition(vartok->str() + op + vartok->strAt(2));
-                    if (op == "==" && (num & num2) != ((bitop=='&') ? num2 : num))
-                        assignIfError(assignTok, tok2, condition, false);
-                    else if (op == "!=" && (num & num2) != ((bitop=='&') ? num2 : num))
-                        assignIfError(assignTok, tok2, condition, true);
+                    if ((num & num2) != ((bitop=='&') ? num2 : num)) {
+                        const bool alwaysTrue = op == "!=";
+                        const std::string condition(vartok->str() + op + vartok->strAt(2));
+                        assignIfError(assignTok, tok2, condition, alwaysTrue);
+                    }
                 }
                 if (Token::Match(tok2, "%varid% %op%", varid) && tok2->next()->isAssignmentOp()) {
                     return true;
@@ -454,6 +454,22 @@ void CheckCondition::multiConditionError(const Token *tok, unsigned int line1)
 // - same condition after early exit => always false
 //---------------------------------------------------------------------------
 
+static bool isNonConstFunctionCall(const Token *ftok, const Library &library)
+{
+    if (library.isFunctionConst(ftok))
+        return false;
+    const Token *obj = ftok->next()->astOperand1();
+    while (obj && obj->str() == ".")
+        obj = obj->astOperand1();
+    if (!obj)
+        return true;
+    else if (obj->variable() && obj->variable()->isConst())
+        return false;
+    else if (ftok->function() && ftok->function()->isConst())
+        return false;
+    return true;
+}
+
 void CheckCondition::multiCondition2()
 {
     if (!_settings->isEnabled(Settings::WARNING))
@@ -481,6 +497,7 @@ void CheckCondition::multiCondition2()
         if (!Token::simpleMatch(scope->classDef->linkAt(1), ") {"))
             continue;
 
+        bool nonConstFunctionCall = false;
         bool nonlocal = false; // nonlocal variable used in condition
         std::set<unsigned int> vars; // variables used in condition
         std::stack<const Token *> tokens;
@@ -491,11 +508,17 @@ void CheckCondition::multiCondition2()
             if (!cond)
                 continue;
 
+            if (Token::Match(cond, "%name% (")) {
+                nonConstFunctionCall = isNonConstFunctionCall(cond, _settings->library);
+                if (nonConstFunctionCall)
+                    break;
+            }
+
             if (cond->varId()) {
                 vars.insert(cond->varId());
                 const Variable *var = cond->variable();
                 if (!nonlocal && var) {
-                    if (!(var->isLocal() || var->isStatic() || var->isArgument()))
+                    if (!(var->isLocal() || var->isArgument()))
                         nonlocal = true;
                     else if ((var->isPointer() || var->isReference()) && !Token::Match(cond->astParent(), "%oror%|&&|!"))
                         // TODO: if var is pointer check what it points at
@@ -503,12 +526,15 @@ void CheckCondition::multiCondition2()
                 }
             } else if (!nonlocal && cond->isName()) {
                 // varid is 0. this is possibly a nonlocal variable..
-                nonlocal = Token::Match(cond->astParent(), "%cop%|(|[") || (_tokenizer->isCPP() && cond->str() == "this");
+                nonlocal = Token::Match(cond->astParent(), "%cop%|(|[") || Token::Match(cond, "%name% .") || (_tokenizer->isCPP() && cond->str() == "this");
             } else {
                 tokens.push(cond->astOperand1());
                 tokens.push(cond->astOperand2());
             }
         }
+
+        if (nonConstFunctionCall)
+            continue;
 
         // parse until second condition is reached..
         enum MULTICONDITIONTYPE { INNER, AFTER } type;
@@ -524,6 +550,24 @@ void CheckCondition::multiCondition2()
 
         for (; tok && tok != endToken; tok = tok->next()) {
             if (Token::simpleMatch(tok, "if (")) {
+                // Does condition modify tracked variables?
+                if (const Token *op = Token::findmatch(tok, "++|--", tok->linkAt(1))) {
+                    bool bailout = false;
+                    while (op) {
+                        if (vars.find(op->astOperand1()->varId()) != vars.end()) {
+                            bailout = true;
+                            break;
+                        }
+                        if (nonlocal && op->astOperand1()->varId() == 0) {
+                            bailout = true;
+                            break;
+                        }
+                        op = Token::findmatch(op->next(), "++|--", tok->linkAt(1));
+                    }
+                    if (bailout)
+                        break;
+                }
+
                 // Condition..
                 const Token *cond2 = tok->next()->astOperand2();
 
@@ -551,19 +595,21 @@ void CheckCondition::multiCondition2()
                         tokens2.pop();
                         if (!secondCondition)
                             continue;
-                        if (secondCondition->str() == "||") {
+                        if (secondCondition->str() == "||" || secondCondition->str() == "&&") {
                             tokens2.push(secondCondition->astOperand1());
                             tokens2.push(secondCondition->astOperand2());
                         } else if (isSameExpression(_tokenizer->isCPP(), true, cond1, secondCondition, _settings->library, true)) {
                             if (!isAliased(vars))
-                                sameConditionAfterEarlyExitError(cond1, secondCondition);
+                                identicalConditionAfterEarlyExitError(cond1, secondCondition);
                         }
                     }
                 }
             }
-            if (Token::Match(tok, "%type% (") && nonlocal) // function call -> bailout if there are nonlocal variables
+            if (Token::Match(tok, "%type% (") && nonlocal && isNonConstFunctionCall(tok, _settings->library)) // non const function call -> bailout if there are nonlocal variables
                 break;
-            if (Token::Match(tok, "break|continue|return|throw") && tok->scope() == endToken->scope())
+            if (Token::Match(tok, "case|break|continue|return|throw") && tok->scope() == endToken->scope())
+                break;
+            if (Token::Match(tok, "[;{}] %name% :"))
                 break;
             // bailout if loop is seen.
             // TODO: handle loops better.
@@ -574,12 +620,15 @@ void CheckCondition::multiCondition2()
                     if (!Token::simpleMatch(tok->linkAt(1), "} while ("))
                         break;
                     tok2 = tok->linkAt(1)->linkAt(2);
-                } else {
+                } else if (Token::Match(tok, "if|while (")) {
                     tok2 = tok->linkAt(1);
                     if (Token::simpleMatch(tok2, ") {"))
                         tok2 = tok2->linkAt(1);
                     if (!tok2)
                         break;
+                } else {
+                    // Incomplete code
+                    break;
                 }
                 bool changed = false;
                 for (std::set<unsigned int>::const_iterator it = vars.begin(); it != vars.end(); ++it) {
@@ -593,8 +642,20 @@ void CheckCondition::multiCondition2()
                 (!tok->varId() && nonlocal)) {
                 if (Token::Match(tok, "%name% %assign%|++|--"))
                     break;
-                if (Token::Match(tok, "%name% <<|>>") && (!tok->valueType() || !tok->valueType()->isIntegral()))
+                if (Token::Match(tok->astParent(), "*|.|[")) {
+                    const Token *parent = tok;
+                    while (Token::Match(parent->astParent(), ".|[") || (Token::simpleMatch(parent->astParent(), "*") && !parent->astParent()->astOperand2()))
+                        parent = parent->astParent();
+                    if (Token::Match(parent->astParent(), "%assign%"))
+                        break;
+                }
+                if (_tokenizer->isCPP() && Token::Match(tok, "%name% <<|>>") && (!tok->valueType() || !tok->valueType()->isIntegral()))
                     break;
+                if (_tokenizer->isCPP() && Token::simpleMatch(tok->previous(), ">>")) {
+                    const Token *rhs = tok->previous()->astOperand1();
+                    if (!rhs || !rhs->valueType() || !rhs->valueType()->isIntegral())
+                        break;
+                }
                 if (Token::Match(tok, "%name% [")) {
                     const Token *tok2 = tok->linkAt(1);
                     while (Token::simpleMatch(tok2, "] ["))
@@ -630,13 +691,13 @@ void CheckCondition::oppositeInnerConditionError(const Token *tok1, const Token*
     reportError(errorPath, Severity::warning, "oppositeInnerCondition", msg, CWE398, false);
 }
 
-void CheckCondition::sameConditionAfterEarlyExitError(const Token *cond1, const Token* cond2)
+void CheckCondition::identicalConditionAfterEarlyExitError(const Token *cond1, const Token* cond2)
 {
     const std::string cond(cond1 ? cond1->expressionString() : "x");
     ErrorPath errorPath;
     errorPath.push_back(ErrorPathItem(cond1, "first condition"));
     errorPath.push_back(ErrorPathItem(cond2, "second condition"));
-    reportError(errorPath, Severity::warning, "sameConditionAfterEarlyExit", "Same condition '" + cond + "', second condition is always false", CWE398, false);
+    reportError(errorPath, Severity::warning, "identicalConditionAfterEarlyExit", "Identical condition '" + cond + "', second condition is always false", CWE398, false);
 }
 
 //---------------------------------------------------------------------------
@@ -1118,17 +1179,21 @@ void CheckCondition::alwaysTrueFalse()
         const Scope * scope = symbolDatabase->functionScopes[i];
         for (const Token* tok = scope->classStart->next(); tok != scope->classEnd; tok = tok->next()) {
 
-            const bool constValCond = Token::Match(tok->tokAt(-2), "if|while ( %num%|%char% )") && !Token::Match(tok,"0|1"); // just one number or char inside if|while
-            const bool constValExpr = Token::Match(tok, "%num%|%char%") && tok->astParent() && Token::Match(tok->astParent(),"&&|%oror%|?"); // just one number or char in boolean expression
-            const bool compExpr = Token::Match(tok, "%comp%|!"); // a compare expression
-
-            if (!(constValCond || constValExpr || compExpr))
-                continue;
             if (tok->link()) // don't write false positives when templates are used
                 continue;
             if (!tok->hasKnownIntValue())
                 continue;
             if (Token::Match(tok, "[01]"))
+                continue;
+
+            const bool constIfWhileExpression =
+                tok->astParent()
+                && Token::Match(tok->astParent()->astOperand1(), "if|while")
+                && !tok->isBoolean();
+            const bool constValExpr = Token::Match(tok, "%num%|%char%") && tok->astParent() && Token::Match(tok->astParent(),"&&|%oror%|?"); // just one number or char in boolean expression
+            const bool compExpr = Token::Match(tok, "%comp%|!"); // a compare expression
+
+            if (!(constIfWhileExpression || constValExpr || compExpr))
                 continue;
 
             // Don't warn in assertions. Condition is often 'always true' by intention.

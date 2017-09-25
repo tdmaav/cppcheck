@@ -915,6 +915,19 @@ private:
               "    }\n"
               "}");
         ASSERT_EQUALS("", errout.str());
+
+        check("void f(std::map<uint32, uint32> my_map) {\n" // #7365
+              "  std::map<uint32, uint32>::iterator itr = my_map.begin();\n"
+              "  switch (itr->first) {\n"
+              "  case 0:\n"
+              "    my_map.erase(itr);\n"
+              "    continue;\n"
+              "  case 1:\n"
+              "    itr->second = 1;\n"
+              "    break;\n"
+              "  }\n"
+              "}");
+        ASSERT_EQUALS("", errout.str());
     }
 
     void eraseReturn1() {
@@ -2214,7 +2227,7 @@ private:
 
         check("const char* foo() {\n"
               "    static std::string text;\n"
-              "    text = \"hello world\n\";\n"
+              "    text = \"hello world\\n\";\n"
               "    return text.c_str();\n"
               "}");
         ASSERT_EQUALS("", errout.str()); // #3427
@@ -2984,6 +2997,22 @@ private:
               "    for(int i = 0; i < v.size(); i++) { cout << v[i]; }\n"
               "}", true);
         ASSERT_EQUALS("[test.cpp:3]: (style, inconclusive) Reading from empty STL container 'v'\n", errout.str());
+
+        // #7449 - nonlocal vector
+        check("std::vector<int> v;\n"
+              "void f() {\n"
+              "  v.clear();\n"
+              "  dostuff()\n"
+              "  if (v.empty()) { }\n"
+              "}", true);
+        ASSERT_EQUALS("", errout.str());
+
+        check("std::vector<int> v;\n"
+              "void f() {\n"
+              "  v.clear();\n"
+              "  if (v.empty()) { }\n"
+              "}", true);
+        ASSERT_EQUALS("[test.cpp:4]: (style, inconclusive) Reading from empty STL container 'v'\n", errout.str());
 
         // #6663
         check("void foo() {\n"

@@ -137,8 +137,11 @@ void CheckStl::iterators()
             if (containerAssignScope && tok2 == containerAssignScope->classEnd)
                 container = nullptr; // We don't know which containers might be used with the iterator
 
-            if (tok2 == validatingToken)
+            if (tok2 == validatingToken) {
                 validIterator = true;
+                eraseToken = nullptr;
+                invalidationScope = nullptr;
+            }
 
             // Is iterator compared against different container?
             if (tok2->isComparisonOp() && container && tok2->astOperand1() && tok2->astOperand2()) {
@@ -256,7 +259,7 @@ void CheckStl::iterators()
 
             // bailout handling. Assume that the iterator becomes valid if we see return/break.
             // TODO: better handling
-            else if (Token::Match(tok2, "return|break")) {
+            else if (tok2->scope() == invalidationScope && Token::Match(tok2, "return|break|continue")) {
                 validatingToken = Token::findsimplematch(tok2->next(), ";");
             }
 
@@ -471,7 +474,7 @@ void CheckStl::negativeIndexError(const Token *tok, const ValueFlow::Value &inde
                << ", otherwise there is negative array index " << index.intvalue << ".";
     else
         errmsg << "Array index " << index.intvalue << " is out of bounds.";
-    reportError(errorPath, index.errorSeverity() ? Severity::error : Severity::warning, "negativeContainerIndex", errmsg.str(), CWE786, index.inconclusive);
+    reportError(errorPath, index.errorSeverity() ? Severity::error : Severity::warning, "negativeContainerIndex", errmsg.str(), CWE786, index.isInconclusive());
 }
 
 void CheckStl::erase()
@@ -1592,6 +1595,17 @@ void CheckStl::readingEmptyStlContainer()
                 emptyContainer.clear();
             } else if (tok->str() == "{" && tok->next()->scope()->type == Scope::eLambda)
                 tok = tok->link();
+
+            // function call
+            if (Token::Match(tok, "!!. %name% (") && !Token::simpleMatch(tok->linkAt(2), ") {")) {
+                for (std::map<unsigned int, const Library::Container*>::const_iterator it = emptyContainer.begin(); it != emptyContainer.end();) {
+                    const Variable *var = _tokenizer->getSymbolDatabase()->getVariableFromVarId(it->first);
+                    if (var && (var->isLocal() || var->isArgument()))
+                        ++it;
+                    else
+                        it = emptyContainer.erase(it);
+                }
+            }
 
             if (!tok->varId())
                 continue;
