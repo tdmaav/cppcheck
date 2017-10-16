@@ -202,20 +202,16 @@ void CheckIO::checkFileUsage()
                     operation = Filepointer::OPEN;
                 } else if ((tok->str() == "rewind" || tok->str() == "fseek" || tok->str() == "fsetpos" || tok->str() == "fflush") ||
                            (windows && tok->str() == "_fseeki64")) {
-                    if (printPortability && tok->str() == "fflush") {
-                        fileTok = tok->tokAt(2);
-                        if (fileTok) {
-                            if (fileTok->str() == "stdin")
+                    fileTok = tok->tokAt(2);
+                    if (printPortability && fileTok && tok->str() == "fflush") {
+                        if (fileTok->str() == "stdin")
+                            fflushOnInputStreamError(tok, fileTok->str());
+                        else {
+                            Filepointer& f = filepointers[fileTok->varId()];
+                            if (f.mode == READ_MODE)
                                 fflushOnInputStreamError(tok, fileTok->str());
-                            else {
-                                Filepointer& f = filepointers[fileTok->varId()];
-                                if (f.mode == READ_MODE)
-                                    fflushOnInputStreamError(tok, fileTok->str());
-                            }
                         }
                     }
-
-                    fileTok = tok->tokAt(2);
                     operation = Filepointer::POSITIONING;
                 } else if (tok->str() == "fgetc" || tok->str() == "fgetwc" ||
                            tok->str() == "fgets" || tok->str() == "fgetws" || tok->str() == "fread" ||
@@ -484,8 +480,12 @@ static bool findFormat(unsigned int arg, const Token *firstArg,
                  argTok->variable()->dimensionKnown(0) &&
                  argTok->variable()->dimension(0) != 0))) {
         *formatArgTok = argTok->nextArgument();
-        if (!argTok->values().empty() && argTok->values().front().isTokValue() && argTok->values().front().tokvalue && argTok->values().front().tokvalue->tokType() == Token::eString)
-            *formatStringTok = argTok->values().front().tokvalue;
+        if (!argTok->values().empty()) {
+            const ValueFlow::Value &value = argTok->values().front();
+            if (value.isTokValue() && value.tokvalue && value.tokvalue->tokType() == Token::eString) {
+                *formatStringTok = value.tokvalue;
+            }
+        }
         return true;
     }
     return false;
@@ -525,14 +525,16 @@ void CheckIO::checkWrongPrintfScanfArguments()
                 // formatstring found in library. Find format string and first argument belonging to format string.
                 if (!findFormat(static_cast<unsigned int>(formatStringArgNo), tok->tokAt(2), &formatStringTok, &argListTok))
                     continue;
-            } else if (Token::simpleMatch(tok, "swprintf (") && Token::Match(tok->tokAt(2)->nextArgument(), "%str%")) {
-                // Find third parameter and format string
-                if (!findFormat(1, tok->tokAt(2), &formatStringTok, &argListTok))
-                    continue;
-            } else if (Token::simpleMatch(tok, "swprintf (") && !Token::Match(tok->tokAt(2)->nextArgument(), "%str%")) {
-                // Find fourth parameter and format string
-                if (!findFormat(2, tok->tokAt(2), &formatStringTok, &argListTok))
-                    continue;
+            } else if (Token::simpleMatch(tok, "swprintf (")) {
+                if (Token::Match(tok->tokAt(2)->nextArgument(), "%str%")) {
+                    // Find third parameter and format string
+                    if (!findFormat(1, tok->tokAt(2), &formatStringTok, &argListTok))
+                        continue;
+                } else {
+                    // Find fourth parameter and format string
+                    if (!findFormat(2, tok->tokAt(2), &formatStringTok, &argListTok))
+                        continue;
+                }
             } else if (isWindows && Token::Match(tok, "sprintf_s|swprintf_s (")) {
                 // template <size_t size> int sprintf_s(char (&buffer)[size], const char *format, ...);
                 if (findFormat(1, tok->tokAt(2), &formatStringTok, &argListTok)) {
@@ -1273,7 +1275,7 @@ void CheckIO::checkFormatString(const Token * const tok,
                                 break;
                             case 'p':
                                 if (argInfo.typeToken->tokType() == Token::eString)
-                                    invalidPrintfArgTypeError_p(tok, numFormat, &argInfo);
+                                    ;// string literals are passed as pointers to literal start, okay
                                 else if (argInfo.isKnownType() && !argInfo.isArrayOrPointer())
                                     invalidPrintfArgTypeError_p(tok, numFormat, &argInfo);
                                 done = true;

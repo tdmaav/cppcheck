@@ -86,20 +86,9 @@ std::string Path::getPathFromFilename(const std::string &filename)
     return "";
 }
 
-
 bool Path::sameFileName(const std::string &fname1, const std::string &fname2)
 {
-#if defined(__linux__) || defined(__sun) || defined(__hpux)
-    return (fname1 == fname2);
-#elif defined(_MSC_VER) || (defined(__GNUC__) && defined(_WIN32))
-    return (_stricmp(fname1.c_str(), fname2.c_str()) == 0);
-#elif defined(__GNUC__)
-    return (strcasecmp(fname1.c_str(), fname2.c_str()) == 0);
-#elif defined(__BORLANDC__)
-    return (stricmp(fname1.c_str(), fname2.c_str()) == 0);
-#else
-#error Platform filename compare function needed
-#endif
+    return caseInsensitiveFilesystem() ? (caseInsensitiveStringCompare(fname1, fname2) == 0) : (fname1 == fname2);
 }
 
 // This wrapper exists because Sun's CC does not allow a static_cast
@@ -137,7 +126,7 @@ std::string Path::getFilenameExtensionInLowerCase(const std::string &path)
     return extension;
 }
 
-const std::string Path::getCurrentPath()
+std::string Path::getCurrentPath()
 {
     char currentPath[4096];
 
@@ -235,4 +224,19 @@ std::string Path::getAbsoluteFilePath(const std::string& filePath)
 #error Platform absolute path function needed
 #endif
     return absolute_path;
+}
+
+std::string Path::stripDirectoryPart(const std::string &file)
+{
+#if defined(_WIN32) && !defined(__MINGW32__)
+    const char native = '\\';
+#else
+    const char native = '/';
+#endif
+
+    const std::string::size_type p = file.rfind(native);
+    if (p != std::string::npos) {
+        return file.substr(p + 1);
+    }
+    return file;
 }

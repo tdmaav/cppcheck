@@ -49,6 +49,13 @@
 static const QString OnlineHelpURL("http://cppcheck.net/manual.html");
 static const QString compile_commands_json("compile_commands.json");
 
+static QString getDataDir(const QSettings *settings)
+{
+    const QString dataDir = settings->value("DATADIR", QString()).toString();
+    const QString appPath = QFileInfo(QCoreApplication::applicationFilePath()).canonicalPath();
+    return dataDir.isEmpty() ? appPath : dataDir;
+}
+
 MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
     mSettings(settings),
     mApplications(new ApplicationList(this)),
@@ -64,7 +71,7 @@ MainWindow::MainWindow(TranslationHandler* th, QSettings* settings) :
 {
     mUI.setupUi(this);
     mThread = new ThreadHandler(this);
-    mThread->setDataDir(mSettings->value("DATADIR", QString()).toString());
+    mThread->setDataDir(getDataDir(settings));
     mUI.mResults->initialize(mSettings, mApplications, mThread);
 
     // Filter timer to delay filtering results slightly while typing
@@ -450,18 +457,8 @@ void MainWindow::doAnalyzeProject(ImportProject p)
     //mThread->SetanalyzeProject(true);
     if (mProjectFile) {
         mThread->setAddonsAndTools(mProjectFile->getAddonsAndTools());
-        mThread->setPythonPath(mSettings->value(SETTINGS_PYTHON_PATH).toString());
         QString clangHeaders = mSettings->value(SETTINGS_VS_INCLUDE_PATHS).toString();
         mThread->setClangIncludePaths(clangHeaders.split(";"));
-        QString clangPath = mSettings->value(SETTINGS_CLANG_PATH,QString()).toString();
-#ifdef Q_OS_WIN
-        if (clangPath.isEmpty()) {
-            // Try to autodetect clang
-            if (QFileInfo("C:/Program Files/LLVM/bin/clang.exe").exists())
-                clangPath = "C:/Program Files/LLVM/bin";
-        }
-#endif
-        mThread->setClangPath(clangPath);
         mThread->setSuppressions(mProjectFile->getSuppressions());
     }
     mThread->setProject(p);
@@ -840,8 +837,12 @@ Settings MainWindow::getCppcheckSettings()
 
         const QString &buildDir = mProjectFile->getBuildDir();
         if (!buildDir.isEmpty()) {
-            QString prjpath = QFileInfo(mProjectFile->getFilename()).absolutePath();
-            result.buildDir = (prjpath + '/' + buildDir).toStdString();
+            if (QDir(buildDir).isAbsolute()) {
+                result.buildDir = buildDir.toStdString();
+            } else {
+                QString prjpath = QFileInfo(mProjectFile->getFilename()).absolutePath();
+                result.buildDir = (prjpath + '/' + buildDir).toStdString();
+            }
         }
     }
 

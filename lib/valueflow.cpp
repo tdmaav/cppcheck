@@ -1,3 +1,4 @@
+#line 2
 /*
  * Cppcheck - A tool for static C/C++ code analysis
  * Copyright (C) 2007-2016 Cppcheck team.
@@ -29,6 +30,7 @@
 #include "token.h"
 #include "tokenlist.h"
 #include "utils.h"
+#include "path.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -89,13 +91,22 @@ static void execute(const Token *expr,
                     MathLib::bigint *result,
                     bool *error);
 
-static void bailout(TokenList *tokenlist, ErrorLogger *errorLogger, const Token *tok, const std::string &what)
+static void bailoutInternal(TokenList *tokenlist, ErrorLogger *errorLogger, const Token *tok, const std::string &what, const std::string &file, int line, const std::string &function)
 {
     std::list<ErrorLogger::ErrorMessage::FileLocation> callstack;
     callstack.push_back(ErrorLogger::ErrorMessage::FileLocation(tok, tokenlist));
-    ErrorLogger::ErrorMessage errmsg(callstack, tokenlist->getSourceFilePath(), Severity::debug, "ValueFlow bailout: " + what, "valueFlowBailout", false);
+    ErrorLogger::ErrorMessage errmsg(callstack, tokenlist->getSourceFilePath(), Severity::debug,
+                                     Path::stripDirectoryPart(file) + ":" + MathLib::toString(line) + ":" + function + " bailout: " + what, "valueFlowBailout", false);
     errorLogger->reportErr(errmsg);
 }
+
+#if (defined __cplusplus) && __cplusplus >= 201103L
+#define bailout(tokenlist, errorLogger, tok, what) bailoutInternal(tokenlist, errorLogger, tok, what, __FILE__, __LINE__, __func__)
+#elif (defined __GNUC__) || (defined __clang__) || (defined _MSC_VER)
+#define bailout(tokenlist, errorLogger, tok, what) bailoutInternal(tokenlist, errorLogger, tok, what, __FILE__, __LINE__, __FUNCTION__)
+#else
+#define bailout(tokenlist, errorLogger, tok, what) bailoutInternal(tokenlist, errorLogger, tok, what, __FILE__, __LINE__, "(valueFlow)")
+#endif
 
 /**
  * Is condition always false when variable has given value?
@@ -107,9 +118,8 @@ static bool conditionIsFalse(const Token *condition, const ProgramMemory &progra
     if (!condition)
         return false;
     if (condition->str() == "&&") {
-        const bool result1 = conditionIsFalse(condition->astOperand1(), programMemory);
-        const bool result2 = result1 ? true : conditionIsFalse(condition->astOperand2(), programMemory);
-        return result2;
+        return conditionIsFalse(condition->astOperand1(), programMemory) ||
+               conditionIsFalse(condition->astOperand2(), programMemory);
     }
     ProgramMemory progmem(programMemory);
     MathLib::bigint result = 0;
@@ -128,9 +138,8 @@ static bool conditionIsTrue(const Token *condition, const ProgramMemory &program
     if (!condition)
         return false;
     if (condition->str() == "||") {
-        const bool result1 = conditionIsTrue(condition->astOperand1(), programMemory);
-        const bool result2 = result1 ? true : conditionIsTrue(condition->astOperand2(), programMemory);
-        return result2;
+        return conditionIsTrue(condition->astOperand1(), programMemory) ||
+               conditionIsTrue(condition->astOperand2(), programMemory);
     }
     ProgramMemory progmem(programMemory);
     bool error = false;
@@ -2113,6 +2122,7 @@ static void valueFlowAfterMove(TokenList *tokenlist, SymbolDatabase* symboldatab
                 ValueFlow::Value value;
                 value.valueType = ValueFlow::Value::MOVED;
                 value.moveKind = ValueFlow::Value::NonMovedVariable;
+                value.errorPath.push_back(ErrorPathItem(tok, "Calling " + tok->next()->expressionString() + " makes " + tok->str() + " 'non-moved'"));
                 value.setKnown();
                 std::list<ValueFlow::Value> values;
                 values.push_back(value);
@@ -2149,6 +2159,10 @@ static void valueFlowAfterMove(TokenList *tokenlist, SymbolDatabase* symboldatab
             ValueFlow::Value value;
             value.valueType = ValueFlow::Value::MOVED;
             value.moveKind = moveKind;
+            if (moveKind == ValueFlow::Value::MovedVariable)
+                value.errorPath.push_back(ErrorPathItem(tok, "Calling std::move(" + varTok->str() + ")"));
+            else // if (moveKind == ValueFlow::Value::ForwardedVariable)
+                value.errorPath.push_back(ErrorPathItem(tok, "Calling std::forward(" + varTok->str() + ")"));
             value.setKnown();
             std::list<ValueFlow::Value> values;
             values.push_back(value);

@@ -155,11 +155,12 @@ void CheckSizeof::checkSizeofForPointerSize()
                 continue;
             }
 
-            if (tokFunc && tokFunc->str() == "calloc")
+            if (tokSize && tokFunc->str() == "calloc")
                 tokSize = tokSize->nextArgument();
 
-            if (tokFunc && tokSize) {
-                for (const Token* tok2 = tokSize; tok2 != tokFunc->linkAt(1); tok2 = tok2->next()) {
+            if (tokSize) {
+                const Token * const paramsListEndTok = tokFunc->linkAt(1);
+                for (const Token* tok2 = tokSize; tok2 != paramsListEndTok; tok2 = tok2->next()) {
                     if (Token::simpleMatch(tok2, "/ sizeof")) {
                         // Allow division with sizeof(char)
                         if (Token::simpleMatch(tok2->next(), "sizeof (")) {

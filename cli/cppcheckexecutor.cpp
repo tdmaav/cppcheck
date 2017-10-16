@@ -78,7 +78,7 @@
 /*static*/ FILE* CppCheckExecutor::exceptionOutput = stdout;
 
 CppCheckExecutor::CppCheckExecutor()
-    : _settings(nullptr), time1(0), errorOutput(nullptr), errorlist(false)
+    : _settings(nullptr), latestProgressOutputTime(0), errorOutput(nullptr), errorlist(false)
 {
 }
 
@@ -828,7 +828,7 @@ int CppCheckExecutor::check_internal(CppCheck& cppcheck, int /*argc*/, const cha
     }
 
     if (settings.reportProgress)
-        time1 = std::time(nullptr);
+        latestProgressOutputTime = std::time(nullptr);
 
     if (!settings.outputFile.empty()) {
         errorOutput = new std::ofstream(settings.outputFile);
@@ -944,7 +944,7 @@ int CppCheckExecutor::check_internal(CppCheck& cppcheck, int /*argc*/, const cha
 
 #ifdef _WIN32
 // fix trac ticket #439 'Cppcheck reports wrong filename for filenames containing 8-bit ASCII'
-static inline const std::string ansiToOEM(const std::string &msg, bool doConvert)
+static inline std::string ansiToOEM(const std::string &msg, bool doConvert)
 {
     if (doConvert) {
         const unsigned msglength = msg.length();
@@ -989,13 +989,13 @@ void CppCheckExecutor::reportProgress(const std::string &filename, const char st
 {
     (void)filename;
 
-    if (!time1)
+    if (!latestProgressOutputTime)
         return;
 
     // Report progress messages every 10 seconds
-    const std::time_t time2 = std::time(nullptr);
-    if (time2 >= (time1 + 10)) {
-        time1 = time2;
+    const std::time_t currentTime = std::time(nullptr);
+    if (currentTime >= (latestProgressOutputTime + 10)) {
+        latestProgressOutputTime = currentTime;
 
         // format a progress message
         std::ostringstream ostr;

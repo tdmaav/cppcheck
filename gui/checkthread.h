@@ -56,16 +56,8 @@ public:
         mAddonsAndTools = addonsAndTools;
     }
 
-    void setPythonPath(const QString &p) {
-        mPythonPath = p;
-    }
-
     void setDataDir(const QString &dataDir) {
         mDataDir = dataDir;
-    }
-
-    void setClangPath(const QString &p) {
-        mClangPath = p;
     }
 
     void setClangIncludePaths(const QStringList &s) {
@@ -84,6 +76,29 @@ public:
 
     void stop();
 
+    /**
+     * Determine command to run clang
+     * \return Command to run clang, empty if it is not found
+     */
+    static QString clangCmd();
+
+    /**
+     * Determine command to run clang-tidy
+     * \return Command to run clang-tidy, empty if it is not found
+     */
+    static QString clangTidyCmd();
+
+    /**
+     * Determine command to run python
+     * \return Command to run python, empty if it is not found
+     */
+    static QString pythonCmd();
+
+    /**
+     * Look for addon and return path
+     * \return path to addon if found, empty if it is not found
+     */
+    static QString getAddonFilePath(const QString &dataDir, const QString &addonFile);
 
 signals:
 
@@ -122,9 +137,7 @@ protected:
     CppCheck mCppcheck;
 
 private:
-    QString getAddonPath() const;
-
-    void runAddonsAndTools(const QString &addonPath, const ImportProject::FileSettings *fileSettings, const QString &fileName);
+    void runAddonsAndTools(const ImportProject::FileSettings *fileSettings, const QString &fileName);
 
     void parseAddonErrors(QString err, QString tool);
     void parseClangErrors(const QString &tool, const QString &file0, QString err);
@@ -132,9 +145,7 @@ private:
     QStringList mFiles;
     bool mAnalyseWholeProgram;
     QStringList mAddonsAndTools;
-    QString mPythonPath;
     QString mDataDir;
-    QString mClangPath;
     QStringList mClangIncludePaths;
     QStringList mSuppressions;
 };

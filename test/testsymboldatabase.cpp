@@ -347,6 +347,8 @@ private:
         TEST_CASE(auto8);
         TEST_CASE(auto9); // #8044 (segmentation fault)
         TEST_CASE(auto10); // #8020
+
+        TEST_CASE(unionWithConstructor);
     }
 
     void array() {
@@ -2514,9 +2516,9 @@ private:
 
     void symboldatabase42() { // only put variables in variable list
         GET_SYMBOL_DB("void f() { extern int x(); }\n");
-        ASSERT(!!db);
+        ASSERT(db != nullptr);
         const Scope * const fscope = db ? db->findScopeByName("f") : nullptr;
-        ASSERT(!!fscope);
+        ASSERT(fscope != nullptr);
         ASSERT_EQUALS(0U, fscope ? fscope->varlist.size() : ~0U);  // "x" is not a variable
     }
 
@@ -5250,6 +5252,23 @@ private:
             ASSERT_EQUALS(ValueType::UNKNOWN_SIGN, autotok->valueType()->sign);
             ASSERT_EQUALS(ValueType::ITERATOR, autotok->valueType()->type);
         }
+    }
+
+    void unionWithConstructor() {
+        GET_SYMBOL_DB("union Fred {\n"
+                      "    Fred(int x) : i(x) { }\n"
+                      "    Fred(float x) : f(x) { }\n"
+                      "    int i;\n"
+                      "    float f;\n"
+                      "};");
+
+        ASSERT_EQUALS("", errout.str());
+
+        const Token *f = Token::findsimplematch(tokenizer.tokens(), "Fred ( int");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 2);
+
+        f = Token::findsimplematch(tokenizer.tokens(), "Fred ( float");
+        ASSERT_EQUALS(true, db && f && f->function() && f->function()->tokenDef->linenr() == 3);
     }
 
 };
